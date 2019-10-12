@@ -221,7 +221,7 @@ class CAHBot:
             'status': 'initiated',
             'players': players,
             'player_names': ','.join([x['display_name'] for x in players]),
-            'judge': players[0],
+            'judge': [x for x in players if not x['skip']][0],
             'remaining_white': white_cards,
             'remaining_black': black_cards,
         })
