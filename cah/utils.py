@@ -68,10 +68,12 @@ class CAHBot:
                         try:
                             self.handle_command(**msg_packet)
                         except Exception as e:
-                            exception_msg = '\n'.join(traceback.format_tb(e.__traceback__))
+                            traceback = '\n'.join(traceback.format_tb(e.__traceback__))
+                            exception_msg ='{}: {}'.format(e.__class__.__name__, e)
                             self.log.error(exception_msg)
                             self.st.send_message(msg_packet['channel'],
-                                                 "Exception occurred: \n```{}```".format(exception_msg))
+                                                 "Exception occurred: \n```{}\n{}```".format(traceback,
+                                                                                             exception_msg))
                     time.sleep(self.RTM_READ_DELAY)
                 except Exception as e:
                     self.log.debug('Reconnecting...')
@@ -300,6 +302,7 @@ class CAHBot:
     def toggle_judge_ping(self):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
         self.game_dict['ping-judge'] = not self.game_dict['ping-judge']
+        self.message_grp('Judge pinging set to: {}'.format(self.game_dict['ping-judge']))
 
     def toggle_card_dm(self, user_id):
         """Toggles card dming"""
