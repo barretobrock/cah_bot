@@ -68,11 +68,11 @@ class CAHBot:
                         try:
                             self.handle_command(**msg_packet)
                         except Exception as e:
-                            traceback = '\n'.join(traceback.format_tb(e.__traceback__))
-                            exception_msg ='{}: {}'.format(e.__class__.__name__, e)
+                            traceback_msg = '\n'.join(traceback.format_tb(e.__traceback__))
+                            exception_msg = '{}: {}'.format(e.__class__.__name__, e)
                             self.log.error(exception_msg)
                             self.st.send_message(msg_packet['channel'],
-                                                 "Exception occurred: \n```{}\n{}```".format(traceback,
+                                                 "Exception occurred: \n```{}\n{}```".format(traceback_msg,
                                                                                              exception_msg))
                     time.sleep(self.RTM_READ_DELAY)
                 except Exception as e:
@@ -257,7 +257,7 @@ class CAHBot:
 
     def get_player_index_by_id(self, player_id, player_list):
         """Returns the index of a player in a list of players that has a matching 'id' value"""
-        return player_list.index([x for x in self.get_player_ids(player_list) if x == player_id][0])
+        return player_list.index([x for x in player_list if x['id'] == player_id][0])
 
     def get_player_by_id(self, player_id, player_list):
         """Returns a dictionary of player info that has a matching 'id' value in a list of player dicts"""
