@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import time
+import traceback
 from random import shuffle
 from slacktools import SlackTools
-from kavalkilu import Keys, GSheetReader
+from kavalkilu import Keys
 
 
 help_txt = """
@@ -29,15 +31,19 @@ class CAHBot:
 
     def __init__(self, log):
         self.log = log
+        self.bot_name = 'Wizzy'
+        self.triggers = ['cah', 'c!']
+        self.channel_id = 'CMPV3K8AE'  # #cah
+        # Read in common tools for interacting with Slack's API
         k = Keys()
-        self.st = SlackTools(self.log, bot_name='Wizzy', triggers=['cah', 'c!'], team=k.get_key('okr-name'),
+        self.st = SlackTools(self.log, triggers=self.triggers, team=k.get_key('okr-name'),
                              xoxp_token=k.get_key('wizzy-token'), xoxb_token=k.get_key('wizzy-bot-user-token'))
-        # Replace the empty handle_command with one that functions for this bot
-        self.st.handle_command = self.handle_command
+        # Two types of API interaction: bot-level, user-level
         self.bot = self.st.bot
         self.user = self.st.user
+        self.bot_id = self.bot.api_call('auth.test')['user_id']
+        self.RTM_READ_DELAY = 1
 
-        self.channel_id = 'CMPV3K8AE'  # #cah
         # Starting number of cards for each player
         self.DECK_SIZE = 5
         # For storing game info
@@ -48,9 +54,28 @@ class CAHBot:
         cah_gsheet = k.get_key('cah_sheet')
         self.set_dict = self.st.read_in_sheets(cah_gsheet)
 
-    def run_rtm(self):
+    def run_rtm(self, startup_message='Booted up and ready to play! :tada:'):
         """Initiate real-time messaging"""
-        self.st.run_rtm('Booted up and ready to play! :tada:', self.channel_id)
+        if self.bot.rtm_connect(with_team_state=False):
+            self.log.debug('{} is running.'.format(self.bot_name))
+            self.st.send_message(self.channel_id, startup_message)
+            while True:
+                try:
+                    msg_packet = self.st.parse_bot_commands(self.bot.rtm_read())
+                    if msg_packet is not None:
+                        try:
+                            self.handle_command(**msg_packet)
+                        except Exception as e:
+                            exception_msg = "Exception occurred: \n\t```{}```".format(
+                                traceback.format_tb(e.__traceback__))
+                            self.log.error(traceback.format_tb(e.__traceback__))
+                            self.st.send_message(msg_packet['channel'], exception_msg)
+                    time.sleep(self.RTM_READ_DELAY)
+                except Exception as e:
+                    self.log.debug('Reconnecting... {}'.format(traceback.format_tb(e.__traceback__)))
+                    self.bot.rtm_connect(with_team_state=False)
+        else:
+            self.log.error('Connection failed.')
 
     def handle_command(self, channel, message, user):
         """Handles a bot command if it's known"""
