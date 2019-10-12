@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from .cah import CAHBot
+from cah import CAHBot
 from kavalkilu import Log, LogArgParser
 
 

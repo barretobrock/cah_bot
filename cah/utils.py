@@ -30,28 +30,27 @@ class CAHBot:
     def __init__(self, log):
         self.log = log
         k = Keys()
-        self.st = SlackTools(self.log, mention_regex="^(cah|c!)(.*)", team=k.get_key('okr-name'),
+        self.st = SlackTools(self.log, bot_name='Wizzy', triggers=['cah', 'c!'], team=k.get_key('okr-name'),
                              xoxp_token=k.get_key('wizzy-token'), xoxb_token=k.get_key('wizzy-bot-user-token'))
         # Replace the empty handle_command with one that functions for this bot
         self.st.handle_command = self.handle_command
         self.bot = self.st.bot
         self.user = self.st.user
 
+        self.channel_id = 'CMPV3K8AE'  # #cah
         # Starting number of cards for each player
         self.DECK_SIZE = 5
-        self.bot_id = self.bot.api_call('auth.test')['user_id']
-        self.RTM_READ_DELAY = 1
         # For storing game info
         self.game_dict = {
-            'players': self.refresh_players(),
+            'players': self.build_players(),
             'status': 'stahted'
         }
         cah_gsheet = k.get_key('cah_sheet')
-        self.set_dict = self.st._read_in_sheets(cah_gsheet)
+        self.set_dict = self.st.read_in_sheets(cah_gsheet)
 
     def run_rtm(self):
         """Initiate real-time messaging"""
-        # self.st.run_
+        self.st.run_rtm('Booted up and ready to play! :tada:', self.channel_id)
 
     def handle_command(self, channel, message, user):
         """Handles a bot command if it's known"""
@@ -92,21 +91,11 @@ class CAHBot:
             resp_dict = {
                 'user': user
             }
-            self.send_message(channel, response.format(**resp_dict))
-
-    def _read_in_sheets(self):
-        """Reads in GSheets for Viktor"""
-        gs = GSheetReader(Keys().get_key('cah_sheet'))
-        sheets = gs.sheets
-        self.set_dict = {}
-        for sheet in sheets:
-            self.set_dict.update({
-                sheet.title: gs.get_sheet(sheet.title)
-            })
+            self.st.send_message(channel, response.format(**resp_dict))
 
     def message_grp(self, message):
         """Wrapper to send message to whole channel"""
-        self.st.send_message('cah', message)
+        self.st.send_message(self.channel_id, message)
 
     def new_game(self, message):
         """Begins a new game"""
@@ -187,7 +176,7 @@ class CAHBot:
             returns a list of dicts for each human player
         """
         players = []
-        for user in self.st.get_channel_members('cah', humans_only=True):
+        for user in self.st.get_channel_members(self.channel_id, humans_only=True):
             user_cleaned = {
                 'id': user['id'],
                 'display_name': user['profile']['display_name'].lower(),
@@ -234,11 +223,6 @@ class CAHBot:
                 players.append(refreshed_player)
         self.game_dict['players'] = players
 
-
-
-
-        return self._filter_humans(self._get_users_info(self._get_channel_members()))
-
     def _read_in_cards(self, set_type='standard'):
         """Reads in the cards"""
 
@@ -280,7 +264,7 @@ class CAHBot:
             msg_txt = '{}\nYour cards:\n{}'.format(question, '\n'.join(cards_msg))
         else:
             msg_txt = "The game's current status doesn't allow for card DMing"
-        self._private_message(player['id'], msg_txt)
+        self.st.private_message(player['id'], msg_txt)
 
     def new_round(self, replace_all=False):
         """Starts a new round"""
@@ -303,7 +287,7 @@ class CAHBot:
             judge = self._find_new_judge()
 
         resp_list.append('*{display_name}* is the judge!'.format(**judge))
-        self._private_channel_message(judge['id'], 'cah', "You're the judge this round!")
+        self.st.private_channel_message(judge['id'], self.channel_id, "You're the judge this round!")
         white_cards = self.game_dict['remaining_white']
         black_cards = self.game_dict['remaining_black']
 
@@ -384,12 +368,12 @@ class CAHBot:
         cards_msg = ['\t`{}`: {}'.format(i + 1, x) for i, x in enumerate(user_dict['cards'])]
 
         msg_txt = 'Here are your cards:\n{}'.format('\n'.join(cards_msg))
-        self._private_channel_message(user_dict['id'], 'cah', msg_txt)
+        self.st.private_channel_message(user_dict['id'], self.channel_id, msg_txt)
         if user_dict['dm_cards']:
             # DM cards if user has toggled that on
             msg_txt2 = "Psst - In case you didn't get the cards in the channel, here they are. " \
                        "*Reply in #cah though.*\n\n{}".format(msg_txt)
-            self._private_message(user_dict['id'], msg_txt2)
+            self.st.private_message(user_dict['id'], msg_txt2)
 
     def process_picks(self, user, message):
         """Processes the card selection made by the user"""
