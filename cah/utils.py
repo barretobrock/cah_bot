@@ -532,7 +532,7 @@ class CAHBot:
                 for i, player in enumerate(self.game_dict['players']):
                     if player['id'] == chosen_cards[pick]['id']:
                         player['score'] += 1
-                        self.message_grp("Winning card: `{}`\n\t(`{display_name}`, new score: *{score}* )".format(
+                        self.message_grp("Winning card: `{}`\n\t(`{display_name}`, new score: *{score}* diddles)".format(
                             chosen_cards[pick]['pick'], **player))
                         self.game_dict['status'] = 'end_round'
                         self.message_grp('Round ended. `cah new round` to start another.')
@@ -547,7 +547,7 @@ class CAHBot:
 
     def display_points(self):
         """Displays points for all players"""
-        points = ['`{display_name:<20}`: {score}'.format(**player) for player in self.game_dict['players']]
+        points = ['{display_name:<40}: `{score} diddles`'.format(**player) for player in self.game_dict['players']]
         self.message_grp('*Current Scores*\n{}'.format('\n'.join(points)))
 
     def display_status(self):
