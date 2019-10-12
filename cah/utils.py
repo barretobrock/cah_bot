@@ -179,8 +179,8 @@ class CAHBot:
         for user in self.st.get_channel_members(self.channel_id, humans_only=True):
             user_cleaned = {
                 'id': user['id'],
-                'display_name': user['profile']['display_name'].lower(),
-                'real_name': user['real_name'],
+                'display_name': user['display_name'].lower(),
+                'real_name': user['name'],
                 'is_bot': user['is_bot'],
                 'skip': False,
                 'dm_cards': False,
