@@ -220,7 +220,7 @@ class CAHBot:
         self.game_dict.update({
             'status': 'initiated',
             'players': players,
-            'player_names': ','.join([x['display_name'] for x in players]),
+            'player_names': ','.join([x['display_name'] for x in players if not x['skip']]),
             'judge': [x for x in players if not x['skip']][0],
             'remaining_white': white_cards,
             'remaining_black': black_cards,
@@ -322,7 +322,9 @@ class CAHBot:
         player = self.get_player_by_id(user_id, players)
 
         # Send cards to user if the status shows we're currently in a game
-        if self.game_dict['status'] == 'players_decision':
+        if 'cards' not in player.keys():
+            msg_txt = "You have no cards to send. This likely means you're not a current player"
+        elif self.game_dict['status'] == 'players_decision':
             # self._distribute_cards(self.game_dict['players'][player_idx])
             question = 'Current Question:\n`{current_black}`'.format(**self.game_dict)
             cards_msg = ['\t`{}`: {}'.format(i + 1, x) for i, x in enumerate(player['cards'])]
