@@ -9,7 +9,7 @@ log = Log('cah', log_lvl=LogArgParser().loglvl)
 
 cbot = CAHBot(log)
 try:
-    cbot.run_rtm()
+    cbot.run_rtm('Booted up and ready to play! :hyper-tada:', 'Daemon killed gracefully. :party-dead:')
 except KeyboardInterrupt:
     log.debug('Script ended manually.')
 finally:

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import signal
 import time
 import traceback
 from random import shuffle
@@ -25,6 +26,17 @@ Hi! I'm Wizzy and I help you play shitty games!
  - `cah end game`: end the current game
  - `cah refresh sheets`: Refreshes the GSheets that contain the card sets. Can only be done outside a game.
 """
+
+
+class GracefulKiller:
+    kill_now = False
+
+    def __init__(self):
+        signal.signal(signal.SIGINT, self.exit_gracefully)
+        signal.signal(signal.SIGTERM, self.exit_gracefully)
+
+    def exit_gracefully(self, signum, frame):
+        self.kill_now = True
 
 
 class CAHBot:
@@ -56,12 +68,13 @@ class CAHBot:
         self.cah_gsheet = k.get_key('cah_sheet')
         self.set_dict = self.st.read_in_sheets(self.cah_gsheet)
 
-    def run_rtm(self, startup_message='Booted up and ready to play! :tada:'):
+    def run_rtm(self, startup_msg, terminated_msg):
         """Initiate real-time messaging"""
+        killer = GracefulKiller()
         if self.bot.rtm_connect(with_team_state=False):
             self.log.debug('{} is running.'.format(self.bot_name))
-            self.st.send_message(self.channel_id, startup_message)
-            while True:
+            self.st.send_message(self.channel_id, startup_msg)
+            while not killer.kill_now:
                 try:
                     msg_packet = self.st.parse_bot_commands(self.bot.rtm_read())
                     if msg_packet is not None:
@@ -78,6 +91,8 @@ class CAHBot:
                 except Exception as e:
                     self.log.debug('Reconnecting...')
                     self.bot.rtm_connect(with_team_state=False)
+            # Upon SIGTERM, message channel
+            self.st.send_message(self.channel_id, terminated_msg)
         else:
             self.log.error('Connection failed.')
 
