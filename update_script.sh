@@ -28,6 +28,7 @@ announce_section "Pulling update from git repo"
 announce_section "Beginning update of python package"
 # TODO check if installed, then upgrade if so
 pip3 install git+https://github.com/barretobrock/cah_bot.git#egg=cah_bot --upgrade
+sudo pip3 install --target=/usr/local/lib/python3.6/dist-packages git+https://github.com/barretobrock/cah_bot.git#egg=cah_bot --upgrade
 
 
 announce_section "Process completed"
