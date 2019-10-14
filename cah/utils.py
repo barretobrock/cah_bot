@@ -296,6 +296,14 @@ class CAHBot:
             else:
                 # New player
                 players.append(refreshed_player)
+
+        # Check if any players have left
+        for player in players:
+            if player not in refreshed_players:
+                # Player from past record that didn't show up this time
+                self.message_grp('Removing player {display_name}, as is no longer in channel.'.format(**player))
+                _ = players.pop(player)
+
         self.game_dict['players'] = players
 
     def _read_in_cards(self, set_type='standard'):
