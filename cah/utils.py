@@ -301,8 +301,8 @@ class CAHBot:
         for player in players:
             if player not in refreshed_players:
                 # Player from past record that didn't show up this time
-                self.message_grp('Removing player {display_name}, as is no longer in channel.'.format(**player))
-                _ = players.pop(player)
+                self.message_grp('Removing player `{display_name}`, as is no longer in channel.'.format(**player))
+                _ = players.pop(players.index(player))
 
         self.game_dict['players'] = players
 
