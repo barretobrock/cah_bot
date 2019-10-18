@@ -593,6 +593,8 @@ class CAHBot:
             status_list.append('judge: `{}`'.format(self.game_dict['judge']['display_name']))
         if self.game_dict['status'] in ['players_decision', 'judge_decision']:
             status_list.append('current q: `{current_black}`'.format(**self.game_dict))
+            status_list.append('awaiting pickles: `{}`'.format(', '.join(
+                [x['display_name'] for x in self.game_dict['players'] if 'pick' not in x.keys()])))
         if all([x is not None for x in [num_white, num_black]]):
             status_list += [
                 'remaining white cards: `{}`'.format(num_white),
