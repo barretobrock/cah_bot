@@ -96,7 +96,7 @@ class CAHBot:
         else:
             self.log.error('Connection failed.')
 
-    def handle_command(self, channel, message, user):
+    def handle_command(self, channel, message, user, raw_message):
         """Handles a bot command if it's known"""
         response = None
         if message == 'help':
@@ -336,7 +336,7 @@ class CAHBot:
         player = self.game_dict['players'][player_idx]
         self.message_grp('Card DMing for player `{display_name}` set to `{dm_cards}`'.format(**player))
         # Send cards to user if the status shows we're currently in a game
-        if self.game_dict['status'] == 'player_decision':
+        if self.game_dict['status'] == 'players_decision' and player['dm_cards']:
             self.dm_cards_now(user_id)
 
     def dm_cards_now(self, user_id):
@@ -465,7 +465,7 @@ class CAHBot:
         msg_txt = 'Here are your cards:\n{}'.format('\n'.join(cards_msg))
         self.st.private_channel_message(user_dict['id'], self.channel_id, msg_txt)
         if user_dict['dm_cards']:
-            self.dm_cards_now(user_dict)
+            self.dm_cards_now(user_dict['id'])
 
     def process_picks(self, user, message):
         """Processes the card selection made by the user"""
