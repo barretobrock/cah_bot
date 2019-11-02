@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from cah import CAHBot
+import cah
+from datetime import datetime as dt
 from kavalkilu import Log, LogArgParser
 
 
 # Initiate logging
 log = Log('cah', log_lvl=LogArgParser().loglvl)
 
-cbot = CAHBot(log)
+cbot = cah.CAHBot(log)
 try:
-    cbot.run_rtm('Booted up and ready to play! :hyper-tada:', 'Daemon killed gracefully. :party-dead:')
+    info_dict = {
+        'bot': 'CAH bot',
+        'version': cah.__version__,
+        'update': dt.strptime(cah.__update_date__, '%Y-%m-%dT%H:%M:%S%z'),
+        'msg': 'Booted up and ready to play!'
+    }
+    bootup_msg = '```{bot:-^50}\n{version:>20} updated {update:%F %T}\n{msg:-^50}```'.format(**info_dict)
+    kill_msg = 'Daemon killed, but gracefully. :party-dead:'
+    cbot.run_rtm(bootup_msg, kill_msg)
 except KeyboardInterrupt:
     log.debug('Script ended manually.')
 finally:
