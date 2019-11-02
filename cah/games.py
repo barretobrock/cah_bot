@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from random import shuffle
+from .players import Players
 
 
 class GameStatus:
@@ -28,10 +29,11 @@ class GameStatus:
 class Game:
     """Holds data for current game"""
     def __init__(self, players, deck):
-        self.players = players
+        self.players = Players(players, origin='prebuilt')
         shuffle(self.players.player_list)
         self.judge_order = self.get_judge_order()
         self.judge = self.players.player_list[0]
+        self.prev_judge = None
         # Starting number of cards for each player
         self.DECK_SIZE = 5
         self.deck = deck
@@ -72,14 +74,9 @@ class Game:
             # No more questions, game hath ended
             notifications += [
                 'No more question cards! Game over! :party-dead::party-dead::party-dead:',
-                self.display_points()
             ]
             self.end_game()
             return notifications
-
-        # Determine number of cards to deal to each player & deal
-        num_cards = self.DECK_SIZE if self.rounds < 1 else self.prev_question_card.required_answers
-        self.deal_cards(num_cards)
 
         # Increment rounds
         self.rounds += 1
@@ -88,42 +85,61 @@ class Game:
         self.get_next_judge()
         notifications.append('Round {}: `{}` is the judge!'.format(self.rounds, self.judge.display_name))
 
+        # Determine number of cards to deal to each player & deal
+        # either full deck or replacement cards for previous question
+        if self.rounds == 1:
+            num_cards = self.DECK_SIZE
+        else:
+            self.prev_question_card = self.current_question_card
+            num_cards = self.prev_question_card.required_answers
+        self.deal_cards(num_cards)
+        # Set picks back to none
+        for player in self.players.player_list:
+            player.hand.pick = None
+            self.players.update_player(player)
+        self.status = self.gs.players_decision
+
         # Deal question card
         self.current_question_card = self.deck.deal_question_card()
         notifications.append("Q: `{}`".format(self.current_question_card.txt))
 
         return notifications
 
-
-
     def end_game(self):
         """Ends the game"""
-
-
-
+        self.status = self.gs.ended
+        # Save game scores
+        for player in self.players.player_list:
+            player.final_scores.append(player.points)
+            self.players.update_player(player)
 
     def get_next_judge(self):
         """Gets the following judge by the order set"""
-        cur_judge_pos = self.players.player_list.index(self.judge)
+        self.prev_judge = self.judge
+        cur_judge_pos = self.players.get_player_index_by_id(self.judge.player_id)
         next_judge_pos = 0 if cur_judge_pos == len(self.players.player_list) - 1 else cur_judge_pos + 1
         self.judge = self.players.player_list[next_judge_pos]
-
-    def show_player_names(self):
-        """Shows players' display names"""
-        return ','.join([x.display_name for x in self.players.player_list if not x.skip])
 
     def deal_cards(self, num_cards):
         """Deals cards out to players by indicating the number of cards to give out"""
 
         for player in self.players.player_list:
-            if player != self.judge:
-                for i in range(0, num_cards):
-                    # Distribute cards
-                    if len(self.deck.answers_card_list) == 0:
-                        return 'No more cards left to deal!'
-                    else:
-                        player.hand.take_card(self.deck.deal_answer_card())
-                        self.players.update_player(player)
+            if num_cards == self.DECK_SIZE:
+                # At the first round of the game, everyone gets cards
+                self._card_dealer(player, num_cards)
+            elif player.player_id != self.prev_judge.player_id:
+                # Otherwise, we'll make sure the judge
+                self._card_dealer(player, num_cards)
+
+    def _card_dealer(self, player_obj, num_cards):
+        """Deals the actual cards"""
+        for i in range(0, num_cards):
+            # Distribute cards
+            if len(self.deck.answers_card_list) == 0:
+                return 'No more cards left to deal!'
+            else:
+                player_obj.hand.take_card(self.deck.deal_answer_card())
+        self.players.update_player(player_obj)
 
     def assign_player_pick(self, user_id, pick):
         """Takes in an int and assigns it to the player who wrote it"""
@@ -132,6 +148,8 @@ class Game:
         if successful:
             self.players.update_player(player)
             return '{}\'s pick has been registered.'.format(player.display_name)
+        if not successful and player.hand.pick is not None:
+            return '{}\'s pick voided. You already picked.'.format(player.display_name)
         else:
             return 'Pick not registered.'
 
@@ -140,7 +158,7 @@ class Game:
 
         remaining = []
         for player in self.players.player_list:
-            if player.pick is None and player.player_id != self.judge.player_id:
+            if player.hand.pick is None and player.player_id != self.judge.player_id:
                 remaining.append(player.display_name)
         return remaining
 
@@ -151,18 +169,9 @@ class Game:
     def display_picks(self):
         """Shows the player's picks in random order"""
 
-        picks = [{'id': player.player_id, 'pick': player.pick} for player in self.players.player_list
-                 if player.pick is not None]
+        picks = [{'id': player.player_id, 'pick': player.hand.pick.txt} for player in self.players.player_list
+                 if player.hand.pick is not None]
         shuffle(picks)
         self.picks = picks
         pick_str = '\n'.join(['`{}`: {pick}'.format(i + 1, **pick) for i, pick in enumerate(self.picks)])
         return pick_str
-
-    def display_status(self):
-        """Shows the games status"""
-
-        # TODO include the current round
-
-    def display_points(self):
-        """Returns string w/ line breaks of score rubrik"""
-        # TODO order by most points, first place gold, second silver, third & beyond poop

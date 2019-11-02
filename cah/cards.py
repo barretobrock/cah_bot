@@ -18,14 +18,16 @@ class QuestionCard(Card):
     card_class = 'q'
 
     def __init__(self, txt):
-        self.required_answers = self.determine_required_answers()
         super().__init__(txt)
+        self.required_answers = self.determine_required_answers()
 
     def determine_required_answers(self):
         """Determines the number of required answer cards for the question"""
         blank_matcher = re.compile(r'(_+)', re.IGNORECASE)
         match = blank_matcher.findall(self.txt)
         if match is None:
+            return 1
+        elif len(match) == 0:
             return 1
         else:
             return len(match)
@@ -36,9 +38,9 @@ class AnswerCard(Card):
     card_class = 'a'
 
     def __init__(self, txt):
+        super().__init__(txt)
         # Set once dealt
         self.owner = None
-        super().__init__(txt)
 
     def set_owner(self, owner):
         """Takes in owner's player object and sets to the card"""
@@ -61,7 +63,7 @@ class Hand:
 
     def render_hand(self):
         """Prints out the hand to the player"""
-        return '\n'.join(['\t`{}`: {}'.format(i + 1, x) for i, x in enumerate(self.cards)])
+        return '\t{}'.format('\n'.join(['\t`{}`: {}'.format(i + 1, x) for i, x in enumerate(self.cards)]))
 
     def take_card(self, card):
         """Takes popped card and puts in hand"""
@@ -116,7 +118,7 @@ class Decks:
     def __init__(self, dict_of_dfs):
         """Read in a dictionary of dfs that serve as each deck"""
         self.deck_list = []
-        for k, v in dict_of_dfs:
+        for k, v in dict_of_dfs.items():
             self.deck_list.append(Deck(k, v))
         self.deck_names = [x.name for x in self.deck_list]
 

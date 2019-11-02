@@ -5,41 +5,44 @@ import re
 import json
 import time
 import traceback
-from random import shuffle, randrange
+import pandas as pd
+from random import randrange
 from slacktools import SlackTools, GracefulKiller
 from kavalkilu import Keys, Paths
-from .cards import Card, QuestionCard, AnswerCard, Hand, CardPot, Deck, Decks
-from .players import Player, Players, Judge
-from .games import GameStatus, Game
+from .cards import Decks
+from .players import Players
+from .games import Game
 
 
 help_txt = """
 Hi! I'm Wizzy and I help you play shitty games!
 *Command Prefix*
  - `c!` or `cah`: Use this before any of the below commands (e.g., `c! pick 1`)
-*Commands*:
+*Basic Commands*:
  - `new game [OPTIONS]`: start a new CAH game
     optional flags:
         - `-(set|s) <card-set-name>`: choose a specific card set (standard, indeed) default: *standard*
         - `-p @player1 @player2 ...`: tag a subset of the channel as current players (space-separated)
- - `pick <card-index>`: pick your card for the round (index starts at 1)
  - `(points|score|scores)`: show points/score of all players
  - `status`: get the current status of the game
  - `toggle jping`: Toggles whether or not the judge is pinged after all selections are made (default: off)
  - `toggle dm`: Toggles whether or not you receive cards as a DM from Wizzy (default: off)
  - `cahds now`: Send cards immediately without toggling DM
- - `choose <card-index>`: used by the judge to determine the best card from picks (index starts at 1)
- - `new round`: continue game play to a new round
  - `end game`: end the current game
  - `refresh sheets`: refreshes the GSheets that contain the card sets. Can only be done outside a game.
  - `show link`: shows the link to the GSheets where Wizzy reads in cards. helpful if you want to contribute
+*Card selection*:
+ - `(p|pick) <card-index>`: pick your card for the round (index starts at 1)
+ - `randpick [<@other_player>]`: randomly select your card when you just can't decide
+*Judge-only commands*:
+ - `(c|choose) <card-index>`: used when selecting the :q:best:q: card from picks (index starts at 1)
 """
 
 
 class CAHBot:
     """Bot for playing Cards Against Humanity on Slack"""
 
-    def __init__(self, log, debug=False):
+    def __init__(self, log, debug=True):
         self.log = log
         self.bot_name = 'Wizzy'
         self.triggers = ['cah', 'c!']
@@ -57,7 +60,7 @@ class CAHBot:
         # For storing game info
         self.cah_gsheet = k.get_key('cah_sheet')
         self.decks = Decks(self.st.read_in_sheets(self.cah_gsheet))
-        self.players = Players(self.build_players())
+        self.players = Players(self._build_players())
         self.game = None
         self.score_path = os.path.join(Paths().data_dir, 'scores.json')
         self.read_score()
@@ -97,13 +100,11 @@ class CAHBot:
             response = help_txt
         elif message.startswith('new game'):
             self.new_game(message)
-        elif message == 'new round':
-            self.new_round()
         elif message == 'end game':
             self.end_game()
-        elif message.startswith('pick'):
+        elif message.startswith('pick') or message.split()[0] == 'p':
             self.process_picks(user, message)
-        elif message.startswith('choose'):
+        elif message.startswith('choose') or message.split()[0] == 'c':
             self.choose_card(user, message)
         elif message.startswith('randpick'):
             response = self.random_pick(user, message)
@@ -120,7 +121,10 @@ class CAHBot:
         elif message == 'status':
             self.display_status()
         elif message == 'refresh sheets':
-            if self.game.status not in [self.game.gs.stahted, self.game.gs.ended]:
+            if self.game is None:
+                self.st.read_in_sheets(self.cah_gsheet)
+                response = 'Sheets have been refreshed!'
+            elif self.game.status not in [self.game.gs.stahted, self.game.gs.ended]:
                 response = 'Please end the game before refreshing. THANKSSSS :))))))'
             else:
                 self.st.read_in_sheets(self.cah_gsheet)
@@ -224,7 +228,6 @@ class CAHBot:
 
     def new_game(self, message):
         """Begins a new game"""
-        msg_split = message.split()
         response_list = []
 
         # Determine card set to use
@@ -233,7 +236,7 @@ class CAHBot:
 
         # Refresh the players' names, get response from build function
         self.players.load_players_in_channel(self._build_players(), refresh=True)
-        response_list.append(self._determine_players(msg_split))
+        response_list.append(self._determine_players(message))
 
         # Read in card deck
         deck = self._read_in_cards(card_set)
@@ -244,26 +247,38 @@ class CAHBot:
         # Get order of judges
         response_list.append(self.game.judge_order)
         # Kick off the new round, message details to the group
-        self.new_round(notifications=response_list, replace_all=True)
+        self.new_round(notifications=response_list)
 
     def toggle_judge_ping(self):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
+        if self.game is None:
+            self.message_grp('Start a game first, then tell me to do that.')
+            return None
+
         self.game.toggle_judge_ping()
         self.message_grp('Judge pinging set to: {}'.format(self.game.ping_judge))
 
     def toggle_card_dm(self, user_id):
         """Toggles card dming"""
-        player = self.players.get_player_by_id(user_id)
+        if self.game is None:
+            self.message_grp('Start a game first, then tell me to do that.')
+            return None
+
+        player = self.game.players.get_player_by_id(user_id)
         player.dm_cards = not player.dm_cards
         self.message_grp('Card DMing for player `{}` set to `{}`'.format(player.display_name, player.dm_cards))
         # Send cards to user if the status shows we're currently in a game
         if self.game.status == self.game.gs.players_decision and player.dm_cards:
             self.dm_cards_now(user_id)
-        self.players.update_player(player)
+        self.game.players.update_player(player)
 
     def dm_cards_now(self, user_id):
         """DMs current card set to user"""
-        player = self.players.get_player_by_id(user_id)
+        if self.game is None:
+            self.message_grp('Start a game first, then tell me to do that.')
+            return None
+
+        player = self.game.players.get_player_by_id(user_id)
 
         # Send cards to user if the status shows we're currently in a game
         if len(player.hand.cards) == 0:
@@ -271,53 +286,61 @@ class CAHBot:
         elif self.game.status == self.game.gs.players_decision:
             question = 'Current Question:\n`{}`'.format(self.game.current_question_card)
             cards_msg = player.hand.render_hand()
-            msg_txt = '{}\nYour cards:\n{}'.format(question, '\n'.join(cards_msg))
+            msg_txt = '{}\nYour cards:\n{}'.format(question, cards_msg)
         else:
             msg_txt = "The game's current status doesn't allow for card DMing"
         self.st.private_message(player.player_id, msg_txt)
 
-    def new_round(self, notifications=None, replace_all=False):
+    def new_round(self, notifications=None):
         """Starts a new round
         :param notifications: list of str, notifications to be bundled together and posted to the group
-        :param replace_all: bool, if True, replaces all cards for each player
         """
         if notifications is None:
             notifications = []
-        else:
-            notifications += self.game.new_round()
+        notifications += self.game.new_round()
 
         self.message_grp('\n'.join(notifications))
+
         self.st.private_channel_message(self.game.judge.player_id, self.channel_id, "You're the judge this round!")
+        for player in self.game.players.player_list:
+            if player.player_id != self.game.judge.player_id:
+                self.st.private_channel_message(player.player_id, self.channel_id, player.hand.render_hand())
 
     def process_picks(self, user, message):
         """Processes the card selection made by the user"""
+        if self.game is None:
+            self.message_grp('Start a game first, then tell me to do that.')
+            return None
+
         if self.game.status != self.game.gs.players_decision:
             # Prevent this method from being called outside of the player's decision stage
+            self.message_grp('<@{}> You cannot make selections '
+                             'in the current status of this game: `{}`.'.format(user, self.game.status))
             return None
         # Process the message
         pick = self._get_pick(user, message, pick_idx=1)
         if pick is None:
             self.message_grp('<@{}> I wasn\'t able to parse your pick.'.format(user))
             return None
-        elif pick > self.DECK_SIZE - 1 or pick < 0:
-            self.message_grp('<@{}> I think you picked outside the range of suggestions.'.format(user))
+        elif pick > self.game.DECK_SIZE - 1 or pick < 0:
+            self.message_grp('<@{}> I think you picked outside the range of suggestions: `{}`.'.format(user, pick + 1))
             return None
-        pick_msg = self.game.assign_player_pick(user, pick)
-        self.message_grp(pick_msg)
+        messages = [self.game.assign_player_pick(user, pick)]
 
         # See who else has yet to decide
         remaining = self.game.players_left_to_decide()
         if len(remaining) == 0:
-            self.message_grp('All players have made their picks.')
+            messages.append('All players have made their picks.')
             if self.game.ping_judge:
-                judge_msg = '<@{}> to judge.'.format(self.game.judge.player_id)
+                judge_msg = '{} to judge.'.format(self.game.judge.player_tag)
             else:
                 judge_msg = '`{}` to judge.'.format(self.game.judge.display_name)
-            self.message_grp(judge_msg)
+            messages.append(judge_msg)
             self.game.status = self.game.gs.judge_decision
             self._display_picks()
         else:
-            self.message_grp('{} players remaining to decide: {}'.format(len(remaining), ', '.join(remaining)))
+            messages.append('{} players remaining to decide: {}'.format(len(remaining), ', '.join(remaining)))
+        self.message_grp('\n'.join(messages))
 
     def _get_pick(self, user, message, pick_idx):
         """Processes a number from a message"""
@@ -339,9 +362,13 @@ class CAHBot:
 
     def choose_card(self, user, message):
         """For the judge to choose the winning card"""
+        if self.game is None:
+            self.message_grp('Start a game first, then tell me to do that.')
+            return None
+
         if self.game.status != self.game.gs.judge_decision:
-            self.message_grp('Not the right status for this command: {}'.format(self.game.status))
             # Prevent this method from being called outside of the judge's decision stage
+            self.message_grp('Not the right status for this command: `{}`'.format(self.game.status))
             return None
 
         if user == self.game.judge.player_id:
@@ -361,21 +388,25 @@ class CAHBot:
                 # chosen_cards = self.game_dict['chosen_cards']
                 winner.points += 1
                 self.game.players.update_player(winner)
-                self.message_grp("Winning card: `{pick}`\n\t(`{display_name}`, "
-                                 "new score: *{points}* diddles)".format(**winner))
+                self.message_grp("Winning card: `{}`\n\t`{}`, "
+                                 "new score: *{}* diddles ({} total)".format(
+                    winner.hand.pick.txt, winner.display_name, winner.points,
+                    winner.get_grand_score() + winner.points))
                 self.game.status = self.game.gs.end_round
-                self.message_grp('Round ended. `cah new round` to start another.')
-
+                self.message_grp('Round ended.')
+                # Start new round
+                self.new_round()
         else:
             self.message_grp("Get yo _stanky_ ass outta here, you ain't the judge")
 
     def end_game(self):
         """Ends the current game"""
-        self.game.status = self.game.gs.ended
-        # Save game scores
-        for player in self.game.players.player_list:
-            player.final_scores.append(player.points)
-            self.game.players.update_player(player)
+        if self.game is None:
+            self.message_grp('You have to start a game before you can end it...????')
+            return None
+        self.game.end_game()
+        # Save score history to file
+        self.display_points()
         self.save_score()
         self.message_grp('The game has ended.')
 
@@ -393,18 +424,34 @@ class CAHBot:
             with open(self.score_path, 'r') as f:
                 scores_dict = json.loads(f.read())
             for player_id, score_list in scores_dict.items():
-                player = self.game.players.get_player_by_id(player_id)
+                player = self.players.get_player_by_id(player_id)
                 player.final_scores = score_list
-                self.game.players.update_player(player)
+                self.players.update_player(player)
 
     def wipe_score(self):
         """Resets all player's score history"""
         for player in self.game.players.player_list:
+            # For in the current game
             player.final_scores = list()
+            self.game.players.update_player(player)
+        for player in self.players.player_list:
+            # For in the whole channel
+            player.final_scores = list()
+            self.players.update_player(player)
         self.message_grp('All scores have been erased.')
 
     def random_pick(self, user, message):
         """Randomly picks a card for a certain player"""
+        if self.game is None:
+            self.message_grp('Start a game first, then tell me to do that.')
+            return None
+
+        if self.game.status != self.game.gs.players_decision:
+            # Prevent this method from being called outside of the player's decision stage
+            self.message_grp('<@{}> You cannot make selections '
+                             'in the current status of this game: `{}`.'.format(user, self.game.status))
+            return None
+
         msg_split = message.split()
         player_id = None
         if message == 'randompick':
@@ -412,52 +459,85 @@ class CAHBot:
             player_id = user
         elif len(msg_split) > 1:
             # Player mentioned
-            player = self.game.players.get_player_by_id(msg_split[1])
+            player = self.game.players.get_player_by_tag(msg_split[1])
             if player is None:
                 return 'Player id not found: `{}`'.format(msg_split[1])
         else:
             return 'Didn\'t understand the syntax for this message: `{}`.'.format(message)
 
         player = self.game.players.get_player_by_id(player_id)
-        n_cards = len(player.hand.cards)
+        n_cards = len(player.hand.cards) - 1
         msg = self.game.assign_player_pick(player_id, randrange(0, n_cards))
         return msg
 
     def display_points(self):
         """Displays points for all players"""
-        rows = ['{:<40}: {} diddles this game ({} overall)'.format(
-            player.display_name, player.points,
-            sum(player.final_scores)) for player in self.game.players.player_list]
 
-        self.message_grp('```Current Scores\n{}'.format('\n'.join(rows)))
+        if self.game is None:
+            plist = self.players.player_list
+        else:
+            plist = self.game.players.player_list
+
+        points_df = pd.DataFrame()
+        for player in plist:
+            row = {
+                'name': player.display_name,
+                'diddles': player.points,
+                'overall': player.get_grand_score()
+            }
+            points_df = points_df.append(pd.DataFrame(row, index=[0]))
+
+        points_df = points_df.reset_index(drop=True)
+        # Apply fun emojis
+        points_df['points_rank'] = points_df.diddles.rank(method='max', ascending=False)
+        first_place = points_df['points_rank'].min()
+        second_place = first_place + 1
+        third_place = second_place + 1
+
+        points_df.loc[points_df.points_rank == first_place, 'rank'] = ':first_place_medal:'
+        points_df.loc[points_df.points_rank == second_place, 'rank'] = ':second_place_medal:'
+        points_df.loc[points_df.points_rank == third_place, 'rank'] = ':third_place_medal:'
+        points_df.loc[points_df.points_rank > third_place, 'rank'] = ':poop_ugh:'
+
+        # Set order of the columns
+        points_df = points_df[['rank', 'name', 'diddles', 'overall']]
+        points_df['overall'] = points_df['diddles'] + points_df['overall']
+
+        scores_list = []
+        for i, r in points_df.iterrows():
+            line = '{} {:.<30}{} diddles ({} overall)'.format(r['rank'], r['name'], r['diddles'], r['overall'])
+            scores_list.append(line)
+
+        self.message_grp('*Current Scores*:\n{}'.format('\n'.join(scores_list)))
 
     def display_status(self):
-        """Displays points for all players"""
+        """Displays status of the game"""
 
-        status_list = ['current game status: `{status}`']
+        if self.game is None:
+            self.message_grp('I just stahted this wicked pissa game, go grab me some dunkies.')
+            return None
 
-        try:
-            self.game.
-            num_white = len(self.gameself.game_dict['remaining_white'])
-            num_black = len(self.game_dict['remaining_black'])
-        except KeyError:
-            # No cards, no game
-            num_white, num_black = None, None
+        status_list = [
+            'current game status: `{}`'.format(self.game.status),
+        ]
 
-        if 'player_names' in self.game_dict.keys():
-            status_list.append('players: `{player_names}`')
-        if 'judge' in self.game_dict.keys():
-            status_list.append('judge: `{}`'.format(self.game_dict['judge']['display_name']))
-        if self.game_dict['status'] in ['players_decision', 'judge_decision']:
-            status_list.append('current q: `{current_black}`'.format(**self.game_dict))
-            status_list.append('awaiting pickles: `{}`'.format(', '.join(
-                [x['display_name'] for x in self.game_dict['players'] if 'pick' not in x.keys() and
-                 x['id'] != self.game_dict['judge']['id']])))
-        if all([x is not None for x in [num_white, num_black]]):
+        if self.game.status not in [self.game.gs.ended, self.game.gs.stahted]:
             status_list += [
-                'remaining white cards: `{}`'.format(num_white),
-                'remaining black cards: `{}`'.format(num_black),
+                'players this game: {}'.format(','.join(['`{}`'.format(x.display_name)
+                                                         for x in self.game.players.player_list])),
+                'current judge: `{}`'.format(self.game.judge.display_name),
+                'current round: `{}`'.format(self.game.rounds),
+                'remaining black cards: `{}`'.format(len(self.game.deck.questions_card_list)),
+                'remaining white cards: `{}`'.format(len(self.game.deck.answers_card_list)),
             ]
 
-        status_message = '\n'.join(status_list).format(**self.game_dict)
+        if self.game.status in [self.game.gs.players_decision, self.game.gs.judge_decision]:
+            status_list += [
+                'current q: `{}`'.format(self.game.current_question_card),
+                'awaiting pickles: {}'.format(
+                    ','.join(['`{}`'.format(x.display_name) for x in self.game.players.player_list
+                              if x.pick is None and x.player_id != self.game.judge.player_id])),
+            ]
+
+        status_message = '\n'.join(status_list)
         self.message_grp(status_message)

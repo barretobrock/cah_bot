@@ -6,11 +6,15 @@ from .cards import Hand
 
 class Players:
     """Methods for handling all players"""
-    def __init__(self, player_list):
+    def __init__(self, player_list, origin='channel'):
         """
         :param player_list: list of dict, players in channel
         """
-        self.player_list = self.load_players_in_channel(player_list)
+        if origin == 'channel':
+            self.player_list = self.load_players_in_channel(player_list)
+        else:
+            # Already built Player objects, likely loading into a game
+            self.player_list = player_list
         self.eligible_players = None
 
     def load_players_in_channel(self, player_list, refresh=False):
@@ -35,6 +39,10 @@ class Players:
         """Collect user ids from a list of players"""
         return [x.player_id for x in self.player_list]
 
+    def get_player_names(self):
+        """Returns player display names"""
+        return [x.display_name for x in self.player_list]
+
     def get_player_index_by_id(self, player_id):
         """Returns the index of a player in a list of players that has a matching 'id' value"""
         matches = [x for x in self.player_list if x.player_id == player_id]
@@ -42,9 +50,23 @@ class Players:
             return self.player_list.index(matches[0])
         return None
 
+    def get_player_index_by_tag(self, player_tag):
+        """Returns the index of a player in a list of players that has a matching 'id' value"""
+        matches = [x for x in self.player_list if x.player_tag == player_tag]
+        if len(matches) > 0:
+            return self.player_list.index(matches[0])
+        return None
+
     def get_player_by_id(self, player_id):
-        """Returns a dictionary of player info that has a matching 'id' value in a list of player dicts"""
+        """Returns a Player object that has a matching 'id' value in a list of players"""
         player_idx = self.get_player_index_by_id(player_id)
+        if player_idx is not None:
+            return self.player_list[player_idx]
+        return None
+
+    def get_player_by_tag(self, tag):
+        """Returns a Player object that has a matching tag (e.g., '<@{id}>') in a list of players"""
+        player_idx = self.get_player_index_by_tag(tag)
         if player_idx is not None:
             return self.player_list[player_idx]
         return None
