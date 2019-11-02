@@ -42,7 +42,7 @@ Hi! I'm Wizzy and I help you play shitty games!
 class CAHBot:
     """Bot for playing Cards Against Humanity on Slack"""
 
-    def __init__(self, log, debug=True):
+    def __init__(self, log, debug=False):
         self.log = log
         self.bot_name = 'Wizzy'
         self.triggers = ['cah', 'c!']
