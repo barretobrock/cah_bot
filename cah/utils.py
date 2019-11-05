@@ -308,7 +308,10 @@ class CAHBot:
         for player in self.game.players.player_list:
             if player.player_id != self.game.judge.player_id:
                 if player.dm_cards:
-                    self.st.private_message(player.player_id, player.hand.render_hand())
+                    question = 'Current Question:\n`{}`'.format(self.game.current_question_card)
+                    cards_msg = player.hand.render_hand()
+                    msg_txt = '{}\nYour cards:\n{}'.format(question, cards_msg)
+                    self.st.private_message(player.player_id, msg_txt)
                 self.st.private_channel_message(player.player_id, self.channel_id, player.hand.render_hand())
 
     def process_picks(self, user, message, is_random=False):
