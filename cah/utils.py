@@ -288,7 +288,7 @@ class CAHBot:
             cards_msg = player.hand.render_hand()
             msg_txt = '{}\nYour cards:\n{}'.format(question, cards_msg)
         else:
-            msg_txt = "The game's current status doesn't allow for card DMing"
+            msg_txt = "The game's current status (`{}`) doesn't allow for card DMing".format(self.game.status)
         self.st.private_message(player.player_id, msg_txt)
 
     def new_round(self, notifications=None):
@@ -304,6 +304,8 @@ class CAHBot:
         self.st.private_channel_message(self.game.judge.player_id, self.channel_id, "You're the judge this round!")
         for player in self.game.players.player_list:
             if player.player_id != self.game.judge.player_id:
+                if player.dm_cards:
+                    self.st.private_message(player.player_id, player.hand.render_hand())
                 self.st.private_channel_message(player.player_id, self.channel_id, player.hand.render_hand())
 
     def process_picks(self, user, message, is_random=False):
@@ -494,10 +496,10 @@ class CAHBot:
             first_place = points_df['points_rank'].min()
             second_place = first_place + 1
             third_place = second_place + 1
-
-            points_df.loc[points_df.points_rank == first_place, 'rank'] = ':first_place_medal:'
-            points_df.loc[points_df.points_rank == second_place, 'rank'] = ':second_place_medal:'
-            points_df.loc[points_df.points_rank == third_place, 'rank'] = ':third_place_medal:'
+            is_zero = (points_df.diddles == 0)
+            points_df.loc[points_df.points_rank == first_place & ~is_zero, 'rank'] = ':first_place_medal:'
+            points_df.loc[points_df.points_rank == second_place & ~is_zero, 'rank'] = ':second_place_medal:'
+            points_df.loc[points_df.points_rank == third_place & ~is_zero, 'rank'] = ':third_place_medal:'
 
         # Set order of the columns
         points_df = points_df[['rank', 'name', 'diddles', 'overall']]
