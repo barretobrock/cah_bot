@@ -29,6 +29,10 @@ class Players:
                     player = self.get_player_by_id(p['id'])
                     # Ensure the display_name is up to date
                     player.display_name = p['display_name']
+                    # Reset basic info
+                    player.skip = False
+                    player.pick = None
+                    player.hand = Hand()
         else:
             plist = []
             for p in player_list:
