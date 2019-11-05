@@ -8,7 +8,7 @@ import traceback
 import pandas as pd
 from random import randrange
 from slacktools import SlackTools, GracefulKiller
-from kavalkilu import Keys, Paths
+from kavalkilu import Keys
 from .cards import Decks
 from .players import Players
 from .games import Game
@@ -62,7 +62,7 @@ class CAHBot:
         self.decks = Decks(self.st.read_in_sheets(self.cah_gsheet))
         self.players = Players(self._build_players())
         self.game = None
-        self.score_path = os.path.join(Paths().data_dir, 'scores.json')
+        self.score_path = os.path.join(os.path.abspath('/home/bobrock/data'), 'scores.json')
         self.read_score()
 
     def run_rtm(self, startup_msg, terminated_msg):
@@ -107,7 +107,7 @@ class CAHBot:
         elif message.startswith('choose') or message.split()[0] == 'c':
             self.choose_card(user, message)
         elif message.startswith('randpick'):
-            response = self.random_pick(user, message)
+            self.process_picks(user, message, is_random=True)
         elif message in ['points', 'score', 'scores']:
             self.display_points()
         elif message == 'toggle jping':
@@ -306,7 +306,7 @@ class CAHBot:
             if player.player_id != self.game.judge.player_id:
                 self.st.private_channel_message(player.player_id, self.channel_id, player.hand.render_hand())
 
-    def process_picks(self, user, message):
+    def process_picks(self, user, message, is_random=False):
         """Processes the card selection made by the user"""
         if self.game is None:
             self.message_grp('Start a game first, then tell me to do that.')
@@ -317,13 +317,35 @@ class CAHBot:
             self.message_grp('<@{}> You cannot make selections '
                              'in the current status of this game: `{}`.'.format(user, self.game.status))
             return None
-        # Process the message
-        pick = self._get_pick(user, message, pick_idx=1)
+
+        if is_random:
+            pick = None
+            # Randomly assign a pick to the user based on size of hand
+            msg_split = message.split()
+            player_id = player = None
+            if message == 'randpick':
+                # Pick random for user
+                player_id = user
+                player = self.game.players.get_player_by_id(player_id)
+            elif len(msg_split) > 1:
+                ptag = msg_split[1].upper()
+                # Player mentioned
+                player = self.game.players.get_player_by_tag(ptag)
+                if player is None:
+                    self.message_grp('Player id not found: `{}`'.format(ptag))
+                else:
+                    user = player.player_id
+            if player is not None:
+                n_cards = len(player.hand.cards)
+                pick = randrange(0, n_cards)
+        else:
+            # Process the pick from the message
+            pick = self._get_pick(user, message, pick_idx=1)
         if pick is None:
-            self.message_grp('<@{}> I wasn\'t able to parse your pick.'.format(user))
             return None
         elif pick > self.game.DECK_SIZE - 1 or pick < 0:
-            self.message_grp('<@{}> I think you picked outside the range of suggestions: `{}`.'.format(user, pick + 1))
+            self.message_grp('<@{}> I think you picked outside '
+                             'the range of suggestions: `{}`.'.format(user, pick + 1))
             return None
         messages = [self.game.assign_player_pick(user, pick)]
 
@@ -339,7 +361,7 @@ class CAHBot:
             self.game.status = self.game.gs.judge_decision
             self._display_picks()
         else:
-            messages.append('{} players remaining to decide: {}'.format(len(remaining), ', '.join(remaining)))
+            messages.append('`{}` players remaining to decide: {}'.format(len(remaining), ', '.join(remaining)))
         self.message_grp('\n'.join(messages))
 
     def _get_pick(self, user, message, pick_idx):
@@ -351,9 +373,9 @@ class CAHBot:
                 pick = int(msg_split[pick_idx])
                 return pick - 1
             else:
-                self.message_grp("<@{}> - I didn't understand your pick: {}".format(user, message))
+                self.message_grp("<@{}> - I didn't understand your pick: `{}`".format(user, message))
         else:
-            self.message_grp("<@{}> - I didn't understand your pick: {}".format(user, message))
+            self.message_grp("<@{}> - I didn't understand your pick: `{}`".format(user, message))
         return None
 
     def _display_picks(self):
@@ -440,36 +462,6 @@ class CAHBot:
             self.players.update_player(player)
         self.message_grp('All scores have been erased.')
 
-    def random_pick(self, user, message):
-        """Randomly picks a card for a certain player"""
-        if self.game is None:
-            self.message_grp('Start a game first, then tell me to do that.')
-            return None
-
-        if self.game.status != self.game.gs.players_decision:
-            # Prevent this method from being called outside of the player's decision stage
-            self.message_grp('<@{}> You cannot make selections '
-                             'in the current status of this game: `{}`.'.format(user, self.game.status))
-            return None
-
-        msg_split = message.split()
-        player_id = None
-        if message == 'randompick':
-            # Pick random for user
-            player_id = user
-        elif len(msg_split) > 1:
-            # Player mentioned
-            player = self.game.players.get_player_by_tag(msg_split[1])
-            if player is None:
-                return 'Player id not found: `{}`'.format(msg_split[1])
-        else:
-            return 'Didn\'t understand the syntax for this message: `{}`.'.format(message)
-
-        player = self.game.players.get_player_by_id(player_id)
-        n_cards = len(player.hand.cards) - 1
-        msg = self.game.assign_player_pick(player_id, randrange(0, n_cards))
-        return msg
-
     def display_points(self):
         """Displays points for all players"""
 
@@ -502,10 +494,11 @@ class CAHBot:
         # Set order of the columns
         points_df = points_df[['rank', 'name', 'diddles', 'overall']]
         points_df['overall'] = points_df['diddles'] + points_df['overall']
+        points_df = points_df.sort_values('diddles', ascending=False)
 
         scores_list = []
         for i, r in points_df.iterrows():
-            line = '{} {:.<30}{} diddles ({} overall)'.format(r['rank'], r['name'], r['diddles'], r['overall'])
+            line = '{} `{:.<30}` {} diddles ({} overall)'.format(r['rank'], r['name'], r['diddles'], r['overall'])
             scores_list.append(line)
 
         self.message_grp('*Current Scores*:\n{}'.format('\n'.join(scores_list)))
@@ -535,8 +528,7 @@ class CAHBot:
             status_list += [
                 'current q: `{}`'.format(self.game.current_question_card),
                 'awaiting pickles: {}'.format(
-                    ','.join(['`{}`'.format(x.display_name) for x in self.game.players.player_list
-                              if x.pick is None and x.player_id != self.game.judge.player_id])),
+                    ','.join(['`{}`'.format(x.display_name) for x in self.game.players_left_to_decide()])),
             ]
 
         status_message = '\n'.join(status_list)
