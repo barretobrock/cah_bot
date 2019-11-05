@@ -261,16 +261,19 @@ class CAHBot:
     def toggle_card_dm(self, user_id):
         """Toggles card dming"""
         if self.game is None:
-            self.message_grp('Start a game first, then tell me to do that.')
-            return None
-
-        player = self.game.players.get_player_by_id(user_id)
+            # Set the player object outside of the game
+            player = self.players.get_player_by_id(user_id)
+        else:
+            player = self.game.players.get_player_by_id(user_id)
         player.dm_cards = not player.dm_cards
         self.message_grp('Card DMing for player `{}` set to `{}`'.format(player.display_name, player.dm_cards))
-        # Send cards to user if the status shows we're currently in a game
-        if self.game.status == self.game.gs.players_decision and player.dm_cards:
-            self.dm_cards_now(user_id)
-        self.game.players.update_player(player)
+        if self.game is not None:
+            # Send cards to user if the status shows we're currently in a game
+            if self.game.status == self.game.gs.players_decision and player.dm_cards:
+                self.dm_cards_now(user_id)
+            self.game.players.update_player(player)
+        else:
+            self.players.update_player(player)
 
     def dm_cards_now(self, user_id):
         """DMs current card set to user"""
