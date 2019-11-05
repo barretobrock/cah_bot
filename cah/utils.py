@@ -481,15 +481,23 @@ class CAHBot:
 
         points_df = points_df.reset_index(drop=True)
         # Apply fun emojis
-        points_df['points_rank'] = points_df.diddles.rank(method='max', ascending=False)
-        first_place = points_df['points_rank'].min()
-        second_place = first_place + 1
-        third_place = second_place + 1
+        poops = ['poop_wtf', 'poop', 'poop_ugh', 'poop_tugh', 'poopfire', 'poopstar']
 
-        points_df.loc[points_df.points_rank == first_place, 'rank'] = ':first_place_medal:'
-        points_df.loc[points_df.points_rank == second_place, 'rank'] = ':second_place_medal:'
-        points_df.loc[points_df.points_rank == third_place, 'rank'] = ':third_place_medal:'
-        points_df.loc[points_df.points_rank > third_place, 'rank'] = ':poop_ugh:'
+        if points_df['diddles'].sum() == 0:
+            points_df.loc[:, 'rank'] = [':{}:'.format(poops[randrange(0, len(poops))]) for x in
+                                        range(points_df.shape[0])]
+        else:
+            # Start off with the basics
+            points_df.loc[:, 'rank'] = [':{}:'.format(poops[randrange(0, len(poops))]) for x in
+                                        range(points_df.shape[0])]
+            points_df['points_rank'] = points_df.diddles.rank(method='dense', ascending=False)
+            first_place = points_df['points_rank'].min()
+            second_place = first_place + 1
+            third_place = second_place + 1
+
+            points_df.loc[points_df.points_rank == first_place, 'rank'] = ':first_place_medal:'
+            points_df.loc[points_df.points_rank == second_place, 'rank'] = ':second_place_medal:'
+            points_df.loc[points_df.points_rank == third_place, 'rank'] = ':third_place_medal:'
 
         # Set order of the columns
         points_df = points_df[['rank', 'name', 'diddles', 'overall']]
@@ -528,7 +536,7 @@ class CAHBot:
             status_list += [
                 'current q: `{}`'.format(self.game.current_question_card),
                 'awaiting pickles: {}'.format(
-                    ','.join(['`{}`'.format(x.display_name) for x in self.game.players_left_to_decide()])),
+                    ','.join(['`{}`'.format(x) for x in self.game.players_left_to_decide()])),
             ]
 
         status_message = '\n'.join(status_list)
