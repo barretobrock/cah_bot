@@ -503,9 +503,9 @@ class CAHBot:
             second_place = first_place + 1
             third_place = second_place + 1
             is_zero = (points_df.diddles == 0)
-            points_df.loc[points_df.points_rank == first_place & ~is_zero, 'rank'] = ':first_place_medal:'
-            points_df.loc[points_df.points_rank == second_place & ~is_zero, 'rank'] = ':second_place_medal:'
-            points_df.loc[points_df.points_rank == third_place & ~is_zero, 'rank'] = ':third_place_medal:'
+            points_df.loc[(points_df.points_rank == first_place) & (~is_zero), 'rank'] = ':first_place_medal:'
+            points_df.loc[(points_df.points_rank == second_place) & (~is_zero), 'rank'] = ':second_place_medal:'
+            points_df.loc[(points_df.points_rank == third_place) & (~is_zero), 'rank'] = ':third_place_medal:'
 
         # Set order of the columns
         points_df = points_df[['rank', 'name', 'diddles', 'overall']]
