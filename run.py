@@ -8,7 +8,7 @@ from kavalkilu import Log, LogArgParser
 # Initiate logging
 log = Log('cah', log_lvl=LogArgParser().loglvl)
 
-cbot = cah.CAHBot(log)
+cbot = cah.CAHBot(log.log_name, debug=False)
 try:
     info_dict = {
         'bot': 'CAH bot',

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from datetime import datetime
 from random import shuffle
 from .players import Players
 
@@ -28,12 +29,15 @@ class GameStatus:
 
 class Game:
     """Holds data for current game"""
-    def __init__(self, players, deck):
+    def __init__(self, players, deck, trigger_msg):
         self.players = Players(players, origin='prebuilt')
         shuffle(self.players.player_list)
         self.judge_order = self.get_judge_order()
         self.judge = self.players.player_list[0]
         self.prev_judge = None
+        self.game_start_time = self.round_start_time = datetime.now()
+        # Used to start up a similar game in case of this game failing
+        self.trigger_msg = trigger_msg
         # Starting number of cards for each player
         self.DECK_SIZE = 5
         self.deck = deck
@@ -103,6 +107,7 @@ class Game:
         self.current_question_card = self.deck.deal_question_card()
         notifications.append("Q: `{}`".format(self.current_question_card.txt))
 
+        self.round_start_time = datetime.now()
         return notifications
 
     def end_game(self):
@@ -111,6 +116,7 @@ class Game:
         # Save game scores
         for player in self.players.player_list:
             player.final_scores.append(player.points)
+            player.points = 0
             self.players.update_player(player)
 
     def get_next_judge(self):

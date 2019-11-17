@@ -4,11 +4,14 @@ import os
 import re
 import json
 import time
+import logging
 import traceback
 import pandas as pd
 from random import randrange
+from datetime import datetime
+from dateutil.relativedelta import relativedelta as reldelta
 from slacktools import SlackTools, GracefulKiller
-from kavalkilu import Keys
+from kavalkilu import Keys, Log, DateTools
 from .cards import Decks
 from .players import Players
 from .games import Game
@@ -42,14 +45,18 @@ Hi! I'm Wizzy and I help you play shitty games!
 class CAHBot:
     """Bot for playing Cards Against Humanity on Slack"""
 
-    def __init__(self, log, debug=False):
-        self.log = log
+    def __init__(self, log_name, debug=False):
+        """
+        :param log_name: str, name of the log to retrieve
+        :param debug: bool,
+        """
+        self.log = Log(log_name, child_name='brain')
         self.bot_name = 'Wizzy'
         self.triggers = ['cah', 'c!']
         self.channel_id = 'CMPV3K8AE' if not debug else 'CQ1DG4WB1'  # cah or cah-test
         # Read in common tools for interacting with Slack's API
         k = Keys()
-        self.st = SlackTools(self.log, triggers=self.triggers, team=k.get_key('okr-name'),
+        self.st = SlackTools(self.log.log_name, triggers=self.triggers, team=k.get_key('okr-name'),
                              xoxp_token=k.get_key('wizzy-token'), xoxb_token=k.get_key('wizzy-bot-user-token'))
         # Two types of API interaction: bot-level, user-level
         self.bot = self.st.bot
@@ -62,8 +69,18 @@ class CAHBot:
         self.decks = Decks(self.st.read_in_sheets(self.cah_gsheet))
         self.players = Players(self._build_players())
         self.game = None
+        self.dt = DateTools()
         self.score_path = os.path.join(os.path.abspath('/home/bobrock/data'), 'scores.json')
-        self.read_score()
+        game_info = self.read_score()
+        if game_info is not None:
+            # Previous game was run and probably shut down improperly
+            # Start new game, populate the rounds and start times
+            if all([x in game_info.keys() for x in ['trigger_msg', 'game_start', 'round_start']]):
+                self.message_grp('Previous game instance detected. Setting round and elapsed times back')
+                self.new_game(game_info['trigger_msg'])
+                self.game.rounds = game_info['round']
+                self.game.game_start_time = datetime.strptime(game_info['game_start'], '%Y-%m-%d %H:%M:%S')
+                self.game.round_start_time = datetime.strptime(game_info['round_start'], '%Y-%m-%d %H:%M:%S')
 
     def run_rtm(self, startup_msg, terminated_msg):
         """Initiate real-time messaging"""
@@ -243,11 +260,11 @@ class CAHBot:
 
         # Set eligible players, set the game, add players, shuffle the players
         self.players.set_eligible_players()
-        self.game = Game(self.players.eligible_players, deck)
+        self.game = Game(self.players.eligible_players, deck, trigger_msg=message)
         # Get order of judges
         response_list.append(self.game.judge_order)
         # Kick off the new round, message details to the group
-        self.new_round(notifications=response_list)
+        self.new_round(notifications=response_list, save=False)
 
     def toggle_judge_ping(self):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
@@ -294,10 +311,18 @@ class CAHBot:
             msg_txt = "The game's current status (`{}`) doesn't allow for card DMing".format(self.game.status)
         self.st.private_message(player.player_id, msg_txt)
 
-    def new_round(self, notifications=None):
+    def new_round(self, notifications=None, save=True):
         """Starts a new round
         :param notifications: list of str, notifications to be bundled together and posted to the group
+        :param save: bool, save the points of the previous round
         """
+        if save:
+            # Preserve points of last round
+            self.save_score()
+
+        # Refresh the players' names, get response from build function
+        self.players.load_players_in_channel(self._build_players(), refresh=True)
+
         if notifications is None:
             notifications = []
         notifications += self.game.new_round()
@@ -442,9 +467,20 @@ class CAHBot:
 
     def save_score(self):
         """Saves the score to directory"""
-        scores_dict = {}
+        # First, save general game stats
+        scores_dict = {
+            'game': {
+                'round': self.game.rounds,
+                'game_start': self.game.game_start_time.strftime('%F %T'),
+                'round_start': self.game.round_start_time.strftime('%F %T'),
+                'trigger_msg': self.game.trigger_msg
+            }
+        }
         for player in self.game.players.player_list:
-            scores_dict[player.player_id] = player.final_scores
+            scores_dict[player.player_id] = {
+                'current': player.points,
+                'final': player.final_scores
+            }
         with open(self.score_path, 'w') as f:
             f.write(json.dumps(scores_dict))
 
@@ -452,21 +488,39 @@ class CAHBot:
         """Reads in score from directory"""
         if os.path.exists(self.score_path):
             with open(self.score_path, 'r') as f:
-                scores_dict = json.loads(f.read())
-            for player_id, score_list in scores_dict.items():
+                contents = f.read()
+                if contents.replace(' ', '') != '':
+                    scores_dict = json.loads(contents)
+                else:
+                    self.message_grp('Scores file was empty. No scores will be updated.')
+                    return None
+            # Extract previous game's info
+            game_info = scores_dict.pop('game', None)
+
+            for player_id, score_dict in scores_dict.items():
                 player = self.players.get_player_by_id(player_id)
-                player.final_scores = score_list
+                try:
+                    player.points = score_dict['current']
+                    player.final_scores = score_dict['final']
+                except KeyError:
+                    player.points = 0
+                    player.final_scores = list()
+
                 self.players.update_player(player)
+            return game_info
+        return None
 
     def wipe_score(self):
         """Resets all player's score history"""
         for player in self.game.players.player_list:
             # For in the current game
             player.final_scores = list()
+            player.points = 0
             self.game.players.update_player(player)
         for player in self.players.player_list:
             # For in the whole channel
             player.final_scores = list()
+            player.points = 0
             self.players.update_player(player)
         self.message_grp('All scores have been erased.')
 
@@ -514,10 +568,16 @@ class CAHBot:
 
         scores_list = []
         for i, r in points_df.iterrows():
-            line = '{} `{:.<30}` {} diddles ({} overall)'.format(r['rank'], r['name'], r['diddles'], r['overall'])
+            line = '{} `{:.<30}` {} diddles ({} overall)'.format(r['rank'], r['name'][:20],
+                                                                 r['diddles'], r['overall'])
             scores_list.append(line)
 
         self.message_grp('*Current Scores*:\n{}'.format('\n'.join(scores_list)))
+
+    def get_time_elapsed(self, st_dt):
+        """Gets elapsed time between two datetimes"""
+        datediff = reldelta(datetime.now(), st_dt)
+        return self.dt.human_readable(datediff)
 
     def display_status(self):
         """Displays status of the game"""
@@ -536,8 +596,10 @@ class CAHBot:
                                                          for x in self.game.players.player_list])),
                 'current judge: `{}`'.format(self.game.judge.display_name),
                 'current round: `{}`'.format(self.game.rounds),
+                'elapsed round time: `{}`'.format(self.get_time_elapsed(self.game.round_start_time)),
                 'remaining black cards: `{}`'.format(len(self.game.deck.questions_card_list)),
                 'remaining white cards: `{}`'.format(len(self.game.deck.answers_card_list)),
+                'elapsed game time: `{}`'.format(self.get_time_elapsed(self.game.game_start_time)),
             ]
 
         if self.game.status in [self.game.gs.players_decision, self.game.gs.judge_decision]:
