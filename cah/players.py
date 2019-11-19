@@ -17,7 +17,7 @@ class Players:
             self.player_list = player_list
         self.eligible_players = None
 
-    def load_players_in_channel(self, player_list, refresh=False):
+    def load_players_in_channel(self, player_list, refresh=False, names_only=False):
         """Loads all the human players in the channel from a list of dicts containing channel member info"""
         if refresh:
             # Check if someone hasn't yet been added, but preserve other players' details
@@ -29,10 +29,11 @@ class Players:
                     player = self.get_player_by_id(p['id'])
                     # Ensure the display_name is up to date
                     player.display_name = p['display_name']
-                    # Reset basic info
-                    player.skip = False
-                    player.pick = None
-                    player.hand = Hand()
+                    if not names_only:
+                        # Reset basic info
+                        player.skip = False
+                        player.pick = None
+                        player.hand = Hand()
         else:
             plist = []
             for p in player_list:

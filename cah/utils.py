@@ -321,7 +321,7 @@ class CAHBot:
             self.save_score()
 
         # Refresh the players' names, get response from build function
-        self.players.load_players_in_channel(self._build_players(), refresh=True)
+        self.players.load_players_in_channel(self._build_players(), refresh=True, names_only=True)
 
         if notifications is None:
             notifications = []
