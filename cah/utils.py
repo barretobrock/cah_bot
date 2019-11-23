@@ -476,9 +476,8 @@ class CAHBot:
                 # chosen_cards = self.game_dict['chosen_cards']
                 winner.points += 1
                 self.game.players.update_player(winner)
-                self.message_grp("Winning card: `{}`\n\t`{}`, "
-                                 "new score: *{}* diddles ({} total)".format(
-                    winner.hand.pick.txt, winner.display_name, winner.points,
+                self.message_grp("Winning card: `{}`\n\t`{}`, new score: *{}* diddles ({} total)".format(
+                    ','.join([x.txt for x in winner.hand.picks]), winner.display_name, winner.points,
                     winner.get_grand_score() + winner.points))
                 self.game.status = self.game.gs.end_round
                 self.message_grp('Round ended.')

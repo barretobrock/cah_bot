@@ -99,17 +99,23 @@ class Deck:
         self.questions_card_list = list()
         # Read in cards to deck
         # First read in questions
+        # This is used to ensure no duplicate questions
+        question_list = []
         for row in df.iterrows():
             question = row['questions']
+            if question in question_list:
+                continue
             if question != '' or not pd.isnull(question):
                 if 'req' in row.columns:
                     # Get count of required questions
                     no_req_qs = row['req']
                     if no_req_qs.is_numeric():
                         self.questions_card_list.append(QuestionCard(question, req_answers=int(no_req_qs)))
+                        question_list.append(question)
                 else:
                     # No required number of answers. Try to estimate it
                     self.questions_card_list.append(QuestionCard(question))
+                    question_list.append(question)
 
         # Read in answers
         a_card_list = df.loc[(~df['answers'].isnull()) & (df['answers'] != ''), 'answers'].unique().tolist()
