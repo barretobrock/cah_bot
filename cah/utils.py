@@ -7,6 +7,7 @@ import time
 import logging
 import traceback
 import pandas as pd
+import numpy as np
 from random import randrange
 from datetime import datetime
 from dateutil.relativedelta import relativedelta as reldelta
@@ -35,10 +36,10 @@ Hi! I'm Wizzy and I help you play shitty games!
  - `refresh sheets`: refreshes the GSheets that contain the card sets. Can only be done outside a game.
  - `show link`: shows the link to the GSheets where Wizzy reads in cards. helpful if you want to contribute
 *Card selection*:
- - `(p|pick) <card-index>`: pick your card for the round (index starts at 1)
+ - `(p|pick) <card-num>[<next-card>]`: pick your card for the round (index starts at 1, cards in order)
  - `randpick [<@other_player>]`: randomly select your card when you just can't decide
 *Judge-only commands*:
- - `(c|choose) <card-index>`: used when selecting the :q:best:q: card from picks (index starts at 1)
+ - `(c|choose) <index>`: used when selecting the :q:best:q: card from picks (index starts at 1)
 """
 
 
@@ -66,7 +67,10 @@ class CAHBot:
 
         # For storing game info
         self.cah_gsheet = k.get_key('cah_sheet')
-        self.decks = Decks(self.st.read_in_sheets(self.cah_gsheet))
+        # Read in decks
+        self.decks = None
+        self.refresh_sheets()
+        # Build out players
         self.players = Players(self._build_players())
         self.game = None
         self.dt = DateTools()
@@ -139,13 +143,13 @@ class CAHBot:
             self.display_status()
         elif message == 'refresh sheets':
             if self.game is None:
-                self.st.read_in_sheets(self.cah_gsheet)
-                response = 'Sheets have been refreshed!'
+                self.refresh_sheets()
+                response = 'Sheets have been refreshed! New decks: {}'.format(','.join(self.decks.deck_names))
             elif self.game.status not in [self.game.gs.stahted, self.game.gs.ended]:
                 response = 'Please end the game before refreshing. THANKSSSS :))))))'
             else:
-                self.st.read_in_sheets(self.cah_gsheet)
-                response = 'Sheets have been refreshed!'
+                self.refresh_sheets()
+                response = 'Sheets have been refreshed! New decks: {}'.format(','.join(self.decks.deck_names))
         elif message != '':
             response = "I didn't understand this: `{}`\n " \
                        "Use `cah help` to get a list of my commands.".format(message)
@@ -352,7 +356,7 @@ class CAHBot:
             return None
 
         if is_random:
-            pick = None
+            picks = None
             # Randomly assign a pick to the user based on size of hand
             msg_split = message.split()
             player_id = player = None
@@ -370,17 +374,18 @@ class CAHBot:
                     user = player.player_id
             if player is not None:
                 n_cards = len(player.hand.cards)
-                pick = randrange(0, n_cards)
+                req_ans = self.game.current_question_card.required_answers
+                picks = np.random.choice(n_cards, req_ans, False).tolist()
         else:
             # Process the pick from the message
-            pick = self._get_pick(user, message, pick_idx=1)
-        if pick is None:
+            picks = self._get_pick(user, message)
+        if picks is None:
             return None
-        elif pick > self.game.DECK_SIZE - 1 or pick < 0:
+        elif any([x > self.game.DECK_SIZE - 1 or x < 0 for x in picks]):
             self.message_grp('<@{}> I think you picked outside '
-                             'the range of suggestions: `{}`.'.format(user, pick + 1))
+                             'the range of suggestions: `{}`.'.format(user, ','.join([x - 1 for x in picks])))
             return None
-        messages = [self.game.assign_player_pick(user, pick)]
+        messages = [self.game.assign_player_pick(user, picks)]
 
         # See who else has yet to decide
         remaining = self.game.players_left_to_decide()
@@ -397,18 +402,46 @@ class CAHBot:
             messages.append('`{}` players remaining to decide: {}'.format(len(remaining), ', '.join(remaining)))
         self.message_grp('\n'.join(messages))
 
-    def _get_pick(self, user, message, pick_idx):
+    def _get_pick(self, user, message, judge_decide=False):
         """Processes a number from a message"""
+
+        def isolate_pick(pick_txt):
+            if ',' in pick_txt:
+                return [int(x) for x in pick_txt.split(',') if x.isnumeric()]
+            elif pick_txt.isnumeric():
+                return [int(x) for x in list(pick_txt)]
+            return None
+
         # Process the message
         msg_split = message.split()
-        if len(msg_split) > 1:
-            if msg_split[pick_idx].isnumeric():
-                pick = int(msg_split[pick_idx])
-                return pick - 1
+        picks = None
+        if len(msg_split) == 2:
+            # Our pick was something like 'pick 4', 'pick 42' or 'pick 3,2'
+            pick_part = msg_split[1]
+            picks = isolate_pick(pick_part)
+        elif len(msg_split) > 2:
+            # Our pick was something like 'pick 4 2' or 'pick 3, 2'
+            pick_part = ''.join(msg_split[1:])
+            picks = isolate_pick(pick_part)
+
+        if picks is None:
+            self.message_grp('<@{}> - I didn\'t understand your pick. You entered: `{}` \n'
+                             'Try something like `p 12` or `pick 2`'.format(user, message))
+        elif judge_decide:
+            if len(picks) == 1:
+                # Expected number of picks for judge
+                return picks[0] - 1
             else:
-                self.message_grp("<@{}> - I didn't understand your pick: `{}`".format(user, message))
+                self.message_grp('<@{}> - You\'re the judge. You should be choosing only one set. Try again!')
         else:
-            self.message_grp("<@{}> - I didn't understand your pick: `{}`".format(user, message))
+            # Confirm that the number of picks matches the required number of answers
+            req_ans = self.game.current_question_card.required_answers
+            if len(set(picks)) == req_ans:
+                # Set picks to 0-based index and send onward
+                return [x - 1 for x in picks]
+            else:
+                self.message_grp('<@{}> - You chose {} things, but the '
+                                 'current question requires {}.'.format(user, len(picks), req_ans))
         return None
 
     def _display_picks(self):
@@ -427,7 +460,7 @@ class CAHBot:
             return None
 
         if user == self.game.judge.player_id:
-            pick = self._get_pick(user, message, pick_idx=1)
+            pick = self._get_pick(user, message, judge_decide=True)
             if pick > len(self.game.players.player_list) - 2 or pick < 0:
                 # Pick is rendered as an array index here.
                 # Pick can either be:
@@ -611,3 +644,7 @@ class CAHBot:
 
         status_message = '\n'.join(status_list)
         self.message_grp(status_message)
+
+    def refresh_sheets(self):
+        """Refreshes the GSheet containing the Q&A cards"""
+        self.decks = Decks(self.st.read_in_sheets(self.cah_gsheet))

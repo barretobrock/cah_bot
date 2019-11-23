@@ -99,7 +99,7 @@ class Game:
         self.deal_cards(num_cards)
         # Set picks back to none
         for player in self.players.player_list:
-            player.hand.pick = None
+            player.hand.picks = None
             self.players.update_player(player)
         self.status = self.gs.players_decision
 
@@ -134,7 +134,7 @@ class Game:
                 # At the first round of the game, everyone gets cards
                 self._card_dealer(player, num_cards)
             elif player.player_id != self.prev_judge.player_id:
-                # Otherwise, we'll make sure the judge
+                # Otherwise, we'll make sure the judge doesn't get dealt an extra card
                 self._card_dealer(player, num_cards)
 
     def _card_dealer(self, player_obj, num_cards):
@@ -147,14 +147,16 @@ class Game:
                 player_obj.hand.take_card(self.deck.deal_answer_card())
         self.players.update_player(player_obj)
 
-    def assign_player_pick(self, user_id, pick):
+    def assign_player_pick(self, user_id, picks):
         """Takes in an int and assigns it to the player who wrote it"""
         player = self.players.get_player_by_id(user_id)
-        successful = player.hand.pick_card(pick)
-        if successful:
+        success_list = []
+        for pick in picks:
+            success_list.append(player.hand.pick_card(pick))
+        if all(success_list):
             self.players.update_player(player)
             return '{}\'s pick has been registered.'.format(player.display_name)
-        if not successful and player.hand.pick is not None:
+        elif not all(success_list) and player.hand.picks is not None:
             return '{}\'s pick voided. You already picked.'.format(player.display_name)
         else:
             return 'Pick not registered.'
@@ -164,7 +166,7 @@ class Game:
 
         remaining = []
         for player in self.players.player_list:
-            if player.hand.pick is None and player.player_id != self.judge.player_id:
+            if player.hand.picks is None and player.player_id != self.judge.player_id:
                 remaining.append(player.display_name)
         return remaining
 
@@ -175,9 +177,9 @@ class Game:
     def display_picks(self):
         """Shows the player's picks in random order"""
 
-        picks = [{'id': player.player_id, 'pick': player.hand.pick.txt} for player in self.players.player_list
-                 if player.hand.pick is not None]
+        picks = [{'id': player.player_id, 'picks': [x.txt for x in player.hand.picks]}
+                 for player in self.players.player_list if player.hand.picks is not None]
         shuffle(picks)
         self.picks = picks
-        pick_str = '\n'.join(['`{}`: {pick}'.format(i + 1, **pick) for i, pick in enumerate(self.picks)])
+        pick_str = '\n'.join(['`{}`: {}'.format(i + 1, ','.join(picks)) for i, picks in enumerate(self.picks)])
         return pick_str

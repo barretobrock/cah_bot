@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import re
+import pandas as pd
 from random import shuffle
 
 
@@ -17,9 +18,12 @@ class QuestionCard(Card):
     """Question card"""
     card_class = 'q'
 
-    def __init__(self, txt):
+    def __init__(self, txt, req_answers=None):
         super().__init__(txt)
-        self.required_answers = self.determine_required_answers()
+        if req_answers is not None:
+            self.required_answers = req_answers
+        else:
+            self.required_answers = self.determine_required_answers()
 
     def determine_required_answers(self):
         """Determines the number of required answer cards for the question"""
@@ -51,13 +55,17 @@ class Hand:
     """Player's stack of cards"""
     def __init__(self):
         self.cards = list()
-        self.pick = None
+        self.picks = None
 
     def pick_card(self, pos):
         """Picks card at index"""
-        if -1 < pos < len(self.cards):
-            if self.pick is None:
-                self.pick = self.cards.pop(pos)
+        if all([-1 < x < len(self.cards) for x in pos]):
+            if self.picks is None:
+                # Set our picks
+                self.picks = [self.cards[x] for x in pos]
+                # Then pop out those cards from max to min
+                for p in sorted(pos, reverse=True):
+                    _ = self.cards.pop(p)
                 return True
         return False
 
@@ -88,16 +96,24 @@ class Deck:
     """Deck of question and answer cards for a game"""
     def __init__(self, name, df):
         self.name = name
-        self.questions_card_list = None
-        self.answers_card_list = None
+        self.questions_card_list = list()
         # Read in cards to deck
-        for part in ['questions', 'answers']:
-            card_list = df.loc[(~df[part].isnull()) & (df[part] != ''), part].unique().tolist()
-            if part == 'questions':
-                rendered_list = [QuestionCard(x) for x in card_list]
-            else:
-                rendered_list = [AnswerCard(x) for x in card_list]
-            self.__setattr__('{}_card_list'.format(part), rendered_list)
+        # First read in questions
+        for row in df.iterrows():
+            question = row['questions']
+            if question != '' or not pd.isnull(question):
+                if 'req' in row.columns:
+                    # Get count of required questions
+                    no_req_qs = row['req']
+                    if no_req_qs.is_numeric():
+                        self.questions_card_list.append(QuestionCard(question, req_answers=int(no_req_qs)))
+                else:
+                    # No required number of answers. Try to estimate it
+                    self.questions_card_list.append(QuestionCard(question))
+
+        # Read in answers
+        a_card_list = df.loc[(~df['answers'].isnull()) & (df['answers'] != ''), 'answers'].unique().tolist()
+        self.answers_card_list = [AnswerCard(x) for x in a_card_list]
 
     def shuffle_deck(self):
         """Shuffles the deck"""

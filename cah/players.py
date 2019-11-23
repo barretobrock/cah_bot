@@ -32,7 +32,7 @@ class Players:
                     if not names_only:
                         # Reset basic info
                         player.skip = False
-                        player.pick = None
+                        player.picks = None
                         player.hand = Hand()
         else:
             plist = []
@@ -112,7 +112,7 @@ class Player:
         self.display_name = display_name
         self.dm_cards = False
         self.skip = False
-        self.pick = None
+        self.picks = None
         self.hand = Hand()
         # Ending scores for games
         self.final_scores = list()
