@@ -53,7 +53,7 @@ class CAHBot:
         """
         self.log = Log(log_name, child_name='brain')
         self.bot_name = 'Wizzy'
-        self.triggers = ['cah', 'c!']
+        self.triggers = ['cah', 'c!'] if not debug else ['decah', 'dc!']
         self.channel_id = 'CMPV3K8AE' if not debug else 'CQ1DG4WB1'  # cah or cah-test
         # Read in common tools for interacting with Slack's API
         k = Keys()
