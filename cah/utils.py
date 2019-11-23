@@ -33,6 +33,7 @@ Hi! I'm Wizzy and I help you play shitty games!
  - `toggle dm`: Toggles whether or not you receive cards as a DM from Wizzy (default: off)
  - `cahds now`: Send cards immediately without toggling DM
  - `end game`: end the current game
+ - `show decks`: shows the deck names available
  - `refresh sheets`: refreshes the GSheets that contain the card sets. Can only be done outside a game.
  - `show link`: shows the link to the GSheets where Wizzy reads in cards. helpful if you want to contribute
 *Card selection*:
@@ -137,6 +138,8 @@ class CAHBot:
             self.toggle_card_dm(user)
         elif message == 'cahds now':
             self.dm_cards_now(user)
+        elif message == 'show decks':
+            response = '`{}`'.format(','.join(self.decks.deck_names))
         elif message == 'show link':
             response = 'https://docs.google.com/spreadsheets/d/{}/'.format(self.cah_gsheet)
         elif message == 'status':
@@ -144,12 +147,12 @@ class CAHBot:
         elif message == 'refresh sheets':
             if self.game is None:
                 self.refresh_sheets()
-                response = 'Sheets have been refreshed! New decks: {}'.format(','.join(self.decks.deck_names))
+                response = 'Sheets have been refreshed! New decks: `{}`'.format(','.join(self.decks.deck_names))
             elif self.game.status not in [self.game.gs.stahted, self.game.gs.ended]:
                 response = 'Please end the game before refreshing. THANKSSSS :))))))'
             else:
                 self.refresh_sheets()
-                response = 'Sheets have been refreshed! New decks: {}'.format(','.join(self.decks.deck_names))
+                response = 'Sheets have been refreshed! New decks: `{}`'.format(','.join(self.decks.deck_names))
         elif message != '':
             response = "I didn't understand this: `{}`\n " \
                        "Use `cah help` to get a list of my commands.".format(message)
@@ -259,7 +262,8 @@ class CAHBot:
         self.players.load_players_in_channel(self._build_players(), refresh=True)
         response_list.append(self._determine_players(message))
 
-        # Read in card deck
+        # Refresh our decks, read in card deck
+        self.refresh_sheets()
         deck = self._read_in_cards(card_set)
 
         # Set eligible players, set the game, add players, shuffle the players
@@ -330,6 +334,11 @@ class CAHBot:
         if notifications is None:
             notifications = []
         notifications += self.game.new_round()
+        if self.game.status == self.game.gs.ended:
+            # Game ended because we ran out of questions
+            self.message_grp('\n'.join(notifications))
+            self.end_game()
+            return None
 
         self.message_grp('\n'.join(notifications))
 
@@ -491,11 +500,13 @@ class CAHBot:
         if self.game is None:
             self.message_grp('You have to start a game before you can end it...????')
             return None
-        self.game.end_game()
+        if self.game.status != self.game.gs.ended:
+            # Check if game was not already ended automatically
+            self.game.end_game()
         # Save score history to file
         self.display_points()
         self.save_score()
-        self.message_grp('The game has ended.')
+        self.message_grp('The game has ended. :died:')
 
     def save_score(self):
         """Saves the score to directory"""

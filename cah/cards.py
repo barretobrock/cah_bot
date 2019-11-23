@@ -57,14 +57,14 @@ class Hand:
         self.cards = list()
         self.picks = None
 
-    def pick_card(self, pos):
+    def pick_card(self, pos_list):
         """Picks card at index"""
-        if all([-1 < x < len(self.cards) for x in pos]):
+        if all([-1 < x < len(self.cards) for x in pos_list]):
             if self.picks is None:
                 # Set our picks
-                self.picks = [self.cards[x] for x in pos]
+                self.picks = [self.cards[x] for x in pos_list]
                 # Then pop out those cards from max to min
-                for p in sorted(pos, reverse=True):
+                for p in sorted(pos_list, reverse=True):
                     _ = self.cards.pop(p)
                 return True
         return False
@@ -101,15 +101,15 @@ class Deck:
         # First read in questions
         # This is used to ensure no duplicate questions
         question_list = []
-        for row in df.iterrows():
+        for i, row in df.iterrows():
             question = row['questions']
             if question in question_list:
                 continue
             if question != '' or not pd.isnull(question):
-                if 'req' in row.columns:
+                if 'req' in row.index.values:
                     # Get count of required questions
                     no_req_qs = row['req']
-                    if no_req_qs.is_numeric():
+                    if isinstance(no_req_qs, int):
                         self.questions_card_list.append(QuestionCard(question, req_answers=int(no_req_qs)))
                         question_list.append(question)
                 else:

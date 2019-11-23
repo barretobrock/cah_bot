@@ -76,7 +76,7 @@ class Game:
         # Determine if the game should be ended before proceeding
         if len(self.deck.questions_card_list) == 0:
             # No more questions, game hath ended
-            notifications += [
+            notifications = [
                 'No more question cards! Game over! :party-dead::party-dead::party-dead:',
             ]
             self.end_game()
@@ -150,13 +150,11 @@ class Game:
     def assign_player_pick(self, user_id, picks):
         """Takes in an int and assigns it to the player who wrote it"""
         player = self.players.get_player_by_id(user_id)
-        success_list = []
-        for pick in picks:
-            success_list.append(player.hand.pick_card(pick))
-        if all(success_list):
+        success = player.hand.pick_card(picks)
+        if success:
             self.players.update_player(player)
             return '{}\'s pick has been registered.'.format(player.display_name)
-        elif not all(success_list) and player.hand.picks is not None:
+        elif not success and player.hand.picks is not None:
             return '{}\'s pick voided. You already picked.'.format(player.display_name)
         else:
             return 'Pick not registered.'
@@ -181,5 +179,6 @@ class Game:
                  for player in self.players.player_list if player.hand.picks is not None]
         shuffle(picks)
         self.picks = picks
-        pick_str = '\n'.join(['`{}`: {}'.format(i + 1, ','.join(picks)) for i, picks in enumerate(self.picks)])
+        pick_str = '\n'.join(['`{}`: {}'.format(i + 1, '|'.join([' `{}` '.format(x) for x in picks['picks']]))
+                              for i, picks in enumerate(self.picks)])
         return pick_str
