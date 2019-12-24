@@ -364,6 +364,10 @@ class CAHBot:
                              'in the current status of this game: `{}`.'.format(user, self.game.status))
             return None
 
+        if user == self.game.judge.player_id:
+            self.message_grp('<@{}> You\'re the judge. You can\'t pick!'.format(user))
+            return None
+
         if is_random:
             picks = None
             # Randomly assign a pick to the user based on size of hand
