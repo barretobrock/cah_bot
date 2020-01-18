@@ -108,7 +108,7 @@ class Player:
 
     def __init__(self, player_id, display_name):
         self.player_id = player_id
-        self.player_tag = '<@{}>'.format(self.player_id)
+        self.player_tag = f'<@{self.player_id}>'
         self.display_name = display_name
         self.dm_cards = False
         self.skip = False
@@ -133,7 +133,7 @@ class Player:
 
     def get_cumulative_score(self):
         """Retrieves the cumulative scores from all games"""
-        return ', '.join(['{}'.format(x) for x in np.cumsum(self.final_scores)])
+        return ', '.join([f'{x}' for x in np.cumsum(self.final_scores)])
 
 
 class Judge(Player):

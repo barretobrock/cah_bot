@@ -53,7 +53,7 @@ class Game:
     def get_judge_order(self):
         """Determines order of judges """
         order = ' :finger-wag-right: '.join([x.display_name for x in self.players.player_list])
-        return 'Judge order: {}'.format(order)
+        return f'Judge order: {order}'
 
     def _new_game(self):
         """Begin new game"""
@@ -71,7 +71,7 @@ class Game:
 
         if self.status not in [self.gs.end_round, self.gs.initiated]:
             # Avoid starting a new round when one has already been started
-            raise ValueError('Cannot transition to new round due to current status (`{}`)'.format(self.status))
+            raise ValueError(f'Cannot transition to new round due to current status (`{self.status}`)')
 
         # Determine if the game should be ended before proceeding
         if len(self.deck.questions_card_list) == 0:
@@ -87,7 +87,7 @@ class Game:
 
         # Get new judge
         self.get_next_judge()
-        notifications.append('Round {}: `{}` is the judge!'.format(self.rounds, self.judge.display_name))
+        notifications.append(f'Round {self.rounds}: `{self.judge.display_name}` is the judge!')
 
         # Determine number of cards to deal to each player & deal
         # either full deck or replacement cards for previous question
@@ -105,7 +105,7 @@ class Game:
 
         # Deal question card
         self.current_question_card = self.deck.deal_question_card()
-        notifications.append("Q: `{}`".format(self.current_question_card.txt))
+        notifications.append(f"Q: `{self.current_question_card.txt}`")
 
         self.round_start_time = datetime.now()
         return notifications
@@ -153,9 +153,9 @@ class Game:
         success = player.hand.pick_card(picks)
         if success:
             self.players.update_player(player)
-            return '{}\'s pick has been registered.'.format(player.display_name)
+            return f'{player.display_name}\'s pick has been registered.'
         elif not success and player.hand.picks is not None:
-            return '{}\'s pick voided. You already picked.'.format(player.display_name)
+            return f'{player.display_name}\'s pick voided. You already picked.'
         else:
             return 'Pick not registered.'
 
