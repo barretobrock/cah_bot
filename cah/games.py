@@ -41,7 +41,8 @@ class Game:
         # Starting number of cards for each player
         self.DECK_SIZE = 5
         self.deck = deck
-        self.ping_judge = False
+        self.ping_judge = True
+        self.ping_winner = True
         self.picks = None
         self.prev_question_card = None
         self.current_question_card = None
@@ -171,6 +172,10 @@ class Game:
     def toggle_judge_ping(self):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
         self.ping_judge = not self.ping_judge
+
+    def toggle_winner_ping(self):
+        """Toggles whether or not to ping the winner when they've won a round"""
+        self.ping_winner = not self.ping_winner
 
     def display_picks(self):
         """Shows the player's picks in random order"""

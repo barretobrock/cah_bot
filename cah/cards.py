@@ -71,7 +71,7 @@ class Hand:
 
     def render_hand(self):
         """Prints out the hand to the player"""
-        return '\t{}'.format('\n'.join(['\t`{}`: {}'.format(i + 1, x) for i, x in enumerate(self.cards)]))
+        return '{}'.format('\n'.join(['\t`{}`: {}'.format(i + 1, x) for i, x in enumerate(self.cards)]))
 
     def take_card(self, card):
         """Takes popped card and puts in hand"""

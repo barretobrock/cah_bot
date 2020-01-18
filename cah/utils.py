@@ -28,8 +28,9 @@ Hi! I'm Wizzy and I help you play shitty games!
         - `-p @player1 @player2 ...`: tag a subset of the channel as current players (space-separated)
  - `(points|score|scores)`: show points/score of all players
  - `status`: get the current status of the game
- - `toggle jping`: Toggles whether or not the judge is pinged after all selections are made (default: off)
- - `toggle dm`: Toggles whether or not you receive cards as a DM from Wizzy (default: off)
+ - `toggle jping`: Toggles whether or not the judge is pinged after all selections are made (default: on)
+ - `toggle wping`: Toggles whether or not the winner is pinged when they win a round (default: on)
+ - `toggle dm`: Toggles whether or not you receive cards as a DM from Wizzy (default: on)
  - `cahds now`: Send cards immediately without toggling DM
  - `end game`: end the current game
  - `show decks`: shows the deck names available
@@ -132,6 +133,8 @@ class CAHBot:
             self.display_points()
         elif message == 'toggle jping':
             self.toggle_judge_ping()
+        elif message == 'toggle wping':
+            self.toggle_winner_ping()
         elif message == 'toggle dm':
             self.toggle_card_dm(user)
         elif message == 'cahds now':
@@ -281,6 +284,15 @@ class CAHBot:
         self.game.toggle_judge_ping()
         self.message_grp(f'Judge pinging set to: `{self.game.ping_judge}`')
 
+    def toggle_winner_ping(self):
+        """Toggles whether or not to ping the winner when they've won a round"""
+        if self.game is None:
+            self.message_grp('Start a game first, then tell me to do that.')
+            return None
+
+        self.game.toggle_winner_ping()
+        self.message_grp(f'Weiner pinging set to: `{self.game.ping_winner}`')
+
     def toggle_card_dm(self, user_id):
         """Toggles card dming"""
         if self.game is None:
@@ -312,7 +324,7 @@ class CAHBot:
         elif self.game.status == self.game.gs.players_decision:
             question = f'Current Question:\n`{self.game.current_question_card}`'
             cards_msg = player.hand.render_hand()
-            msg_txt = f'{question}\nYour cards:\n{cards_msg}'
+            msg_txt = f'{question}\nJudge: `{self.game.judge.display_name}`\nYour cards:\n{cards_msg}'
         else:
             msg_txt = f"The game's current status (`{self.game.status}`) doesn't allow for card DMing"
         self.st.private_message(player.player_id, msg_txt)
@@ -346,7 +358,7 @@ class CAHBot:
                 if player.dm_cards:
                     question = f'Current Question:\n`{self.game.current_question_card}`'
                     cards_msg = player.hand.render_hand()
-                    msg_txt = f'{question}\nYour cards:\n{cards_msg}'
+                    msg_txt = f'{question}\nJudge: `{self.game.judge.display_name}`\nYour cards:\n{cards_msg}'
                     self.st.private_message(player.player_id, msg_txt)
                 self.st.private_channel_message(player.player_id, self.channel_id, player.hand.render_hand())
 
@@ -362,7 +374,7 @@ class CAHBot:
                              f'in the current status of this game: `{self.game.status}`.')
             return None
 
-        if user == self.game.judge.player_id:
+        if user == self.game.judge.player_id and not is_random:
             self.message_grp(f'<@{user}> You\'re the judge. You can\'t pick!')
             return None
 
@@ -393,8 +405,7 @@ class CAHBot:
         if picks is None:
             return None
         elif any([x > self.game.DECK_SIZE - 1 or x < 0 for x in picks]):
-            self.message_grp(f'<@{user}> I think you picked outside '
-                             f'the range of suggestions: `{",".join([x - 1 for x in picks])}`.')
+            self.message_grp(f'<@{user}> I think you picked outside the range of suggestions: `{message}`.')
             return None
         messages = [self.game.assign_player_pick(user, picks)]
 
@@ -487,8 +498,9 @@ class CAHBot:
                 # chosen_cards = self.game_dict['chosen_cards']
                 winner.points += 1
                 self.game.players.update_player(winner)
+                winner_details = winner.player_tag if self.game.ping_winner else f'`{winner.display_name}`'
                 self.message_grp(f"Winning card: `{','.join([x.txt for x in winner.hand.picks])}`\n"
-                                 f"\t`{winner.display_name}`, new score: *{winner.points}* diddles "
+                                 f"\t({winner_details}) new score: *{winner.points}* diddles "
                                  f"({winner.get_grand_score() + winner.points} total)")
                 self.game.status = self.game.gs.end_round
                 self.message_grp('Round ended.')
@@ -629,27 +641,34 @@ class CAHBot:
             return None
 
         status_list = [
-            f'current game status: `{self.game.status}`',
+            '\n*Current Game Shit*',
+            f'Status: `{self.game.status}`',
         ]
 
         if self.game.status not in [self.game.gs.ended, self.game.gs.stahted]:
             status_list += [
-                'players this game: {}'.format(','.join(['`{}`'.format(x.display_name)
+                f'Judge: `{self.game.judge.display_name}`',
+                'Players: {}'.format(','.join(['`{}`'.format(x.display_name)
                                                          for x in self.game.players.player_list])),
-                f'current judge: `{self.game.judge.display_name}`',
-                f'current round: `{self.game.rounds}`',
-                f'elapsed round time: `{self.get_time_elapsed(self.game.round_start_time)}`',
-                f'remaining black cards: `{len(self.game.deck.questions_card_list)}`',
-                f'remaining white cards: `{len(self.game.deck.answers_card_list)}`',
-                f'elapsed game time: `{self.get_time_elapsed(self.game.game_start_time)}`',
+                f'Round: `{self.game.rounds}`',
+                f'Judge Ping: `{self.game.ping_judge}`',
+                f'Weiner Ping: `{self.game.ping_winner}`',
+                'DM Cards: {}'.format(",".join(
+                    ["`{}`".format(x.display_name) for x in self.game.players.player_list if x.dm_cards])),
+                '\n*Timing*',
+                f'Elapsed Round Time: `{self.get_time_elapsed(self.game.round_start_time)}`',
+                f'Elapsed Game Time: `{self.get_time_elapsed(self.game.game_start_time)}`',
+                '\n*Metadootie*',
+                f'Black Cards Left: `{len(self.game.deck.questions_card_list)}`',
+                f'White Cards Left: `{len(self.game.deck.answers_card_list)}`',
             ]
 
         if self.game.status in [self.game.gs.players_decision, self.game.gs.judge_decision]:
-            status_list += [
-                f'current q: `{self.game.current_question_card}`',
-                'awaiting pickles: {}'.format(
+            status_list = status_list[:2] + [
+                f'Question: `{self.game.current_question_card}`',
+                'Pickles Needed: {}'.format(
                     ','.join(['`{}`'.format(x) for x in self.game.players_left_to_decide()])),
-            ]
+            ] + status_list[2:]
 
         status_message = '\n'.join(status_list)
         self.message_grp(status_message)
