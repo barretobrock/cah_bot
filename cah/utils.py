@@ -58,7 +58,7 @@ class CAHBot:
         self.channel_id = 'CMPV3K8AE' if not debug else 'CQ1DG4WB1'  # cah or cah-test
         # Read in common tools for interacting with Slack's API
         k = Keys()
-        self.st = SlackTools(self.log.log_name, triggers=self.triggers, team=k.get_key('okr-name'),
+        self.st = SlackTools(log_name, triggers=self.triggers, team=k.get_key('okr-name'),
                              xoxp_token=k.get_key('wizzy-token'), xoxb_token=k.get_key('wizzy-bot-user-token'))
         # Two types of API interaction: bot-level, user-level
         self.bot = self.st.bot
