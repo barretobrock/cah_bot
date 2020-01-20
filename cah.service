@@ -1,0 +1,19 @@
+# Put this in /lib/systemd/system
+# Then
+# sudo chmod 644 <filename>
+# sudo systemctl daemon-reload
+# sudo systemctl enable <filename>
+
+[Unit]
+Description=Cards Against Humanity Slackbot
+After=multi-user.target
+
+[Service]
+User=bobrock
+Group=bobrock
+Type=idle
+ExecStart=/usr/bin/python3 /home/bobrock/extras/cah_bot/run.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
