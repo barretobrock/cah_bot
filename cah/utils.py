@@ -168,7 +168,8 @@ class CAHBot:
         """Wrapper to send message to whole channel"""
         self.st.send_message(self.channel_id, message)
 
-    def _get_text_after_flag(self, flags, msg, default=None):
+    @staticmethod
+    def _get_text_after_flag(flags, msg, default=None):
         """Retrieves text after a flag beginning with '-' or '--'.
             Can detect other flags after the text.
          :param flags: list of str, flags to look for
@@ -533,10 +534,10 @@ class CAHBot:
                 'trigger_msg': self.game.trigger_msg
             }
         }
-        for player in self.game.players.player_list:
+        for player in self.players.player_list:
             scores_dict[player.player_id] = {
                 'current': player.points,
-                'final': player.final_scores
+                'final': player.final_scores,
             }
         with open(self.score_path, 'w') as f:
             f.write(json.dumps(scores_dict))
