@@ -3,15 +3,12 @@
 import os
 import re
 import json
-import time
-import traceback
 import pandas as pd
 import numpy as np
 from random import randrange
 from datetime import datetime
 from dateutil.relativedelta import relativedelta as reldelta
-from slacktools import SlackTools, GracefulKiller
-from kavalkilu import Keys, Log, DateTools
+from slacktools import SlackTools, GSheetReader
 from .cards import Decks
 from .players import Players
 from .games import Game
@@ -47,35 +44,34 @@ Hi! I'm Wizzy and I help you play shitty games!
 class CAHBot:
     """Bot for playing Cards Against Humanity on Slack"""
 
-    def __init__(self, log_name, debug=False):
+    def __init__(self, log_name, xoxb_token, xoxp_token, debug=False):
         """
         :param log_name: str, name of the log to retrieve
         :param debug: bool,
         """
-        self.log = Log(log_name, child_name='brain')
         self.bot_name = 'Wizzy'
         self.triggers = ['cah', 'c!'] if not debug else ['decah', 'dc!']
         self.channel_id = 'CMPV3K8AE' if not debug else 'CQ1DG4WB1'  # cah or cah-test
         # Read in common tools for interacting with Slack's API
-        k = Keys()
-        self.st = SlackTools(log_name, triggers=self.triggers, team=k.get_key('okr-name'),
-                             xoxp_token=k.get_key('wizzy-token'), xoxb_token=k.get_key('wizzy-bot-user-token'))
+        self.st = SlackTools(log_name, triggers=self.triggers, team='orbitalkettlerelay',
+                             xoxp_token=xoxp_token, xoxb_token=xoxb_token)
         # Two types of API interaction: bot-level, user-level
         self.bot = self.st.bot
         self.user = self.st.user
-        self.bot_id = self.bot.api_call('auth.test')['user_id']
-        self.RTM_READ_DELAY = 1
+        self.bot_id = self.bot.auth_test()['user_id']
 
         # For storing game info
-        self.cah_gsheet = k.get_key('cah_sheet')
+        self.cah_gsheet_key = '1IVYlID7N-eGiBrmew4vgE7FgcVaGJ2PwyncPjfBHx-M'
+        self.cah_sheets = {}
+        self._refresh_sheets()
+
         # Read in decks
         self.decks = None
-        self.refresh_sheets()
+        self.refresh_decks()
         # Build out players
         self.players = Players(self._build_players())
         self.game = None
-        self.dt = DateTools()
-        self.score_path = os.path.join(os.path.abspath('/home/bobrock/data'), 'scores.json')
+
         game_info = self.read_score()
         if game_info is not None:
             # Previous game was run and probably shut down improperly
@@ -87,36 +83,14 @@ class CAHBot:
                 self.game.game_start_time = datetime.strptime(game_info['game_start'], '%Y-%m-%d %H:%M:%S')
                 self.game.round_start_time = datetime.strptime(game_info['round_start'], '%Y-%m-%d %H:%M:%S')
 
-    def run_rtm(self, startup_msg, terminated_msg):
-        """Initiate real-time messaging"""
-        killer = GracefulKiller()
-        if self.bot.rtm_connect(with_team_state=False):
-            self.log.debug(f'{self.bot_name} is running.')
-            self.st.send_message(self.channel_id, startup_msg)
-            while not killer.kill_now:
-                try:
-                    msg_packet = self.st.parse_bot_commands(self.bot.rtm_read())
-                    if msg_packet is not None:
-                        try:
-                            self.handle_command(**msg_packet)
-                        except Exception as e:
-                            traceback_msg = '\n'.join(traceback.format_tb(e.__traceback__))
-                            exception_msg = f'{e.__class__.__name__}: {e}'
-                            self.log.error(exception_msg)
-                            self.st.send_message(msg_packet['channel'],
-                                                 f"Exception occurred: \n```{traceback_msg}\n{exception_msg}```")
-                    time.sleep(self.RTM_READ_DELAY)
-                except Exception as e:
-                    self.log.debug('Reconnecting...')
-                    self.bot.rtm_connect(with_team_state=False)
-            # Upon SIGTERM, message channel
-            self.st.send_message(self.channel_id, terminated_msg)
-        else:
-            self.log.error('Connection failed.')
-
-    def handle_command(self, channel, message, user, raw_message):
+    def handle_command(self, event_dict):
         """Handles a bot command if it's known"""
         response = None
+        message = event_dict['message']
+        raw_message = event_dict['raw_message']
+        user = event_dict['user']
+        channel = event_dict['channel']
+
         if message == 'help':
             response = help_txt
         elif message.startswith('new game'):
@@ -142,17 +116,17 @@ class CAHBot:
         elif message == 'show decks':
             response = f'`{",".join(self.decks.deck_names)}`'
         elif message == 'show link':
-            response = f'https://docs.google.com/spreadsheets/d/{self.cah_gsheet}/'
+            response = f'https://docs.google.com/spreadsheets/d/{self.cah_gsheet_key}/'
         elif message == 'status':
             self.display_status()
         elif message == 'refresh sheets':
             if self.game is None:
-                self.refresh_sheets()
+                self.refresh_decks()
                 response = f'Sheets have been refreshed! New decks: `{",".join(self.decks.deck_names)}`'
             elif self.game.status not in [self.game.gs.stahted, self.game.gs.ended]:
                 response = 'Please end the game before refreshing. THANKSSSS :))))))'
             else:
-                self.refresh_sheets()
+                self.refresh_decks()
                 response = f'Sheets have been refreshed! New decks: `{",".join(self.decks.deck_names)}`'
         elif message != '':
             response = f"I didn't understand this: `{message}`\n " \
@@ -265,7 +239,7 @@ class CAHBot:
         response_list.append(self._determine_players(message))
 
         # Refresh our decks, read in card deck
-        self.refresh_sheets()
+        self.refresh_decks()
         deck = self._read_in_cards(card_set)
 
         # Set eligible players, set the game, add players, shuffle the players
@@ -383,7 +357,7 @@ class CAHBot:
             picks = None
             # Randomly assign a pick to the user based on size of hand
             msg_split = message.split()
-            player_id = player = None
+            player = None
             if message == 'randpick':
                 # Pick random for user
                 player_id = user
@@ -526,46 +500,48 @@ class CAHBot:
     def save_score(self):
         """Saves the score to directory"""
         # First, save general game stats
-        scores_dict = {
-            'game': {
-                'round': self.game.rounds,
-                'game_start': self.game.game_start_time.strftime('%F %T'),
-                'round_start': self.game.round_start_time.strftime('%F %T'),
-                'trigger_msg': self.game.trigger_msg
-            }
-        }
+        game_df = pd.DataFrame({
+            'round': self.game.rounds,
+            'game_start': self.game.game_start_time.strftime('%F %T'),
+            'round_start': self.game.round_start_time.strftime('%F %T'),
+            'trigger_msg': self.game.trigger_msg,
+            'ended': False
+        }, index=[0])
+        self.st.write_sheet(self.cah_gsheet_key, 'x_game_info', game_df)
+
+        scores_df = pd.DataFrame()
         for player in self.players.player_list:
-            scores_dict[player.player_id] = {
+            df = pd.DataFrame({
+                'player_id': player.player_id,
                 'current': player.points,
-                'final': player.final_scores,
-            }
-        with open(self.score_path, 'w') as f:
-            f.write(json.dumps(scores_dict))
+                'final': player.final_scores
+            }, index=[0])
+            scores_df = scores_df.append(df)
+
+        self.st.write_sheet(self.cah_gsheet_key, 'x_scores', scores_df)
 
     def read_score(self):
         """Reads in score from directory"""
-        if os.path.exists(self.score_path):
-            with open(self.score_path, 'r') as f:
-                contents = f.read()
-                if contents.replace(' ', '') != '':
-                    scores_dict = json.loads(contents)
-                else:
-                    self.message_grp('Scores file was empty. No scores will be updated.')
-                    return None
-            # Extract previous game's info
-            game_info = scores_dict.pop('game', None)
-
-            for player_id, score_dict in scores_dict.items():
+        if 'x_scores' in self.cah_sheets.keys():
+            scores_df = self.cah_sheets['x_scores']
+            for i, row in scores_df.iterrows():
+                player_id = row['player_id']
                 player = self.players.get_player_by_id(player_id)
                 try:
-                    player.points = score_dict['current']
-                    player.final_scores = score_dict['final']
+                    player.points = row['current']
+                    player.final_scores = row['final']
                 except KeyError:
                     player.points = 0
                     player.final_scores = list()
 
                 self.players.update_player(player)
-            return game_info
+        else:
+            self.message_grp('Scores file was empty. No scores will be updated.')
+        if 'x_game_info' in self.cah_sheets.keys():
+            game_df = self.cah_sheets['x_game_info']
+            return game_df
+        else:
+            self.message_grp('Game info file was empty. No game will be reinstated.')
         return None
 
     def wipe_score(self):
@@ -604,10 +580,10 @@ class CAHBot:
         poops = ['poop_wtf', 'poop', 'poop_ugh', 'poop_tugh', 'poopfire', 'poopstar']
 
         if points_df['diddles'].sum() == 0:
-            points_df.loc[:, 'rank'] = [f':{poops[randrange(0, len(poops))]}:' for x in range(points_df.shape[0])]
+            points_df.loc[:, 'rank'] = [f':{poops[randrange(0, len(poops))]}:' for _ in range(points_df.shape[0])]
         else:
             # Start off with the basics
-            points_df.loc[:, 'rank'] = [f':{poops[randrange(0, len(poops))]}:' for x in range(points_df.shape[0])]
+            points_df.loc[:, 'rank'] = [f':{poops[randrange(0, len(poops))]}:' for _ in range(points_df.shape[0])]
             points_df['points_rank'] = points_df.diddles.rank(method='dense', ascending=False)
             first_place = points_df['points_rank'].min()
             second_place = first_place + 1
@@ -632,7 +608,27 @@ class CAHBot:
     def get_time_elapsed(self, st_dt):
         """Gets elapsed time between two datetimes"""
         datediff = reldelta(datetime.now(), st_dt)
-        return self.dt.human_readable(datediff)
+        return self._human_readable(datediff)
+
+    @staticmethod
+    def _human_readable(reldelta_val):
+        """Takes in a relative delta and makes it human readable"""
+        attrs = {
+            'years': 'y',
+            'months': 'mo',
+            'days': 'd',
+            'hours': 'h',
+            'minutes': 'm',
+            'seconds': 's'
+        }
+
+        result_list = []
+        for attr in attrs.keys():
+            attr_val = getattr(reldelta_val, attr)
+            if attr_val is not None:
+                if attr_val > 1:
+                    result_list.append('{:d}{}'.format(attr_val, attrs[attr]))
+        return ' '.join(result_list)
 
     def display_status(self):
         """Displays status of the game"""
@@ -650,7 +646,7 @@ class CAHBot:
             status_list += [
                 f'Judge: `{self.game.judge.display_name}`',
                 'Players: {}'.format(','.join(['`{}`'.format(x.display_name)
-                                                         for x in self.game.players.player_list])),
+                                               for x in self.game.players.player_list])),
                 f'Round: `{self.game.rounds}`',
                 f'Judge Ping: `{self.game.ping_judge}`',
                 f'Weiner Ping: `{self.game.ping_winner}`',
@@ -674,6 +670,19 @@ class CAHBot:
         status_message = '\n'.join(status_list)
         self.message_grp(status_message)
 
-    def refresh_sheets(self):
+    def _refresh_sheets(self):
+        """Refreshes the GSheet containing the Q&A cards & other info"""
+        self.cah_sheets = self.st.read_in_sheets(self.cah_gsheet_key)
+
+    def refresh_decks(self):
         """Refreshes the GSheet containing the Q&A cards"""
-        self.decks = Decks(self.st.read_in_sheets(self.cah_gsheet))
+        self._refresh_sheets()
+
+        possible_decks = self.cah_sheets.copy()
+        # Pop out any item that has a key starting with 'x_'
+        keys = list(possible_decks.keys())
+        for k in keys:
+            if k.startswith('x_'):
+                _ = possible_decks.pop(k)
+
+        self.decks = Decks(possible_decks)
