@@ -1,6 +1,6 @@
 import os
-from slackeventsapi import SlackEventAdapter
 from flask import Flask
+from slacktools import SlackEventAdapter
 from .utils import CAHBot
 
 

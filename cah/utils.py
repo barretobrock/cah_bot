@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
 import re
-import json
 import pandas as pd
 import numpy as np
 from random import randrange
 from datetime import datetime
 from dateutil.relativedelta import relativedelta as reldelta
-from slacktools import SlackTools, GSheetReader
+from slacktools import SlackTools
 from .cards import Decks
 from .players import Players
 from .games import Game
@@ -68,20 +66,22 @@ class CAHBot:
         # Read in decks
         self.decks = None
         self.refresh_decks()
+
         # Build out players
         self.players = Players(self._build_players())
         self.game = None
 
-        game_info = self.read_score()
-        if game_info is not None:
-            # Previous game was run and probably shut down improperly
-            # Start new game, populate the rounds and start times
-            if all([x in game_info.keys() for x in ['trigger_msg', 'game_start', 'round_start']]):
-                self.message_grp('Previous game instance detected. Setting round and elapsed times back')
-                self.new_game(game_info['trigger_msg'])
-                self.game.rounds = game_info['round']
-                self.game.game_start_time = datetime.strptime(game_info['game_start'], '%Y-%m-%d %H:%M:%S')
-                self.game.round_start_time = datetime.strptime(game_info['round_start'], '%Y-%m-%d %H:%M:%S')
+        self.message_grp(f'Booted up at {pd.datetime.now():%F %T}!')
+        # game_info = self.read_score()
+        # if game_info is not None:
+        #     # Previous game was run and probably shut down improperly
+        #     # Start new game, populate the rounds and start times
+        #     if all([x in game_info.keys() for x in ['trigger_msg', 'game_start', 'round_start']]):
+        #         self.message_grp('Previous game instance detected. Setting round and elapsed times back')
+        #         self.new_game(game_info['trigger_msg'])
+        #         self.game.rounds = game_info['round']
+        #         self.game.game_start_time = datetime.strptime(game_info['game_start'], '%Y-%m-%d %H:%M:%S')
+        #         self.game.round_start_time = datetime.strptime(game_info['round_start'], '%Y-%m-%d %H:%M:%S')
 
     def handle_command(self, event_dict):
         """Handles a bot command if it's known"""
@@ -239,7 +239,7 @@ class CAHBot:
         response_list.append(self._determine_players(message))
 
         # Refresh our decks, read in card deck
-        self.refresh_decks()
+        # self.refresh_decks()
         deck = self._read_in_cards(card_set)
 
         # Set eligible players, set the game, add players, shuffle the players
@@ -494,10 +494,10 @@ class CAHBot:
             self.game.end_game()
         # Save score history to file
         self.display_points()
-        self.save_score()
+        self.save_score(ended=True)
         self.message_grp('The game has ended. :died:')
 
-    def save_score(self):
+    def save_score(self, ended=False):
         """Saves the score to directory"""
         # First, save general game stats
         game_df = pd.DataFrame({
@@ -505,7 +505,7 @@ class CAHBot:
             'game_start': self.game.game_start_time.strftime('%F %T'),
             'round_start': self.game.round_start_time.strftime('%F %T'),
             'trigger_msg': self.game.trigger_msg,
-            'ended': False
+            'ended': ended
         }, index=[0])
         self.st.write_sheet(self.cah_gsheet_key, 'x_game_info', game_df)
 
@@ -513,6 +513,7 @@ class CAHBot:
         for player in self.players.player_list:
             df = pd.DataFrame({
                 'player_id': player.player_id,
+                'name': player.display_name,
                 'current': player.points,
                 'final': player.final_scores
             }, index=[0])
