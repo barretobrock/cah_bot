@@ -72,16 +72,6 @@ class CAHBot:
         self.game = None
 
         self.message_grp(f'Booted up at {pd.datetime.now():%F %T}!')
-        # game_info = self.read_score()
-        # if game_info is not None:
-        #     # Previous game was run and probably shut down improperly
-        #     # Start new game, populate the rounds and start times
-        #     if all([x in game_info.keys() for x in ['trigger_msg', 'game_start', 'round_start']]):
-        #         self.message_grp('Previous game instance detected. Setting round and elapsed times back')
-        #         self.new_game(game_info['trigger_msg'])
-        #         self.game.rounds = game_info['round']
-        #         self.game.game_start_time = datetime.strptime(game_info['game_start'], '%Y-%m-%d %H:%M:%S')
-        #         self.game.round_start_time = datetime.strptime(game_info['round_start'], '%Y-%m-%d %H:%M:%S')
 
     def handle_command(self, event_dict):
         """Handles a bot command if it's known"""
@@ -501,7 +491,7 @@ class CAHBot:
         """Saves the score to directory"""
         # First, save general game stats
         game_df = pd.DataFrame({
-            'round': self.game.rounds,
+            'rounds': self.game.rounds,
             'game_start': self.game.game_start_time.strftime('%F %T'),
             'round_start': self.game.round_start_time.strftime('%F %T'),
             'trigger_msg': self.game.trigger_msg,
@@ -515,7 +505,7 @@ class CAHBot:
                 'player_id': player.player_id,
                 'name': player.display_name,
                 'current': player.points,
-                'final': player.final_scores
+                'final': sum(player.final_scores)
             }, index=[0])
             scores_df = scores_df.append(df)
 
