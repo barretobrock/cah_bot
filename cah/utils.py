@@ -40,7 +40,9 @@ Hi! I'm Wizzy and I help you play shitty games!
         - `1234` or `1,2,3,4`: randpick from a subset of your cards
 *Judge-only commands*:
  - `(c|choose) <index>`: used when selecting the :q:best:q: card from picks (index starts at 1)
- - `randchoose [subset]`: randomly choose any of the cards or a subset 
+ - `randchoose`: randomly choose any of the cards or a subset
+    randchoose options:
+        - `234` or `2,3,4`: randchoose from a subset of choices
 """
 
 
