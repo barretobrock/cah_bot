@@ -110,7 +110,7 @@ class Player:
         self.player_id = player_id
         self.player_tag = f'<@{self.player_id}>'
         self.display_name = display_name
-        self.dm_cards = False
+        self.dm_cards = True
         self.skip = False
         self.auto_randpick = False
         self.picks = None
