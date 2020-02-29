@@ -429,7 +429,8 @@ class CAHBot:
             # If the player has chosen to automatically randpick, ping them their picks
             #   if they've chosen to be notified of this
             if player.dm_cards and player.auto_randpick:
-                self.st.private_message(user, f'Your automatically selected pick(s): {"|".join(player.hand.picks)}')
+                self.st.private_message(user, f'Your automatically selected pick(s): '
+                                              f'{"|".join([x.txt for x in player.hand.picks])}')
 
         # See who else has yet to decide
         remaining = self.game.players_left_to_decide()
