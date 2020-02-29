@@ -23,8 +23,9 @@ Hi! I'm Wizzy and I help you play shitty games!
         - `-p @player1 @player2 ...`: tag a subset of the channel as current players (space-separated)
  - `(points|score|scores)`: show points/score of all players
  - `status`: get the current status of the game
- - `toggle jping`: Toggles whether or not the judge is pinged after all selections are made (default: on)
- - `toggle wping`: Toggles whether or not the winner is pinged when they win a round (default: on)
+ - `toggle (judge ping|jping)`: Toggles whether or not the judge is pinged after all selections are made (default: on)
+ - `toggle (winner ping|wping)`: Toggles whether or not the winner is pinged when they win a round (default: on)
+ - `toggle (auto randpick|arp)`: Toggles automatic random picking for a player
  - `toggle dm`: Toggles whether or not you receive cards as a DM from Wizzy (default: on)
  - `cahds now`: Send cards immediately without toggling DM
  - `end game`: end the current game
@@ -33,9 +34,13 @@ Hi! I'm Wizzy and I help you play shitty games!
  - `show link`: shows the link to the GSheets where Wizzy reads in cards. helpful if you want to contribute
 *Card selection*:
  - `(p|pick) <card-num>[<next-card>]`: pick your card for the round (index starts at 1, cards in order)
- - `randpick [<@other_player>]`: randomly select your card when you just can't decide
+ - `randpick`: randomly select your card when you just can't decide
+    randpick options:
+        - `@other_player`: randpick for another player
+        - `1234` or `1,2,3,4`: randpick from a subset of your cards
 *Judge-only commands*:
  - `(c|choose) <index>`: used when selecting the :q:best:q: card from picks (index starts at 1)
+ - `randchoose [subset]`: randomly choose any of the cards or a subset 
 """
 
 
@@ -89,16 +94,18 @@ class CAHBot:
             self.end_game()
         elif message.startswith('pick') or message.split()[0] == 'p':
             self.process_picks(user, message)
-        elif message.startswith('choose') or message.split()[0] == 'c':
+        elif message.startswith('choose') or message.split()[0] == 'c' or message.startswith('randchoose'):
             self.choose_card(user, message)
         elif message.startswith('randpick'):
             self.process_picks(user, message, is_random=True)
         elif message in ['points', 'score', 'scores']:
             self.display_points()
-        elif message == 'toggle jping':
+        elif message in ['toggle judge ping', 'toggle jping']:
             self.toggle_judge_ping()
-        elif message == 'toggle wping':
+        elif message in ['toggle winner ping', 'toggle wping']:
             self.toggle_winner_ping()
+        elif message in ['toggle auto randpick', 'toggle arp']:
+            self.toggle_auto_randpick(user)
         elif message == 'toggle dm':
             self.toggle_card_dm(user)
         elif message == 'cahds now':
@@ -275,6 +282,25 @@ class CAHBot:
         else:
             self.players.update_player(player)
 
+    def toggle_auto_randpick(self, user_id):
+        """Toggles card dming"""
+        if self.game is None:
+            # Set the player object outside of the game
+            player = self.players.get_player_by_id(user_id)
+        else:
+            player = self.game.players.get_player_by_id(user_id)
+        player.auto_randpick = not player.auto_randpick
+        self.message_grp(f'Auto randpick for player `{player.display_name}` set to `{player.auto_randpick}`')
+        if self.game is not None:
+            self.game.players.update_player(player)
+            if all([self.game.status == self.game.gs.players_decision,
+                    player.player_id != self.game.judge.player_id,
+                    player.auto_randpick]):
+                # randpick for the player immediately
+                self.process_picks(player.player_id, 'randpick', is_random=True)
+        else:
+            self.players.update_player(player)
+
     def dm_cards_now(self, user_id):
         """DMs current card set to user"""
         if self.game is None:
@@ -326,6 +352,9 @@ class CAHBot:
                     msg_txt = f'{question}\nJudge: `{self.game.judge.display_name}`\nYour cards:\n{cards_msg}'
                     self.st.private_message(player.player_id, msg_txt)
                 self.st.private_channel_message(player.player_id, self.channel_id, player.hand.render_hand())
+                if player.auto_randpick:
+                    # Player has elected to automatically pick their cards
+                    self.process_picks(player.player_id, 'randpick', is_random=True)
 
     def process_picks(self, user, message, is_random=False):
         """Processes the card selection made by the user"""
@@ -343,27 +372,48 @@ class CAHBot:
             self.message_grp(f'<@{user}> You\'re the judge. You can\'t pick!')
             return None
 
+        player = None
         if is_random:
             picks = None
             # Randomly assign a pick to the user based on size of hand
             msg_split = message.split()
-            player = None
+            card_subset = None
             if message == 'randpick':
                 # Pick random for user
                 player_id = user
                 player = self.game.players.get_player_by_id(player_id)
             elif len(msg_split) > 1:
-                ptag = msg_split[1].upper()
-                # Player mentioned
-                player = self.game.players.get_player_by_tag(ptag)
-                if player is None:
-                    self.message_grp(f'Player id not found: `{ptag}`')
+                randpick_instructions = msg_split[1]
+                if len(randpick_instructions) > 5:
+                    # Pick random for other user
+                    ptag = randpick_instructions.upper()
+                    # Player mentioned
+                    player = self.game.players.get_player_by_tag(ptag)
+                    if player is None:
+                        self.message_grp(f'Player id not found: `{ptag}`')
+                    else:
+                        user = player.player_id
                 else:
-                    user = player.player_id
+                    # Pick random for current user, but use a subset of cards
+                    # First grab the player's info
+                    player = self.game.players.get_player_by_id(user)
+                    if randpick_instructions.isnumeric():
+                        card_subset = list(map(int, list(randpick_instructions)))
+                    elif ',' in randpick_instructions:
+                        card_subset = list(map(int, randpick_instructions.split(',')))
+                    else:
+                        # Pick not understood
+                        self.message_grp(f'<@{user}> I didn\'t understand your randpick message. Pick voided.')
+                        return None
             if player is not None:
                 n_cards = len(player.hand.cards)
                 req_ans = self.game.current_question_card.required_answers
-                picks = np.random.choice(n_cards, req_ans, False).tolist()
+                if card_subset is not None:
+                    # Player wants to randomly choose from a subset of cards
+                    picks = [x - 1 for x in np.random.choice(card_subset, req_ans, False).tolist()]
+                else:
+                    # Randomly choose over all player's cards
+                    picks = [x - 1 for x in np.random.choice(n_cards, req_ans, False).tolist()]
         else:
             # Process the pick from the message
             picks = self._get_pick(user, message)
@@ -373,6 +423,11 @@ class CAHBot:
             self.message_grp(f'<@{user}> I think you picked outside the range of suggestions: `{message}`.')
             return None
         messages = [self.game.assign_player_pick(user, picks)]
+        if player is not None:
+            # If the player has chosen to automatically randpick, ping them their picks
+            #   if they've chosen to be notified of this
+            if player.dm_cards and player.auto_randpick:
+                self.st.private_message(user, f'Your automatically selected pick(s): {"|".join(player.hand.picks)}')
 
         # See who else has yet to decide
         remaining = self.game.players_left_to_decide()
@@ -447,7 +502,26 @@ class CAHBot:
             return None
 
         if user == self.game.judge.player_id:
-            pick = self._get_pick(user, message, judge_decide=True)
+            if 'randchoose' in message:
+                pick = None
+                if len(message.split(' ')) > 1:
+                    randchoose_instructions = message.split(' ')[1]
+                    # Use a subset of choices
+                    card_subset = None
+                    if randchoose_instructions.isnumeric():
+                        card_subset = list(map(int, list(randchoose_instructions)))
+                    elif ',' in randchoose_instructions:
+                        card_subset = list(map(int, randchoose_instructions.split(',')))
+                    if card_subset is not None:
+                        pick = list(np.random.choice(card_subset, 1))[0]
+                    else:
+                        # In case the card subset wasn't able to be parsed
+                        pick = list(np.random.choice(len(self.game.players.player_list) - 2, 1))[0]
+                else:
+                    # Randomly choose from all cards
+                    pick = list(np.random.choice(len(self.game.players.player_list) - 2, 1))[0]
+            else:
+                pick = self._get_pick(user, message, judge_decide=True)
             if pick > len(self.game.players.player_list) - 2 or pick < 0:
                 # Pick is rendered as an array index here.
                 # Pick can either be:

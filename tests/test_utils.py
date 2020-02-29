@@ -14,9 +14,13 @@ for t in ['SIGNING_SECRET', 'XOXB_TOKEN', 'XOXP_TOKEN', 'VERIFY_TOKEN']:
 
 class TestCAHBot(unittest.TestCase):
     cbot = CAHBot(bot_name, key_dict['xoxb_token'], key_dict['xoxp_token'], debug=True)
-    p1 = 'UM35HE6R5'
-    p2 = 'UM8N2JZE3'
+    p1 = 'UM35HE6R5'  # me
+    p2 = 'UM8N2JZE3'  # weezy
+    p3 = 'UM3AP9RQT'  # pip
     trigger = cbot.triggers[0]
+
+    choices = ['choose 1', 'randchoose', 'randchoose 12']
+    pick_method = ['randpick', 'randpick 145', 'randpick 234']
 
     def setUp(self) -> None:
         self.msg1 = self.build_event_dict('cah help')
@@ -46,33 +50,39 @@ class TestCAHBot(unittest.TestCase):
 
     def test_game_routine(self):
         """Tests the entire game process"""
-        # Starts game with two players
-        self.cbot.new_game(f'new game -s technerd -p <@{self.p1}> <@{self.p2}>')
+        # Starts game with three players, avoid testhuman
+        self.cbot.new_game(f'new game -s technerd -p <@{self.p1}> <@{self.p2}> <@{self.p3}>')
         # Make sure players aren't dmed during testing
         for player in self.cbot.game.players.player_list:
             player.dm_cards = False
+            self.cbot.game.players.update_player(player)
         # Turn off judge ping
         self.cbot.game.ping_judge = False
-        # Turn off winner pingins
+        # Turn off winner pinging
         self.cbot.game.ping_winner = False
         self.assertTrue(self.cbot.game.deck.name == 'technerd')
         self.assertTrue(self.cbot.game.rounds == 1)
-        self.assertTrue(len(self.cbot.game.players.player_list) == 2)
-        for game_round in range(1, 3):
-            # Let's cycle through two rounds
+        self.assertTrue(len(self.cbot.game.players.player_list) == 3)
+        for game_round in range(1, 4):
+            # Let's cycle through three rounds
             # Confirm we've transitioned to the player decision stage
             self.assertTrue(self.cbot.game.status == self.cbot.game.gs.players_decision)
             # All non-judge players make a pick
-            for player in self.cbot.game.players.player_list:
+            for i, player in enumerate(self.cbot.game.players.player_list):
                 if player.player_id != self.cbot.game.judge.player_id:
                     # Determine required number of cards to choose
                     required_ans = self.cbot.game.current_question_card.required_answers
-                    picks = ''.join([f'{x}' for x in range(1, required_ans + 1)])
-                    self.cbot.process_picks(player.player_id, f'pick {picks}')
+                    if i == 0:
+                        # One player should test all picking types
+                        self.cbot.process_picks(player.player_id, self.pick_method[game_round - 1], is_random=True)
+                    else:
+                        # One player should pick normally
+                        picks = ''.join([f'{x}' for x in range(1, required_ans + 1)])
+                        self.cbot.process_picks(player.player_id, f'pick {picks}')
             # Confirm we've transitioned to the judge decision stage
             self.assertTrue(self.cbot.game.status == self.cbot.game.gs.judge_decision)
-            # Judge chooses the winner
-            self.cbot.choose_card(self.cbot.game.judge.player_id, 'choose 1')
+            # Judge chooses the winner, using all different methods
+            self.cbot.choose_card(self.cbot.game.judge.player_id, self.choices[game_round - 1])
             # Game _should_ transition to new round
             self.assertTrue(self.cbot.game.rounds == game_round + 1)
         self.assertTrue(self.cbot.game.status == self.cbot.game.gs.players_decision)
