@@ -99,7 +99,7 @@ class CAHBot:
         elif message.startswith('choose') or message.split()[0] == 'c' or message.startswith('randchoose'):
             self.choose_card(user, message)
         elif message.startswith('randpick'):
-            self.process_picks(user, message, is_random=True)
+            self.process_picks(user, message)
         elif message in ['points', 'score', 'scores']:
             self.display_points()
         elif message in ['toggle judge ping', 'toggle jping']:
@@ -299,7 +299,7 @@ class CAHBot:
                     player.player_id != self.game.judge.player_id,
                     player.auto_randpick]):
                 # randpick for the player immediately
-                self.process_picks(player.player_id, 'randpick', is_random=True)
+                self.process_picks(player.player_id, 'randpick')
         else:
             self.players.update_player(player)
 
@@ -356,9 +356,9 @@ class CAHBot:
                 self.st.private_channel_message(player.player_id, self.channel_id, player.hand.render_hand())
                 if player.auto_randpick:
                     # Player has elected to automatically pick their cards
-                    self.process_picks(player.player_id, 'randpick', is_random=True)
+                    self.process_picks(player.player_id, 'randpick')
 
-    def process_picks(self, user, message, is_random=False):
+    def process_picks(self, user, message):
         """Processes the card selection made by the user"""
         if self.game is None:
             self.message_grp('Start a game first, then tell me to do that.')
