@@ -370,67 +370,77 @@ class CAHBot:
                              f'in the current status of this game: `{self.game.status}`.')
             return None
 
-        if user == self.game.judge.player_id and not is_random:
-            self.message_grp(f'<@{user}> You\'re the judge. You can\'t pick!')
+        # We're in the right status and the user isn't a judge. Let's break this down further
+        card_subset = None  # For when player wants to pick from a subset
+        msg_split = message.split()
+
+        # Set the player as the user first, but see if the user is actually picking for someone else
+        player = self.game.players.get_player_by_id(user)
+        if any(['<@' in x for x in msg_split]):
+            # Player has tagged someone. See if they tagged themselves or another person
+            if not any([player.player_tag in x for x in msg_split]):
+                # Tagged someone else. Get that other tag & use it to change the player.
+                ptag = next((x for x in msg_split if '<@' in x))
+                player = self.game.players.get_player_by_id(ptag)
+
+        # Make sure the player referenced isn't the judge
+        if player.player_id == self.game.judge.player_id:
+            self.message_grp(f'{player.player_tag} is the judge this round. Judges can\'t pick!')
             return None
 
-        player = None
-        if is_random:
-            picks = None
-            # Randomly assign a pick to the user based on size of hand
-            msg_split = message.split()
-            card_subset = None
-            if message == 'randpick':
-                # Pick random for user
-                player_id = user
-                player = self.game.players.get_player_by_id(player_id)
-            elif len(msg_split) > 1:
-                randpick_instructions = msg_split[1]
-                if len(randpick_instructions) > 5:
-                    # Pick random for other user
-                    ptag = randpick_instructions.upper()
-                    # Player mentioned
-                    player = self.game.players.get_player_by_tag(ptag)
-                    if player is None:
-                        self.message_grp(f'Player id not found: `{ptag}`')
+        # Player is set, now determine what we need to do
+        if 'randpick' in message:
+            # Random picking section
+            n_cards = len(player.hand.cards)
+            req_ans = self.game.current_question_card.required_answers
+            if len(msg_split) > 1:
+                # Randpick possibly includes further instructions
+                after_randpick = msg_split[1]
+                if '<@' not in after_randpick:
+                    # This was not a tag;
+                    if after_randpick.isnumeric():
+                        card_subset = list(map(int, list(after_randpick)))
+                    elif ',' in after_randpick:
+                        card_subset = list(map(int, after_randpick.split(',')))
                     else:
-                        user = player.player_id
-                else:
-                    # Pick random for current user, but use a subset of cards
-                    # First grab the player's info
-                    player = self.game.players.get_player_by_id(user)
-                    if randpick_instructions.isnumeric():
-                        card_subset = list(map(int, list(randpick_instructions)))
-                    elif ',' in randpick_instructions:
-                        card_subset = list(map(int, randpick_instructions.split(',')))
-                    else:
-                        # Pick not understood
-                        self.message_grp(f'<@{user}> I didn\'t understand your randpick message. Pick voided.')
+                        # Pick not understood; doesn't match expected syntax
+                        self.message_grp(f'<@{user}> I didn\'t understand your randpick message (`{message}`). Pick voided.')
                         return None
-            if player is not None:
-                n_cards = len(player.hand.cards)
-                req_ans = self.game.current_question_card.required_answers
-                if card_subset is not None:
-                    # Player wants to randomly choose from a subset of cards
+                else:
+                    # Was a tag. We've already applied the tag earlier
+                    pass
+            else:
+                # Just 'randpick'
+                pass
+            # Determine how we're gonna randpick
+            if card_subset is not None:
+                # Player wants to randomly choose from a subset of cards
+                # Check that the subset is at least the same number as the required cards
+                if len(card_subset) >= req_ans:
                     picks = [x - 1 for x in np.random.choice(card_subset, req_ans, False).tolist()]
                 else:
-                    # Randomly choose over all player's cards
-                    picks = [x - 1 for x in np.random.choice(n_cards, req_ans, False).tolist()]
+                    self.message_grp(f'<@{user}> your subset of picks is too small. '
+                                     f'At least (`{req_ans}`) picks required. Pick voided.')
+                    return None
+            else:
+                # Randomly choose over all of the player's cards
+                picks = [x - 1 for x in np.random.choice(n_cards, req_ans, False).tolist()]
+
+            if player.dm_cards:
+                # Ping player their randomly selected picks if they've chosen to be DMed cards
+                self.st.private_message(player.player_id, f'Your randomly selected pick(s): '
+                                                          f'`{"` | `".join([x.txt for x in player.hand.picks])}`')
         else:
-            # Process the pick from the message
+            # Performing a standard pick; process the pick from the message
             picks = self._get_pick(user, message)
+
         if picks is None:
             return None
-        elif any([x > self.game.DECK_SIZE - 1 or x < 0 for x in picks]):
-            self.message_grp(f'<@{user}> I think you picked outside the range of suggestions: `{message}`.')
+        elif any([x > len(player.hand.cards) - 1 or x < 0 for x in picks]):
+            self.message_grp(f'<@{user}> I think you picked outside the range of suggestions. '
+                             f'Your picks: `{picks}`.')
             return None
         messages = [self.game.assign_player_pick(user, picks)]
-        if player is not None:
-            # If the player has chosen to automatically randpick, ping them their picks
-            #   if they've chosen to be notified of this
-            if player.dm_cards and player.auto_randpick:
-                self.st.private_message(user, f'Your automatically selected pick(s): '
-                                              f'{"|".join([x.txt for x in player.hand.picks])}')
 
         # See who else has yet to decide
         remaining = self.game.players_left_to_decide()
