@@ -74,7 +74,7 @@ class TestCAHBot(unittest.TestCase):
                     required_ans = self.cbot.game.current_question_card.required_answers
                     if i == 0:
                         # One player should test all picking types
-                        self.cbot.process_picks(player.player_id, self.pick_method[game_round - 1], is_random=True)
+                        self.cbot.process_picks(player.player_id, self.pick_method[game_round - 1])
                     else:
                         # One player should pick normally
                         picks = ''.join([f'{x}' for x in range(1, required_ans + 1)])

@@ -237,8 +237,7 @@ class CAHBot:
         self.players.load_players_in_channel(self._build_players(), refresh=True)
         response_list.append(self._determine_players(message))
 
-        # Refresh our decks, read in card deck
-        # self.refresh_decks()
+        # Read in card deck
         deck = self._read_in_cards(card_set)
 
         # Set eligible players, set the game, add players, shuffle the players
@@ -424,7 +423,7 @@ class CAHBot:
                     return None
             else:
                 # Randomly choose over all of the player's cards
-                picks = [x - 1 for x in np.random.choice(n_cards, req_ans, False).tolist()]
+                picks = np.random.choice(n_cards, req_ans, False).tolist()
 
             if player.dm_cards:
                 # Ping player their randomly selected picks if they've chosen to be DMed cards
