@@ -119,6 +119,7 @@ class Player:
         self.final_scores = list()
         # Current game score
         self.points = 0
+        self.rounds_played = 0
 
     def toggle_cards_dm(self):
         """Toggles whether or not to DM cards to player"""

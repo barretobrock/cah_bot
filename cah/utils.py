@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import re
+import string
+import random
 import pandas as pd
 import numpy as np
 from random import randrange
@@ -86,6 +88,13 @@ class CAHBot:
                           f'\n\t{self.version} (updated {self.update_date})```'
         self.message_grp(self.bootup_msg)
 
+        # Generate score wiping key
+        self.confirm_wipe = ''.join(random.choices(string.ascii_lowercase + string.digits, k=20))
+
+        # Check for preserved scores
+        self.read_score()
+
+
     def handle_command(self, event_dict):
         """Handles a bot command if it's known"""
         response = None
@@ -102,6 +111,11 @@ class CAHBot:
             self.new_game(message)
         elif message == 'end game':
             self.end_game()
+        elif message == 'wipe scores':
+            response = f'Are you sure you want to wipe scores? ' \
+                       f'Reply with `wipe scores {self.confirm_wipe}` to confirm'
+        elif message == f'wipe scores {self.confirm_wipe}':
+            self.wipe_score()
         elif message.startswith('pick') or message.split()[0] == 'p':
             self.process_picks(user, message)
         elif message.startswith('choose') or message.split()[0] == 'c' or message.startswith('randchoose'):
@@ -353,7 +367,7 @@ class CAHBot:
         self.message_grp('\n'.join(notifications))
 
         self.st.private_channel_message(self.game.judge.player_id, self.channel_id, "You're the judge this round!")
-        for player in self.game.players.player_list:
+        for i, player in enumerate(self.game.players.player_list):
             if player.player_id != self.game.judge.player_id:
                 if player.dm_cards:
                     question = f'Current Question:\n`{self.game.current_question_card}`'
@@ -364,6 +378,8 @@ class CAHBot:
                 if player.auto_randpick:
                     # Player has elected to automatically pick their cards
                     self.process_picks(player.player_id, 'randpick')
+            # Increment rounds played by this player by 1
+            self.game.players.player_list[i].rounds_played += 1
 
     def process_picks(self, user, message):
         """Processes the card selection made by the user"""
@@ -599,7 +615,8 @@ class CAHBot:
                 'player_id': player.player_id,
                 'name': player.display_name,
                 'current': player.points,
-                'final': sum(player.final_scores)
+                'final': sum(player.final_scores),
+                'rounds_played': player.rounds_played
             }, index=[0])
             scores_df = scores_df.append(df)
 
@@ -615,19 +632,16 @@ class CAHBot:
                 try:
                     player.points = row['current']
                     player.final_scores = row['final']
+                    player.rounds_played = row['rounds_played']
                 except KeyError:
                     player.points = 0
                     player.final_scores = list()
+                    player.rounds_played = 0
 
                 self.players.update_player(player)
+            self.message_grp('Preserved scores have been read in from gsheets.')
         else:
             self.message_grp('Scores file was empty. No scores will be updated.')
-        if 'x_game_info' in self.cah_sheets.keys():
-            game_df = self.cah_sheets['x_game_info']
-            return game_df
-        else:
-            self.message_grp('Game info file was empty. No game will be reinstated.')
-        return None
 
     def wipe_score(self):
         """Resets all player's score history"""
@@ -635,12 +649,15 @@ class CAHBot:
             # For in the current game
             player.final_scores = list()
             player.points = 0
+            player.rounds_played = 0
             self.game.players.update_player(player)
         for player in self.players.player_list:
             # For in the whole channel
             player.final_scores = list()
             player.points = 0
+            player.rounds_played = 0
             self.players.update_player(player)
+        self.save_score()
         self.message_grp('All scores have been erased.')
 
     def display_points(self):

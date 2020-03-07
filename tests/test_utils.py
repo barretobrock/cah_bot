@@ -20,7 +20,12 @@ class TestCAHBot(unittest.TestCase):
     trigger = cbot.triggers[0]
 
     choices = ['choose 1', 'randchoose', 'randchoose 12']
-    pick_method = ['randpick', 'randpick 145', 'randpick 234']
+    pick_method = ['randpick', 'randpick 124', 'randpick 2,3,4']
+
+    # Set all players' dm_cards setting to False
+    for player in cbot.players.player_list:
+        player.dm_cards = False
+        cbot.players.update_player(player)
 
     def setUp(self) -> None:
         self.msg1 = self.build_event_dict('cah help')
@@ -73,7 +78,7 @@ class TestCAHBot(unittest.TestCase):
                     # Determine required number of cards to choose
                     required_ans = self.cbot.game.current_question_card.required_answers
                     if i == 0:
-                        # One player should test all picking types
+                        # One player should test all random picking types
                         self.cbot.process_picks(player.player_id, self.pick_method[game_round - 1])
                     else:
                         # One player should pick normally
