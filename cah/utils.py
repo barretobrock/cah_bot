@@ -10,6 +10,7 @@ from slacktools import SlackTools
 from .cards import Decks
 from .players import Players
 from .games import Game
+from ._version import get_versions
 
 
 help_txt = """
@@ -78,7 +79,12 @@ class CAHBot:
         self.players = Players(self._build_players())
         self.game = None
 
-        self.message_grp(f'Booted up at {pd.datetime.now():%F %T}!')
+        version_dict = get_versions()
+        self.version = version_dict['version']
+        self.update_date = pd.to_datetime(version_dict['date']).strftime('%F %T')
+        self.bootup_msg = f'```Booted up at {pd.datetime.now():%F %T}! ' \
+                          f'\n\t{self.version} (updated {self.update_date})```'
+        self.message_grp(self.bootup_msg)
 
     def handle_command(self, event_dict):
         """Handles a bot command if it's known"""
@@ -90,6 +96,8 @@ class CAHBot:
 
         if message == 'help':
             response = help_txt
+        elif message == 'about':
+            response = self.bootup_msg
         elif message.startswith('new game'):
             self.new_game(message)
         elif message == 'end game':
