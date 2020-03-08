@@ -1,6 +1,7 @@
 """Util tests"""
 import os
 import unittest
+import numpy as np
 from cah.utils import CAHBot
 
 
@@ -20,7 +21,7 @@ class TestCAHBot(unittest.TestCase):
     trigger = cbot.triggers[0]
 
     choices = ['choose 1', 'randchoose', 'randchoose 12']
-    pick_method = ['randpick', 'randpick 124', 'randpick 2,3,4']
+    pick_method = ['randpick', 'randpick 12', 'randpick 15', 'randpick 2,3,4,5']
 
     # Set all players' dm_cards setting to False
     for player in cbot.players.player_list:
@@ -68,28 +69,33 @@ class TestCAHBot(unittest.TestCase):
         self.assertTrue(self.cbot.game.deck.name == 'technerd')
         self.assertTrue(self.cbot.game.rounds == 1)
         self.assertTrue(len(self.cbot.game.players.player_list) == 3)
-        for game_round in range(1, 4):
+        for game_round in range(1, 10):
             # Let's cycle through three rounds
             # Confirm we've transitioned to the player decision stage
             self.assertTrue(self.cbot.game.status == self.cbot.game.gs.players_decision)
+            # Determine required number of cards to choose
+            required_ans = self.cbot.game.current_question_card.required_answers
             # All non-judge players make a pick
             for i, player in enumerate(self.cbot.game.players.player_list):
                 if player.player_id != self.cbot.game.judge.player_id:
-                    # Determine required number of cards to choose
-                    required_ans = self.cbot.game.current_question_card.required_answers
                     if i == 0:
                         # One player should test all random picking types
-                        self.cbot.process_picks(player.player_id, self.pick_method[game_round - 1])
+                        pick_type = np.random.choice(len(self.pick_method), 1).tolist()[0]
+                        # Announce pick in channel
+                        self.cbot.message_grp(f'caww {self.pick_method[pick_type]}')
+                        self.cbot.process_picks(player.player_id, self.pick_method[pick_type])
                     else:
                         # One player should pick normally
                         picks = ''.join([f'{x}' for x in range(1, required_ans + 1)])
+                        # Announce pick in channel
+                        self.cbot.message_grp(f'caww pick {picks}')
                         self.cbot.process_picks(player.player_id, f'pick {picks}')
             # Confirm we've transitioned to the judge decision stage
             self.assertTrue(self.cbot.game.status == self.cbot.game.gs.judge_decision)
             # Judge chooses the winner, using all different methods
-            self.cbot.choose_card(self.cbot.game.judge.player_id, self.choices[game_round - 1])
-            # Game _should_ transition to new round
-            self.assertTrue(self.cbot.game.rounds == game_round + 1)
+            choose_type = np.random.choice(len(self.choices), 1).tolist()[0]
+            self.cbot.message_grp(f'caww {self.choices[choose_type]}')
+            self.cbot.choose_card(self.cbot.game.judge.player_id, self.choices[choose_type])
         self.assertTrue(self.cbot.game.status == self.cbot.game.gs.players_decision)
         # End the game
         self.cbot.end_game()

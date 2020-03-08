@@ -30,6 +30,7 @@ class GameStatus:
 class Game:
     """Holds data for current game"""
     def __init__(self, players, deck, trigger_msg):
+        self.game_id = id(datetime.now().timestamp())
         self.players = Players(players, origin='prebuilt')
         shuffle(self.players.player_list)
         self.judge_order = self.get_judge_order()

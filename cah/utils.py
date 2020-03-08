@@ -60,6 +60,8 @@ class CAHBot:
         self.bot_name = 'Wizzy'
         self.triggers = ['cah', 'c!'] if not debug else ['decah', 'dc!']
         self.channel_id = 'CMPV3K8AE' if not debug else 'CQ1DG4WB1'  # cah or cah-test
+        # We'll need this to avoid overwriting actual scores
+        self.debug = debug
         # Read in common tools for interacting with Slack's API
         self.st = SlackTools(log_name, triggers=self.triggers, team='orbitalkettlerelay',
                              xoxp_token=xoxp_token, xoxb_token=xoxb_token)
@@ -72,6 +74,11 @@ class CAHBot:
         self.cah_gsheet_key = '1IVYlID7N-eGiBrmew4vgE7FgcVaGJ2PwyncPjfBHx-M'
         self.cah_sheets = {}
         self._refresh_sheets()
+
+        # Score sheet name
+        self.score_sheet_name = 'x_scores' if not debug else 'x_test_scores'
+        self.game_info_sheet_name = 'x_game_info' if not debug else 'x_test_game_info'
+        self.game_info_df = self.cah_sheets[self.game_info_sheet_name].set_index('index')
 
         # Read in decks
         self.decks = None
@@ -93,7 +100,6 @@ class CAHBot:
 
         # Check for preserved scores
         self.read_score()
-
 
     def handle_command(self, event_dict):
         """Handles a bot command if it's known"""
@@ -549,10 +555,12 @@ class CAHBot:
                     elif ',' in randchoose_instructions:
                         card_subset = list(map(int, randchoose_instructions.split(',')))
                     if card_subset is not None:
-                        pick = list(np.random.choice(card_subset, 1))[0]
+                        # Pick from the card subset and subtract by 1 to bring it in line with 0-based index
+                        pick = list(np.random.choice(card_subset, 1))[0] - 1
                     else:
-                        # In case the card subset wasn't able to be parsed
-                        pick = list(np.random.choice(len(self.game.players.player_list) - 2, 1))[0]
+                        # Card subset wasn't able to be parsed
+                        self.message_grp('I wasn\'t able to parse the card subset you entered. Try again!')
+                        return None
                 else:
                     # Randomly choose from all cards
                     pick = list(np.random.choice(len(self.game.players.player_list) - 2, 1))[0]
@@ -563,7 +571,7 @@ class CAHBot:
                 # Pick can either be:
                 #   -less than total players minus judge, minus 1 more to account for array
                 #   -greater than -1
-                self.message_grp('I think you picked outside the range of suggestions.')
+                self.message_grp(f'I think you picked outside the range of suggestions. Your pick: {pick}')
                 return None
             else:
                 # Get the list of cards picked by each player
@@ -601,13 +609,16 @@ class CAHBot:
         """Saves the score to directory"""
         # First, save general game stats
         game_df = pd.DataFrame({
-            'rounds': self.game.rounds,
             'game_start': self.game.game_start_time.strftime('%F %T'),
-            'round_start': self.game.round_start_time.strftime('%F %T'),
+            'rounds': self.game.rounds,
+            'elapsed_time': self.get_time_elapsed(self.game.game_start_time),
             'trigger_msg': self.game.trigger_msg,
             'ended': ended
-        }, index=[0])
-        self.st.write_sheet(self.cah_gsheet_key, 'x_game_info', game_df)
+        }, index=[self.game.game_id])
+        # Merge existing games from the gsheet
+        self.game_info_df = self.game_info_df.append(game_df)
+        self.game_info_df = self.game_info_df.loc[~self.game_info_df.index.duplicated(keep='last')]
+        self.st.write_sheet(self.cah_gsheet_key, self.game_info_sheet_name, self.game_info_df.reset_index())
 
         scores_df = pd.DataFrame()
         for player in self.players.player_list:
@@ -620,25 +631,25 @@ class CAHBot:
             }, index=[0])
             scores_df = scores_df.append(df)
 
-        self.st.write_sheet(self.cah_gsheet_key, 'x_scores', scores_df)
+        self.st.write_sheet(self.cah_gsheet_key, self.score_sheet_name, scores_df)
 
     def read_score(self):
         """Reads in score from directory"""
-        if 'x_scores' in self.cah_sheets.keys():
-            scores_df = self.cah_sheets['x_scores']
+        if self.score_sheet_name in self.cah_sheets.keys():
+            scores_df = self.cah_sheets[self.score_sheet_name]
             for i, row in scores_df.iterrows():
                 player_id = row['player_id']
                 player = self.players.get_player_by_id(player_id)
-                try:
-                    player.points = row['current']
-                    player.final_scores = row['final']
-                    player.rounds_played = row['rounds_played']
-                except KeyError:
-                    player.points = 0
-                    player.final_scores = list()
-                    player.rounds_played = 0
-
-                self.players.update_player(player)
+                if player is not None:
+                    try:
+                        player.points = row['current']
+                        player.final_scores = [row['final']]
+                        player.rounds_played = row['rounds_played']
+                    except KeyError:
+                        player.points = 0
+                        player.final_scores = list()
+                        player.rounds_played = 0
+                    self.players.update_player(player)
             self.message_grp('Preserved scores have been read in from gsheets.')
         else:
             self.message_grp('Scores file was empty. No scores will be updated.')
@@ -702,7 +713,7 @@ class CAHBot:
 
         scores_list = []
         for i, r in points_df.iterrows():
-            line = f"{r['rank']} `{r['name'][:20]:.<30}` {r['diddles']} diddles ({r['overall']} overall)"
+            line = f"{r['rank']} `{r['name'][:20]:.<30}` {r['diddles']} :diddlecoin: ({r['overall']} total)"
             scores_list.append(line)
 
         self.message_grp('*Current Scores*:\n{}'.format('\n'.join(scores_list)))
