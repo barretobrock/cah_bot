@@ -455,10 +455,6 @@ class CAHBot:
                 # Randomly choose over all of the player's cards
                 picks = np.random.choice(n_cards, req_ans, False).tolist()
 
-            if player.dm_cards:
-                # Ping player their randomly selected picks if they've chosen to be DMed cards
-                self.st.private_message(player.player_id, f'Your randomly selected pick(s): '
-                                                          f'`{"` | `".join([x.txt for x in player.hand.picks])}`')
         else:
             # Performing a standard pick; process the pick from the message
             picks = self._get_pick(user, message)
@@ -470,6 +466,11 @@ class CAHBot:
                              f'Your picks: `{picks}`.')
             return None
         messages = [self.game.assign_player_pick(user, picks)]
+
+        if player.dm_cards and 'randpick' in message:
+            # Ping player their randomly selected picks if they've chosen to be DMed cards
+            self.st.private_message(player.player_id, f'Your randomly selected pick(s): '
+                                                      f'`{"` | `".join([x.txt for x in player.hand.picks])}`')
 
         # See who else has yet to decide
         remaining = self.game.players_left_to_decide()
