@@ -5,6 +5,7 @@ from .utils import CAHBot
 
 
 bot_name = 'cah'
+DEBUG = os.environ['CAH_DEBUG'] == '1'
 
 key_path = os.path.join(os.path.expanduser('~'), 'keys')
 key_dict = {}
@@ -12,7 +13,7 @@ for t in ['SIGNING_SECRET', 'XOXB_TOKEN', 'XOXP_TOKEN', 'VERIFY_TOKEN']:
     with open(os.path.join(key_path, f'{bot_name.upper()}_SLACK_{t}')) as f:
         key_dict[t.lower()] = f.read().strip()
 
-Bot = CAHBot(bot_name, key_dict['xoxb_token'], key_dict['xoxp_token'])
+Bot = CAHBot(bot_name, key_dict['xoxb_token'], key_dict['xoxp_token'], debug=DEBUG)
 message_events = []
 app = Flask(__name__)
 

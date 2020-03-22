@@ -77,6 +77,10 @@ class Hand:
         """Takes popped card and puts in hand"""
         self.cards.append(card)
 
+    def burn_cards(self):
+        """Removes all cards in the hand"""
+        self.cards = list()
+
 
 class CardPot:
     """Stores played cards during round"""

@@ -98,6 +98,12 @@ class Players:
             # Skip player if not in our list of ids
             player.skip = player.player_id not in player_ids
 
+    def skip_players_in_list(self, player_ids):
+        """Assigns skip attribute to True for player ids in the list provided"""
+        for player in self.player_list:
+            # Skip player if not in our list of ids
+            player.skip = player.player_id in player_ids
+
     def set_eligible_players(self):
         """Sets list of eligible players"""
         self.eligible_players = [x for x in self.player_list if not x.skip]
@@ -113,6 +119,7 @@ class Player:
         self.dm_cards = True
         self.skip = False
         self.auto_randpick = False
+        self.new_hand = False   # If set to true, dealt entire new hand next round
         self.picks = None
         self.hand = Hand()
         # Ending scores for games

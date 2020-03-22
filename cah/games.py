@@ -102,6 +102,7 @@ class Game:
         # Set picks back to none
         for player in self.players.player_list:
             player.hand.picks = None
+            player.new_hand = False
             self.players.update_player(player)
         self.status = self.gs.players_decision
 

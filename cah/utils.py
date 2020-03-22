@@ -23,6 +23,7 @@ Hi! I'm Wizzy and I help you play shitty games!
  - `new game [OPTIONS]`: start a new CAH game
     optional flags:
         - `-(set|s) <card-set-name>`: choose a specific card set (standard, indeed) default: *standard*
+        - `-skip @player1 @player2 ...`: skips players not playing this round
         - `-p @player1 @player2 ...`: tag a subset of the channel as current players (space-separated)
  - `(points|score|scores)`: show points/score of all players
  - `status`: get the current status of the game
@@ -37,6 +38,8 @@ Hi! I'm Wizzy and I help you play shitty games!
  - `show link`: shows the link to the GSheets where Wizzy reads in cards. helpful if you want to contribute
 *Card selection*:
  - `(p|pick) <card-num>[<next-card>]`: pick your card for the round (index starts at 1, cards in order)
+ - `decknuke`: Don't like any of your cards? Use this and one card will get randpicked and the others shuffled out. 
+        _NOTE: If your randpicked card is chosen, you'll get 1 point deducted :)_
  - `randpick`: randomly select your card when you just can't decide
     randpick options:
         - `@other_player`: randpick for another player
@@ -124,6 +127,8 @@ class CAHBot:
             self.wipe_score()
         elif message.startswith('pick') or message.split()[0] == 'p':
             self.process_picks(user, message)
+        elif message == 'decknuke':
+            self.decknuke(user)
         elif message.startswith('choose') or message.split()[0] == 'c' or message.startswith('randchoose'):
             self.choose_card(user, message)
         elif message.startswith('randpick'):
@@ -223,11 +228,13 @@ class CAHBot:
 
     def _determine_players(self, message):
         """Determines the players for the game"""
+        skip_players = self._get_text_after_flag(['-skip'], message)
         specific_players = self._get_text_after_flag(['-p'], message)
-        if specific_players is not None:
-            specific_player_ids = [x for x in specific_players.split() if '<@' in x]
-            # This game is set with specific players
-            player_ids = []
+
+        def get_ids_from_msg(raw_ids):
+            specific_player_ids = [x for x in raw_ids.split() if '<@' in x]
+            # Collect specific player ids
+            pids = []
             for p in specific_player_ids:
                 # Extract user id
                 uid = self.st.parse_tag_from_text(p)
@@ -235,8 +242,17 @@ class CAHBot:
                     # Failed at parsing
                     raise ValueError(f'Failed to parse a user id for `{p}`. Game cannot proceed.')
                 else:
-                    player_ids.append(uid)
-            self.players.skip_players_not_in_list(player_ids)
+                    pids.append(uid)
+            return pids
+
+        if skip_players is not None or specific_players is not None:
+            if skip_players is not None:
+                player_ids = get_ids_from_msg(skip_players)
+                self.players.skip_players_in_list(player_ids)
+
+            elif specific_players is not None:
+                player_ids = get_ids_from_msg(specific_players)
+                self.players.skip_players_not_in_list(player_ids)
 
             # Build the notification message
             notify_msg = 'Skipping: `{}`'.format('`,`'.join(
@@ -387,6 +403,21 @@ class CAHBot:
             # Increment rounds played by this player by 1
             self.game.players.player_list[i].rounds_played += 1
 
+    def decknuke(self, user):
+        """Deals the user a new hand while randpicking one of the cards from their current deck.
+        The card that's picked will have a negative point value
+        """
+        # Randpick a card for this user
+        self.process_picks(user, 'randpick')
+        # Replace all remaining cards in hand
+        player = self.game.players.get_player_by_id(user)
+        # Remove all cards form their hand
+        player.hand.burn_cards()
+        player.new_hand = True
+        # Deal the player 4 cards. 5th will be replaced after the round ends.
+        self.game._card_dealer(player, 4)
+        self.message_grp(f'{player.display_name} has had their deck nuked! :impact:')
+
     def process_picks(self, user, message):
         """Processes the card selection made by the user"""
         if self.game is None:
@@ -410,7 +441,7 @@ class CAHBot:
             if not any([player.player_tag in x for x in msg_split]):
                 # Tagged someone else. Get that other tag & use it to change the player.
                 ptag = next((x for x in msg_split if '<@' in x))
-                player = self.game.players.get_player_by_id(ptag)
+                player = self.game.players.get_player_by_tag(ptag.upper())
 
         # Make sure the player referenced isn't the judge
         if player.player_id == self.game.judge.player_id:
@@ -465,7 +496,7 @@ class CAHBot:
             self.message_grp(f'<@{user}> I think you picked outside the range of suggestions. '
                              f'Your picks: `{picks}`.')
             return None
-        messages = [self.game.assign_player_pick(user, picks)]
+        messages = [self.game.assign_player_pick(player.player_id, picks)]
 
         if player.dm_cards and 'randpick' in message:
             # Ping player their randomly selected picks if they've chosen to be DMed cards
@@ -580,12 +611,13 @@ class CAHBot:
                 winning_pick = picks[pick]
                 winner = self.game.players.get_player_by_id(winning_pick['id'])
                 # chosen_cards = self.game_dict['chosen_cards']
-                winner.points += 1
+                winner.points += -1 if winner.new_hand else 1
+                decknuke_txt = '\nLMAO THEY LOST A POINT' if winner.new_hand else ''
                 self.game.players.update_player(winner)
                 winner_details = winner.player_tag if self.game.ping_winner else f'`{winner.display_name}`'
                 self.message_grp(f"Winning card: `{','.join([x.txt for x in winner.hand.picks])}`\n"
                                  f"\t({winner_details}) new score: *{winner.points}* diddles "
-                                 f"({winner.get_grand_score() + winner.points} total)")
+                                 f"({winner.get_grand_score() + winner.points} total){decknuke_txt}")
                 self.game.status = self.game.gs.end_round
                 self.message_grp('Round ended.')
                 # Start new round
