@@ -271,6 +271,12 @@ class CAHBot:
 
     def new_game(self, message):
         """Begins a new game"""
+        if self.game is not None:
+            if self.game.status != self.game.gs.ended:
+                self.message_grp('Looks like you haven\'t ended the current game yet. '
+                                 'Do that and then start a new game.')
+                return None
+
         response_list = []
 
         # Determine card set to use
