@@ -15,43 +15,6 @@ from .games import Game
 from ._version import get_versions
 
 
-help_txt = """
-Hi! I'm Wizzy and I help you play shitty games!
-*Command Prefix*
- - `c!` or `cah`: Use this before any of the below commands (e.g., `c! pick 1`)
-*Basic Commands*:
- - `new game [OPTIONS]`: start a new CAH game
-    optional flags:
-        - `-(set|s) <card-set-name>`: choose a specific card set (standard, indeed) default: *standard*
-        - `-skip @player1 @player2 ...`: skips players not playing this round
-        - `-p @player1 @player2 ...`: tag a subset of the channel as current players (space-separated)
- - `(points|score|scores)`: show points/score of all players
- - `status`: get the current status of the game
- - `toggle (judge ping|jping)`: Toggles whether or not the judge is pinged after all selections are made (default: on)
- - `toggle (winner ping|wping)`: Toggles whether or not the winner is pinged when they win a round (default: on)
- - `toggle (auto randpick|arp)`: Toggles automatic random picking for a player
- - `toggle dm`: Toggles whether or not you receive cards as a DM from Wizzy (default: on)
- - `cahds now`: Send cards immediately without toggling DM
- - `end game`: end the current game
- - `show decks`: shows the deck names available
- - `refresh sheets`: refreshes the GSheets that contain the card sets. Can only be done outside a game.
- - `show link`: shows the link to the GSheets where Wizzy reads in cards. helpful if you want to contribute
-*Card selection*:
- - `(p|pick) <card-num>[<next-card>]`: pick your card for the round (index starts at 1, cards in order)
- - `decknuke`: Don't like any of your cards? Use this and one card will get randpicked and the others shuffled out. 
-        _NOTE: If your randpicked card is chosen, you'll get 1 point deducted :)_
- - `randpick`: randomly select your card when you just can't decide
-    randpick options:
-        - `@other_player`: randpick for another player
-        - `1234` or `1,2,3,4`: randpick from a subset of your cards
-*Judge-only commands*:
- - `(c|choose) <index>`: used when selecting the :q:best:q: card from picks (index starts at 1)
- - `randchoose`: randomly choose any of the cards or a subset
-    randchoose options:
-        - `234` or `2,3,4`: randchoose from a subset of choices
-"""
-
-
 class CAHBot:
     """Bot for playing Cards Against Humanity on Slack"""
 
@@ -94,15 +57,256 @@ class CAHBot:
         version_dict = get_versions()
         self.version = version_dict['version']
         self.update_date = pd.to_datetime(version_dict['date']).strftime('%F %T')
-        self.bootup_msg = f'```Booted up at {pd.datetime.now():%F %T}! ' \
-                          f'\n\t{self.version} (updated {self.update_date})```'
-        self.message_grp(self.bootup_msg)
+        self.bootup_msg = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Wizzy* *`{self.version}`* booted up at {pd.datetime.now():%F %T}!\n"
+                            f"(updated {self.update_date})"
+                }
+            }
+        ]
+        self.message_grp(blocks=self.bootup_msg)
 
         # Generate score wiping key
         self.confirm_wipe = ''.join(random.choices(string.ascii_lowercase + string.digits, k=20))
 
         # Check for preserved scores
         self.read_score()
+        # This will be built later
+        self.help_block = []
+
+        cat_basic = 'basic'
+        cat_settings = 'settings'
+        cat_player = 'player'
+        cat_judge = 'judge'
+
+        self.cmd_dict = {
+            r'^help': {
+                'pattern': 'help',
+                'cat': cat_basic,
+                'desc': 'Description of all the commands I respond to!',
+                'value': self.help_block,
+            },
+            r'^about$': {
+                'pattern': 'about',
+                'cat': cat_basic,
+                'desc': 'Bootup time, version and last update date',
+                'value': self.bootup_msg,
+            },
+            r'^new game': {
+                'pattern': 'new game [FLAGS]',
+                'cat': cat_basic,
+                'desc': 'Start a new CAH game',
+                'value': [self.new_game, 'message'],
+                'flags': [
+                    {
+                        'pattern': '-(set|s) <card-set-name>',
+                        'desc': 'Choose a specific card set (e.g., standard, indeed) default: `standard`',
+                    }, {
+                        'pattern': '-skip @p1 @p2 ...',
+                        'desc': 'skips players in the channel but not playing'
+                    }, {
+                        'pattern': '-p @p1 @p2 ...',
+                        'desc': 'select the specific players in the channel to play with'
+                    }
+                ]
+            },
+            r'^(points|score[s]?)': {
+                'pattern': '(points|score[s]?)',
+                'cat': cat_basic,
+                'desc': 'Ghow points / score of all players',
+                'value': [self.display_points]
+            },
+            r'^status': {
+                'pattern': 'status',
+                'cat': cat_basic,
+                'desc': 'Get current status of the game and other metadata',
+                'value': [self.display_status]
+            },
+            r'^toggle (judge\s?|j)ping': {
+                'pattern': 'toggle (judge|j)ping',
+                'cat': cat_settings,
+                'desc': 'Toggles whether or not the judge is pinged after all selections are made. default: `True`',
+                'value': [self.toggle_judge_ping]
+            },
+            r'^toggle (winner\s?|w)ping': {
+                'pattern': 'toggle (winner|w)ping',
+                'cat': cat_settings,
+                'desc': 'Toggles whether or not the winner is pinged when they win a round. default: `True`',
+                'value': [self.toggle_winner_ping]
+            },
+            r'^toggle (auto\s?randpick|arp)': {
+                'pattern': 'toggle (auto randpick|arp)',
+                'cat': cat_settings,
+                'desc': 'Toggles automated randpicking. default: `False`',
+                'value': [self.toggle_auto_randpick, 'user']
+            },
+            r'^toggle (card\s?)?dm': {
+                'pattern': 'toggle (dm|card dm)',
+                'cat': cat_settings,
+                'desc': 'Toggles whether or not you receive cards as a DM from Wizzy. default: `True`',
+                'value': [self.toggle_card_dm, 'user']
+            },
+            r'^cahds now': {
+                'pattern': 'cahds now',
+                'cat': cat_player,
+                'desc': 'Toggles whether or not you receive cards as a DM from Wizzy. default: `True`',
+                'value': [self.dm_cards_now, 'user']
+            },
+            r'^end game': {
+                'pattern': 'end game',
+                'cat': cat_basic,
+                'desc': 'Ends the current game and saves scores',
+                'value': [self.end_game]
+            },
+            r'^show decks': {
+                'pattern': 'show decks',
+                'cat': cat_basic,
+                'desc': 'Shows the decks currently available',
+                'value': [self.show_decks]
+            },
+            r'^refresh sheets': {
+                'pattern': 'refresh sheets',
+                'cat': cat_basic,
+                'desc': 'Refreshes the GSheet database that contains the card sets. Can only be done outside a game.',
+                'value': [self.handle_refresh_decks]
+            },
+            r'^(gsheets?|show) link': {
+                'pattern': '(show|gsheet[s]?) link',
+                'cat': cat_basic,
+                'desc': 'Shows the link to the GSheets database whence Wizzy reads cards. Helpful for contributing.',
+                'value': f'https://docs.google.com/spreadsheets/d/{self.cah_gsheet_key}/'
+            },
+            r'^p(ick)? \d[\d,]*': {
+                'pattern': '(p|pick) <card-num>[<next-card>]',
+                'cat': cat_player,
+                'desc': 'Pick your card(s) for the round',
+                'value': [self.process_picks, 'user', 'message']
+            },
+            r'^decknuke': {
+                'pattern': 'decknuke',
+                'cat': cat_player,
+                'desc': 'Don\'t like any of your cards? Use this and one card will get randpicked from your '
+                        'current deck. The other will be shuffled out and replaced with new cards \n\t\t'
+                        '_NOTE: If your randpicked card is chosen, you\'ll get 1:diddlecoin: deducted :hr-smile:_',
+                'value': [self.decknuke, 'user']
+            },
+            r'^randpick': {
+                'pattern': 'randpick [FLAGS]',
+                'cat': cat_player,
+                'desc': 'Randomly select your card when you just can\'t decide.',
+                'flags': [
+                    {
+                        'pattern': '@other_player',
+                        'desc': 'Randomly select for another player'
+                    }, {
+                        'pattern': '1234` or `1,2,3,4',
+                        'desc': 'Randomly select from a subset of your cards'
+                    }
+                ],
+                'value': [self.process_picks, 'user', 'message']
+            },
+            r'^c(hoose)? \d': {
+                'pattern': '(c|choose) <card-num>',
+                'cat': cat_judge,
+                'desc': 'Used by the judge to select the :Q:best:Q: card from the picks.',
+                'value': [self.choose_card, 'user', 'message']
+            },
+            r'^randchoose': {
+                'pattern': 'randchoose [FLAGS]',
+                'cat': cat_judge,
+                'desc': 'Randomly choose the best card from all the cards or a subset.',
+                'value': [self.choose_card, 'user', 'message'],
+                'flags': [
+                    {
+                        'pattern': '234` or `2,3,4',
+                        'desc': 'Choose randomly from a subset'
+                    }
+                ]
+            },
+            r'^wipe score[s]?$': {
+                'pattern': 'wipe score',
+                'cat': cat_basic,
+                'desc': 'Wipe scores (with confirmation before)',
+                'value': f'Are you sure you want to wipe scores? '
+                         f'Reply with `wipe scores {self.confirm_wipe}` to confirm'
+            },
+            r'^wipe score[s]? [\w\d]+': {
+                'pattern': 'wipe score <confirmation-code>',
+                'cat': cat_basic,
+                'desc': 'Definitely wipe scores',
+                'value': [self.handle_wipe_scores, 'message']
+            }
+        }
+        # Lastly, build the help text based on the commands above and insert back into the commands dict
+        self.build_help_txt()
+        self.cmd_dict[r'^help']['value'] = self.help_block
+
+    def build_help_txt(self, **kwargs):
+        """Builds Viktor's description of functions into a giant wall of text"""
+        blocks = [
+            {
+                'type': 'section',
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"Hi! I'm *Wizzy* and I help you play Cards Against Humanity! \n"
+                            f"I can do stuff for you as long as you call my attention first with "
+                            f"*`{'`* or *`'.join(self.triggers)}`*\n "
+                            f"Example: *`c! new game -set standard`*\nHere's what I can do:"
+                },
+                "accessory": {
+                    "type": "image",
+                    "image_url": "https://avatars.slack-edge.com/2020-01-28/925065624848_3efb45d2ac590a466dbd_512.png",
+                    "alt_text": "wizzy thumbnail"
+                }
+            },
+            {
+                "type": "divider"
+            }
+        ]
+        help_dict = {
+            'basic': [],
+            'settings': [],
+            'player': [],
+            'judge': []
+        }
+        for k, v in self.cmd_dict.items():
+            if 'pattern' not in v.keys():
+                v['pattern'] = k
+            if 'flags' in v.keys():
+                extra_desc = '\n\t\t'.join([f'*`{x["pattern"]}`*: {x["desc"]}' for x in v['flags']])
+                # Append flags to the end of the description (they'll be tabbed in)
+                v["desc"] += f'\n\t_optional flags_\n\t\t{extra_desc}'
+            help_dict[v['cat']].append(f'- *`{v["pattern"]}`*: {v["desc"]}')
+
+        command_frags = []
+        for k, v in help_dict.items():
+            list_of_cmds = "\n".join(v)
+            command_frags.append(f'*{k.title()} Commands*:\n{list_of_cmds}')
+
+        for command in command_frags:
+            blocks.append({
+                'type': 'section',
+                'text': {
+                    'type': 'mrkdwn',
+                    'text': command
+                }
+            })
+            blocks.append({
+                'type': 'divider'
+            })
+
+        self.help_block = blocks
+
+    @staticmethod
+    def call_command(cmd, *args, **kwargs):
+        """
+        Calls the command referenced while passing in arguments
+        :return: None or string
+        """
+        return cmd(*args, **kwargs)
 
     def handle_command(self, event_dict):
         """Handles a bot command if it's known"""
@@ -112,67 +316,53 @@ class CAHBot:
         user = event_dict['user']
         channel = event_dict['channel']
 
-        if message == 'help':
-            response = help_txt
-        elif message == 'about':
-            response = self.bootup_msg
-        elif message.startswith('new game'):
-            self.new_game(message)
-        elif message == 'end game':
-            self.end_game()
-        elif message == 'wipe scores':
-            response = f'Are you sure you want to wipe scores? ' \
-                       f'Reply with `wipe scores {self.confirm_wipe}` to confirm'
-        elif message == f'wipe scores {self.confirm_wipe}':
-            self.wipe_score()
-        elif message.startswith('pick') or message.split()[0] == 'p':
-            self.process_picks(user, message)
-        elif message == 'decknuke':
-            self.decknuke(user)
-        elif message.startswith('choose') or message.split()[0] == 'c' or message.startswith('randchoose'):
-            self.choose_card(user, message)
-        elif message.startswith('randpick'):
-            self.process_picks(user, message)
-        elif message in ['points', 'score', 'scores']:
-            self.display_points()
-        elif message in ['toggle judge ping', 'toggle jping']:
-            self.toggle_judge_ping()
-        elif message in ['toggle winner ping', 'toggle wping']:
-            self.toggle_winner_ping()
-        elif message in ['toggle auto randpick', 'toggle arp']:
-            self.toggle_auto_randpick(user)
-        elif message == 'toggle dm':
-            self.toggle_card_dm(user)
-        elif message == 'cahds now':
-            self.dm_cards_now(user)
-        elif message == 'show decks':
-            response = f'`{",".join(self.decks.deck_names)}`'
-        elif message == 'show link':
-            response = f'https://docs.google.com/spreadsheets/d/{self.cah_gsheet_key}/'
-        elif message == 'status':
-            self.display_status()
-        elif message == 'refresh sheets':
-            if self.game is None:
-                self.refresh_decks()
-                response = f'Sheets have been refreshed! New decks: `{",".join(self.decks.deck_names)}`'
-            elif self.game.status not in [self.game.gs.stahted, self.game.gs.ended]:
-                response = 'Please end the game before refreshing. THANKSSSS :))))))'
-            else:
-                self.refresh_decks()
-                response = f'Sheets have been refreshed! New decks: `{",".join(self.decks.deck_names)}`'
-        elif message != '':
-            response = f"I didn't understand this: `{message}`\n " \
-                       "Use `cah help` to get a list of my commands."
+        is_matched = False
+        for regex, resp_dict in self.cmd_dict.items():
+            match = re.match(regex, message)
+            if match is not None:
+                # We've matched on a command
+                resp = resp_dict['value']
+                if isinstance(resp, list):
+                    if isinstance(resp[0], dict):
+                        # Response is a JSON blob for handling in Block Kit.
+                        response = resp
+                    else:
+                        # Copy the list to ensure changes aren't propagated to the command list
+                        resp_list = resp.copy()
+                        # Examine list, replace any known strings ('message', 'channel', etc.)
+                        #   with event context variables
+                        for k, v in event_dict.items():
+                            if k in resp_list:
+                                resp_list[resp_list.index(k)] = v
+                        # Function with args; sometimes response can be None
+                        response = self.call_command(*resp_list, match_pattern=regex)
+                else:
+                    # String response
+                    response = resp
+                is_matched = True
+                break
+
+        if message != '' and not is_matched:
+            response = f"I didn\'t understand this: `{message}`\n" \
+                       f"Use {' or '.join([f'`{x} help`' for x in self.triggers])} to get a list of my commands."
 
         if response is not None:
             resp_dict = {
                 'user': user
             }
-            self.st.send_message(channel, response.format(**resp_dict))
+            if isinstance(response, str):
+                self.st.send_message(channel, response.format(**resp_dict))
+            elif isinstance(response, list):
+                self.st.send_message(channel, '', blocks=response)
 
-    def message_grp(self, message):
+    def message_grp(self, message=None, blocks=None):
         """Wrapper to send message to whole channel"""
-        self.st.send_message(self.channel_id, message)
+        if message is not None:
+            self.st.send_message(self.channel_id, message)
+        elif blocks is not None:
+            self.st.send_message(self.channel_id, message='', blocks=blocks)
+        else:
+            raise ValueError('No data passed for message.')
 
     @staticmethod
     def _get_text_after_flag(flags, msg, default=None):
@@ -226,6 +416,29 @@ class CAHBot:
             players.append(user_cleaned)
         return players
 
+    def show_decks(self, **kwargs):
+        """Returns the deck names currently available"""
+        return f'`{",".join(self.decks.deck_names)}`'
+
+    def handle_refresh_decks(self, **kwargs):
+        """Handles top-level checking of game status before refreshing sheets"""
+        if self.game is None:
+            self.refresh_decks()
+            response = f'Sheets have been refreshed! New decks: `{",".join(self.decks.deck_names)}`'
+        elif self.game.status not in [self.game.gs.stahted, self.game.gs.ended]:
+            response = 'Please end the game before refreshing. THANKSSSS :))))))'
+        else:
+            self.refresh_decks()
+            response = f'Sheets have been refreshed! New decks: `{",".join(self.decks.deck_names)}`'
+        return response
+
+    def handle_wipe_scores(self, message, **kwargs):
+        """Handles determining if a wipe score command is valid"""
+        if self.confirm_wipe in message:
+            self.wipe_score()
+        else:
+            return "Score wipe aborted. Missing confirmation code."
+
     def _determine_players(self, message):
         """Determines the players for the game"""
         skip_players = self._get_text_after_flag(['-skip'], message)
@@ -269,7 +482,7 @@ class CAHBot:
                              f'Possible sets: `{",".join(self.decks.deck_names)}`.')
         return deck
 
-    def new_game(self, message):
+    def new_game(self, message, **kwargs):
         """Begins a new game"""
         if self.game is not None:
             if self.game.status != self.game.gs.ended:
@@ -298,7 +511,7 @@ class CAHBot:
         # Kick off the new round, message details to the group
         self.new_round(notifications=response_list, save=False)
 
-    def toggle_judge_ping(self):
+    def toggle_judge_ping(self, **kwargs):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
         if self.game is None:
             self.message_grp('Start a game first, then tell me to do that.')
@@ -307,7 +520,7 @@ class CAHBot:
         self.game.toggle_judge_ping()
         self.message_grp(f'Judge pinging set to: `{self.game.ping_judge}`')
 
-    def toggle_winner_ping(self):
+    def toggle_winner_ping(self, **kwargs):
         """Toggles whether or not to ping the winner when they've won a round"""
         if self.game is None:
             self.message_grp('Start a game first, then tell me to do that.')
@@ -316,7 +529,7 @@ class CAHBot:
         self.game.toggle_winner_ping()
         self.message_grp(f'Weiner pinging set to: `{self.game.ping_winner}`')
 
-    def toggle_card_dm(self, user_id):
+    def toggle_card_dm(self, user_id, **kwargs):
         """Toggles card dming"""
         if self.game is None:
             # Set the player object outside of the game
@@ -333,7 +546,7 @@ class CAHBot:
         else:
             self.players.update_player(player)
 
-    def toggle_auto_randpick(self, user_id):
+    def toggle_auto_randpick(self, user_id, **kwargs):
         """Toggles card dming"""
         if self.game is None:
             # Set the player object outside of the game
@@ -352,7 +565,7 @@ class CAHBot:
         else:
             self.players.update_player(player)
 
-    def dm_cards_now(self, user_id):
+    def dm_cards_now(self, user_id, **kwargs):
         """DMs current card set to user"""
         if self.game is None:
             self.message_grp('Start a game first, then tell me to do that.')
@@ -409,7 +622,7 @@ class CAHBot:
             # Increment rounds played by this player by 1
             self.game.players.player_list[i].rounds_played += 1
 
-    def decknuke(self, user):
+    def decknuke(self, user, **kwargs):
         """Deals the user a new hand while randpicking one of the cards from their current deck.
         The card that's picked will have a negative point value
         """
@@ -424,7 +637,7 @@ class CAHBot:
         self.game._card_dealer(player, 4)
         self.message_grp(f'{player.display_name} has had their deck nuked! :impact:')
 
-    def process_picks(self, user, message):
+    def process_picks(self, user, message, **kwargs):
         """Processes the card selection made by the user"""
         if self.game is None:
             self.message_grp('Start a game first, then tell me to do that.')
@@ -470,7 +683,8 @@ class CAHBot:
                         card_subset = list(map(int, after_randpick.split(',')))
                     else:
                         # Pick not understood; doesn't match expected syntax
-                        self.message_grp(f'<@{user}> I didn\'t understand your randpick message (`{message}`). Pick voided.')
+                        self.message_grp(
+                            f'<@{user}> I didn\'t understand your randpick message (`{message}`). Pick voided.')
                         return None
                 else:
                     # Was a tag. We've already applied the tag earlier
@@ -570,7 +784,7 @@ class CAHBot:
         """Shows a random order of the picks"""
         self.message_grp(f'Q: `{self.game.current_question_card.txt}`\n\n{self.game.display_picks()}')
 
-    def choose_card(self, user, message):
+    def choose_card(self, user, message, **kwargs):
         """For the judge to choose the winning card"""
         if self.game is None:
             self.message_grp('Start a game first, then tell me to do that.')
@@ -631,7 +845,7 @@ class CAHBot:
         else:
             self.message_grp("Get yo _stanky_ ass outta here, you ain't the judge")
 
-    def end_game(self):
+    def end_game(self, **kwargs):
         """Ends the current game"""
         if self.game is None:
             self.message_grp('You have to start a game before you can end it...????')
@@ -710,7 +924,7 @@ class CAHBot:
         self.save_score()
         self.message_grp('All scores have been erased.')
 
-    def display_points(self):
+    def display_points(self, **kwargs):
         """Displays points for all players"""
 
         if self.game is None:
@@ -782,7 +996,7 @@ class CAHBot:
                     result_list.append('{:d}{}'.format(attr_val, attrs[attr]))
         return ' '.join(result_list)
 
-    def display_status(self):
+    def display_status(self, **kwargs):
         """Displays status of the game"""
 
         if self.game is None:
