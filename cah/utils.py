@@ -8,7 +8,7 @@ import numpy as np
 from random import randrange
 from datetime import datetime
 from dateutil.relativedelta import relativedelta as reldelta
-from slacktools import SlackTools
+from slacktools import SlackTools, BlockKitBuilder
 from .cards import Decks
 from .players import Players
 from .games import Game
@@ -31,6 +31,7 @@ class CAHBot:
         # Read in common tools for interacting with Slack's API
         self.st = SlackTools(log_name, triggers=self.triggers, team='orbitalkettlerelay',
                              xoxp_token=xoxp_token, xoxb_token=xoxb_token)
+        self.bkb = BlockKitBuilder()
         # Two types of API interaction: bot-level, user-level
         self.bot = self.st.bot
         self.user = self.st.user
@@ -576,13 +577,71 @@ class CAHBot:
         # Send cards to user if the status shows we're currently in a game
         if len(player.hand.cards) == 0:
             msg_txt = "You have no cards to send. This likely means you're not a current player"
+            self.st.private_message(player.player_id, msg_txt)
         elif self.game.status == self.game.gs.players_decision:
-            question = f'Current Question:\n`{self.game.current_question_card}`'
-            cards_msg = player.hand.render_hand()
-            msg_txt = f'{question}\nJudge: `{self.game.judge.display_name}`\nYour cards:\n{cards_msg}'
+            question_block = self.make_question_block()
+            cards_block = player.hand.render_hand()
+            self.st.private_message(player.player_id, message='', blocks=question_block + cards_block)
         else:
             msg_txt = f"The game's current status (`{self.game.status}`) doesn't allow for card DMing"
-        self.st.private_message(player.player_id, msg_txt)
+            self.st.private_message(player.player_id, msg_txt)
+
+    def make_question_block(self):
+        """Generates the question block for the current round"""
+        # Determine honorific for judge
+        honorifics = [
+            'lackey', 'intern', 'young padawan', 'master apprentice', 'honorable', 'respected and just',
+            'cold and yet still fair', 'worthy inheriter of daddy\'s millions', 'mother of dragons', 'excellent',
+            'elder', 'ruler of the lower cards', 'most fair dictator of difficult choices',
+            'benevolent and omniscient chief of dutiful diddling', 'supreme high chancellor of card justice'
+        ]
+        judge_pts = self.game.judge.points
+        honorific = f'the {honorifics[-1] if judge_pts > len(honorifics) - 1 else honorifics[judge_pts]}'
+
+        return [
+            self.bkb.make_block_section(f'Round *`{self.game.rounds}`* - {honorific.title()} '
+                                        f'*Judge {self.game.judge.display_name.title()}* presiding.'),
+            self.bkb.make_block_section(f'*Q: {self.game.current_question_card.txt}*'),
+            self.bkb.make_block_divider()
+        ]
+
+    def process_incoming_action(self, user: str, channel: str, action: dict):
+        """Handles an incoming action (e.g., when a button is clicked)"""
+        if action['type'] == 'multi_static_select':
+            # Multiselect
+            selections = action['selected_options']
+            parsed_command = ''
+            for selection in selections:
+                value = selection['value'].replace('-', ' ')
+                if 'all' in value:
+                    # Only used for randpick/choose. Results in just the command 'rand(pick|choose)'
+                    #   If we're selecting all, we don't need to know any of the other selections.
+                    parsed_command = f'{value.split()[0]}'
+                    break
+                if parsed_command == '':
+                    # Put the entire first value into the parsed command (e.g., 'pick 1'
+                    parsed_command = f'{value}'
+                else:
+                    # Build on the already-made command by concatenating the number to the end
+                    #   e.g. 'pick 1' => 'pick 12'
+                    parsed_command += value.split()[1]
+
+        elif action['type'] == 'button':
+            # Normal button clicks just send a 'value' key in the payload dict
+            parsed_command = action['value'].replace('-', ' ')
+        else:
+            # Command not parsed
+            parsed_command = ''
+            # Probably should notify the user, but I'm not sure if Slack will attempt
+            #   to send requests multiple times if it doesn't get a response in time.
+            return None
+
+        if 'pick' in parsed_command:
+            # Handle pick/randpick
+            self.process_picks(user, parsed_command)
+        elif 'choose' in parsed_command:
+            # handle choose/randchoose
+            self.choose_card(user, parsed_command)
 
     def new_round(self, notifications=None, save=True):
         """Starts a new round
@@ -596,26 +655,35 @@ class CAHBot:
         # Refresh the players' names, get response from build function
         self.players.load_players_in_channel(self._build_players(), refresh=True, names_only=True)
 
-        if notifications is None:
-            notifications = []
-        notifications += self.game.new_round()
+        # Leverage Block Kit to make notifications fancier
+        notification_block = []
+
+        if notifications is not None:
+            # Process incoming notifications into the block
+            notification_block.append(self.bkb.make_block_section(notifications, join_str='\n'))
+
+        self.game.new_round()
         if self.game.status == self.game.gs.ended:
             # Game ended because we ran out of questions
-            self.message_grp('\n'.join(notifications))
+            self.message_grp(blocks=notification_block)
             self.end_game()
             return None
 
-        self.message_grp('\n'.join(notifications))
+        question_block = self.make_question_block()
+        notification_block += question_block
+        self.message_grp(blocks=notification_block)
+
+        # Get the required number of answers for the current question
+        req_ans = self.game.current_question_card.required_answers
 
         self.st.private_channel_message(self.game.judge.player_id, self.channel_id, "You're the judge this round!")
         for i, player in enumerate(self.game.players.player_list):
             if player.player_id != self.game.judge.player_id:
+                cards_block = player.hand.render_hand(max_selected=req_ans)  # Returns list of blocks
                 if player.dm_cards:
-                    question = f'Current Question:\n`{self.game.current_question_card}`'
-                    cards_msg = player.hand.render_hand()
-                    msg_txt = f'{question}\nJudge: `{self.game.judge.display_name}`\nYour cards:\n{cards_msg}'
-                    self.st.private_message(player.player_id, msg_txt)
-                self.st.private_channel_message(player.player_id, self.channel_id, player.hand.render_hand())
+                    msg_block = question_block + cards_block
+                    self.st.private_message(player.player_id, message='', blocks=msg_block)
+                self.st.private_channel_message(player.player_id, self.channel_id, message='', blocks=cards_block)
                 if player.auto_randpick:
                     # Player has elected to automatically pick their cards
                     self.process_picks(player.player_id, 'randpick')
@@ -782,7 +850,14 @@ class CAHBot:
 
     def _display_picks(self):
         """Shows a random order of the picks"""
-        self.message_grp(f'Q: `{self.game.current_question_card.txt}`\n\n{self.game.display_picks()}')
+        question_block = self.make_question_block()
+        choice_block = self.game.display_picks()
+        public_response_block = question_block + [choice_block[0]]
+        private_response_block = choice_block[1:]
+        # Show everyone's picks to the group, but only send the choice buttons to the judge
+        self.message_grp(blocks=public_response_block)
+        self.st.private_channel_message(self.game.judge.player_id, self.channel_id,
+                                        message='', blocks=private_response_block)
 
     def choose_card(self, user, message, **kwargs):
         """For the judge to choose the winning card"""
@@ -815,7 +890,12 @@ class CAHBot:
                         return None
                 else:
                     # Randomly choose from all cards
-                    pick = list(np.random.choice(len(self.game.players.player_list) - 2, 1))[0]
+                    # available choices = total number of players - (judge + len factor)
+                    available_choices = len(self.game.players.player_list) - 2
+                    if available_choices == 0:
+                        pick = 0
+                    else:
+                        pick = list(np.random.choice(available_choices, 1))[0]
             else:
                 pick = self._get_pick(user, message, judge_decide=True)
             if pick > len(self.game.players.player_list) - 2 or pick < 0:
@@ -836,7 +916,7 @@ class CAHBot:
                 self.game.players.update_player(winner)
                 winner_details = winner.player_tag if self.game.ping_winner else f'`{winner.display_name}`'
                 self.message_grp(f"Winning card: `{','.join([x.txt for x in winner.hand.picks])}`\n"
-                                 f"\t({winner_details}) new score: *{winner.points}* diddles "
+                                 f"\t({winner_details}) new score: *`{winner.points}`* :diddlecoin: "
                                  f"({winner.get_grand_score() + winner.points} total){decknuke_txt}")
                 self.game.status = self.game.gs.end_round
                 self.message_grp('Round ended.')

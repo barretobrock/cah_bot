@@ -3,6 +3,7 @@
 import re
 import pandas as pd
 from random import shuffle
+from slacktools import BlockKitBuilder
 
 
 class Card:
@@ -56,6 +57,7 @@ class Hand:
     def __init__(self):
         self.cards = list()
         self.picks = None
+        self.bkb = BlockKitBuilder()
 
     def pick_card(self, pos_list):
         """Picks card at index"""
@@ -69,9 +71,37 @@ class Hand:
                 return True
         return False
 
-    def render_hand(self):
-        """Prints out the hand to the player"""
-        return '{}'.format('\n'.join(['\t`{}`: {}'.format(i + 1, x) for i, x in enumerate(self.cards)]))
+    def render_hand(self, max_selected=1):
+        """Prints out the hand to the player
+        Args:
+            max_selected: int, the maximum allowed number of definite selections (not randpicks) to make
+                if this equals 1, the multi select for definite selections will not be rendered,
+                otherwise it will take the place of the individual buttons
+        """
+        card_blocks = []
+        btn_list = []  # Button info to be made into a button group
+        randbtn_list = []  # Just like above, but bear a 'rand' prefix to differentiate. These can be subset.
+        for i, card in enumerate(self.cards):
+            num = i + 1
+            card_blocks.append(self.bkb.make_block_section(f'*{num}*: {card.txt}'))
+            btn_list.append({'txt': f'{num}', 'value': f'pick-{num}'})
+            randbtn_list.append({'txt': f'{num}', 'value': f'randpick-{num}'})
+
+        if max_selected > 1:
+            desc = f'{max_selected} picks required for this question'
+            definite_selection_area = self.bkb.make_block_multiselect(desc, f'Select {max_selected} picks',
+                                                                      btn_list, max_selected_items=max_selected)
+        else:
+            definite_selection_area = self.bkb.make_button_group(btn_list)
+
+        rand_options = [{'txt': 'All picks', 'value': 'randpick-all'}] + randbtn_list
+
+        return card_blocks + [
+            self.bkb.make_block_divider(),
+            definite_selection_area,
+            self.bkb.make_block_divider(),
+            self.bkb.make_block_multiselect('Randpick (all or subset)', 'Select picks', rand_options)
+        ]
 
     def take_card(self, card):
         """Takes popped card and puts in hand"""

@@ -1,5 +1,6 @@
 import os
-from flask import Flask
+import json
+from flask import Flask, request, make_response
 from slacktools import SlackEventAdapter
 from .utils import CAHBot
 
@@ -16,6 +17,24 @@ for t in ['SIGNING_SECRET', 'XOXB_TOKEN', 'XOXP_TOKEN', 'VERIFY_TOKEN']:
 Bot = CAHBot(bot_name, key_dict['xoxb_token'], key_dict['xoxp_token'], debug=DEBUG)
 message_events = []
 app = Flask(__name__)
+
+
+@app.route('/cah/cahapi/actions', methods=['GET', 'POST'])
+def handle_action():
+    """Handle a response when a user clicks a button from Wizzy in Slack"""
+    event_data = json.loads(request.form["payload"])
+    user = event_data['user']['id']
+    channel = event_data['channel']['id']
+    actions = event_data['actions']
+    # Not sure if we'll ever receive more than one action?
+    action = actions[0]
+    # Send that info onwards to determine how to deal with it
+    Bot.process_incoming_action(user, channel, action)
+    Bot.st.delete_message(event_data)
+
+    # Send HTTP 200 response with an empty body so Slack knows we're done
+    return make_response('', 200)
+
 
 # Events API listener
 bot_events = SlackEventAdapter(key_dict['signing_secret'], "/cah/cahapi/events", app)

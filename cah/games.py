@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 from random import shuffle
+from slacktools import BlockKitBuilder
 from .players import Players
 
 
@@ -30,6 +31,7 @@ class GameStatus:
 class Game:
     """Holds data for current game"""
     def __init__(self, players, deck, trigger_msg):
+        self.bkb = BlockKitBuilder()
         self.game_id = id(datetime.now().timestamp())
         self.players = Players(players, origin='prebuilt')
         shuffle(self.players.player_list)
@@ -68,9 +70,6 @@ class Game:
     def new_round(self):
         """Starts a new round"""
 
-        # Notifications list to be passed back to the bot handler
-        notifications = []
-
         if self.status not in [self.gs.end_round, self.gs.initiated]:
             # Avoid starting a new round when one has already been started
             raise ValueError(f'Cannot transition to new round due to current status (`{self.status}`)')
@@ -78,18 +77,14 @@ class Game:
         # Determine if the game should be ended before proceeding
         if len(self.deck.questions_card_list) == 0:
             # No more questions, game hath ended
-            notifications = [
-                'No more question cards! Game over! :party-dead::party-dead::party-dead:',
-            ]
             self.end_game()
-            return notifications
+            return [self.bkb.make_block_section(f'No more question cards! Game over! {":party-dead:" * 3}')]
 
         # Increment rounds
         self.rounds += 1
 
         # Get new judge
         self.get_next_judge()
-        notifications.append(f'Round {self.rounds}: `{self.judge.display_name}` is the judge!')
 
         # Determine number of cards to deal to each player & deal
         # either full deck or replacement cards for previous question
@@ -108,10 +103,8 @@ class Game:
 
         # Deal question card
         self.current_question_card = self.deck.deal_question_card()
-        notifications.append(f"Q: `{self.current_question_card.txt}`")
 
         self.round_start_time = datetime.now()
-        return notifications
 
     def end_game(self):
         """Ends the game"""
@@ -186,6 +179,25 @@ class Game:
                  for player in self.players.player_list if player.hand.picks is not None]
         shuffle(picks)
         self.picks = picks
-        pick_str = '\n'.join(['`{}`: {}'.format(i + 1, '|'.join([' `{}` '.format(x) for x in picks['picks']]))
-                              for i, picks in enumerate(self.picks)])
-        return pick_str
+
+        card_blocks = []
+        btn_list = []  # Button info to be made into a button group
+        randbtn_list = []  # Just like above, but bear a 'rand' prefix to differentiate. These can be subset.
+        for i, picks in enumerate(self.picks):
+            num = i + 1
+            card_blocks.append(self.bkb.make_block_section(
+                f'*{num}*: {"|".join([f" *`{x}`* " for x in picks["picks"]])}'))
+
+            btn_list.append({'txt': f'{num}', 'value': f'choose-{num}'})
+            randbtn_list.append({'txt': f'{num}', 'value': f'randchoose-{num}'})
+
+        definite_selection_area = self.bkb.make_button_group(btn_list)
+
+        rand_options = [{'txt': 'All choices', 'value': 'randchoose-all'}] + randbtn_list
+
+        return card_blocks + [
+            self.bkb.make_block_divider(),
+            definite_selection_area,
+            self.bkb.make_block_divider(),
+            self.bkb.make_block_multiselect('Randchoose (all or subset)', 'Select choices', rand_options)
+        ]
