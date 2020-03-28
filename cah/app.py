@@ -1,5 +1,6 @@
 import os
 import json
+import requests
 from flask import Flask, request, make_response
 from slacktools import SlackEventAdapter
 from .utils import CAHBot
@@ -30,7 +31,16 @@ def handle_action():
     action = actions[0]
     # Send that info onwards to determine how to deal with it
     Bot.process_incoming_action(user, channel, action)
-    Bot.st.delete_message(event_data)
+
+    # Respond to the initial message and update it
+    update_dict = {
+        'replace_original': True,
+        'text': 'Thanks, shithead!'
+    }
+    if event_data['container']['is_ephemeral']:
+        update_dict['response_type'] = 'ephemeral'
+    resp = requests.post(event_data['response_url'], json=update_dict,
+                         headers={'Content-Type': 'application/json'})
 
     # Send HTTP 200 response with an empty body so Slack knows we're done
     return make_response('', 200)

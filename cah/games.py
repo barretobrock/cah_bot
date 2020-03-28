@@ -149,9 +149,9 @@ class Game:
         success = player.hand.pick_card(picks)
         if success:
             self.players.update_player(player)
-            return f'{player.display_name}\'s pick has been registered.'
+            return f'*`{player.display_name}`*\'s pick has been registered.'
         elif not success and player.hand.picks is not None:
-            return f'{player.display_name}\'s pick voided. You already picked.'
+            return f'*`{player.display_name}`*\'s pick voided. You already picked.'
         else:
             return 'Pick not registered.'
 
