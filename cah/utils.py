@@ -910,7 +910,6 @@ class CAHBot:
                 picks = self.game.picks
                 winning_pick = picks[pick]
                 winner = self.game.players.get_player_by_id(winning_pick['id'])
-                # chosen_cards = self.game_dict['chosen_cards']
                 winner.points += -1 if winner.new_hand else 1
                 decknuke_txt = '\nLMAO THEY LOST A POINT' if winner.new_hand else ''
                 self.game.players.update_player(winner)
@@ -1083,38 +1082,48 @@ class CAHBot:
             self.message_grp('I just stahted this wicked pissa game, go grab me some dunkies.')
             return None
 
-        status_list = [
-            '\n*Current Game Shit*',
-            f'Status: `{self.game.status}`',
+        status_block = [
+            self.bkb.make_block_section('*Game Info*')
         ]
 
         if self.game.status not in [self.game.gs.ended, self.game.gs.stahted]:
-            status_list += [
-                f'Judge: `{self.game.judge.display_name}`',
-                'Players: {}'.format(','.join(['`{}`'.format(x.display_name)
-                                               for x in self.game.players.player_list])),
-                f'Round: `{self.game.rounds}`',
-                f'Judge Ping: `{self.game.ping_judge}`',
-                f'Weiner Ping: `{self.game.ping_winner}`',
-                'DM Cards: {}'.format(",".join(
-                    ["`{}`".format(x.display_name) for x in self.game.players.player_list if x.dm_cards])),
-                '\n*Timing*',
-                f'Elapsed Round Time: `{self.get_time_elapsed(self.game.round_start_time)}`',
-                f'Elapsed Game Time: `{self.get_time_elapsed(self.game.game_start_time)}`',
-                '\n*Metadootie*',
-                f'Black Cards Left: `{len(self.game.deck.questions_card_list)}`',
-                f'White Cards Left: `{len(self.game.deck.answers_card_list)}`',
+            # Players that have card DMing enabled
+            dm_players = [f"`{x.display_name}`" for x in self.game.players.player_list if x.dm_cards]
+            # Players that have auto randpick enabled
+            arp_players = [f"`{x.display_name}`" for x in self.game.players.player_list if x.auto_randpick]
+
+            status_block += [
+                self.bkb.make_context_section([
+                    f':gavel: *Judge*: *`{self.game.judge.display_name.title()}`*'
+                ]),
+                self.bkb.make_block_divider(),
+                self.bkb.make_context_section([
+                    f'*Status*: *`{self.game.status.replace("_", " ").title()}`*\n'
+                    f'*Judge Ping*: `{self.game.ping_judge}`\t\t*Weiner Ping*: `{self.game.ping_winner}`\n'
+                    f':orange_check: *DM Cards*: {" ".join(dm_players)}\n'
+                    f':orange_check: *ARP*: {" ".join(arp_players)}\n'
+                ]),
+                self.bkb.make_block_divider(),
+                self.bkb.make_context_section([
+                    f':stopwatch: *Round `{self.game.rounds}`*: {self.get_time_elapsed(self.game.round_start_time)}\t\t'
+                    f'*Game*: {self.get_time_elapsed(self.game.game_start_time)}\n',
+                    f':stack-of-cards: *Deck*: `{self.game.deck.name}` - `{len(self.game.deck.questions_card_list)}` question &'
+                    f' `{len(self.game.deck.answers_card_list)}` answer cards remain',
+                    f':conga_parrot: *Player Order*: {" ".join([f"`{x.display_name}`" for x in self.game.players.player_list])}'
+                ])
             ]
 
         if self.game.status in [self.game.gs.players_decision, self.game.gs.judge_decision]:
-            status_list = status_list[:2] + [
-                f'Question: `{self.game.current_question_card}`',
-                'Pickles Needed: {}'.format(
-                    ','.join(['`{}`'.format(x) for x in self.game.players_left_to_decide()])),
-            ] + status_list[2:]
+            picks_needed = ['`{}`'.format(x) for x in self.game.players_left_to_decide()]
+            pickle_txt = '' if len(picks_needed) == 0 else f'\n*:pickle-sword: Pickles Needed*: {" ".join(picks_needed)}'
+            status_block = status_block[:1] + [
+                self.bkb.make_block_section(f':regional_indicator_q: `{self.game.current_question_card.txt}`'),
+                self.bkb.make_context_section([
+                    f':gavel: *Judge*: *`{self.game.judge.display_name.title()}`*{pickle_txt}'
+                ])
+            ] + status_block[2:]  # Skip over the previous judge block
 
-        status_message = '\n'.join(status_list)
-        self.message_grp(status_message)
+        self.message_grp(blocks=status_block)
 
     def _refresh_sheets(self):
         """Refreshes the GSheet containing the Q&A cards & other info"""
