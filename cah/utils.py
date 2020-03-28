@@ -822,7 +822,7 @@ class CAHBot:
             self._display_picks(notifications=messages)
         else:
             # Make the remaining players more visible
-            remaining_txt = ' '.join([f'{x:.10}' for x in remaining])
+            remaining_txt = ' '.join([f'`{x:.10}`' for x in remaining])
             messages.append(f'*`{len(remaining)}`* players remaining to decide: {remaining_txt}')
             self.message_grp('\n'.join(messages))
 
