@@ -83,23 +83,32 @@ class Hand:
         randbtn_list = []  # Just like above, but bear a 'rand' prefix to differentiate. These can be subset.
         for i, card in enumerate(self.cards):
             num = i + 1
-            card_blocks.append(self.bkb.make_block_section(f'*{num}*: {card.txt}'))
+            # Make a dictionary to be used as an accessory to the card's text.
+            #   If we need to pick more than one card for the question, set this dictionary as None
+            #   so buttons don't get confusingly rendered next to the cards.
+            #   (one of these buttons == one answer, so Wizzy will deny its entry as it's under the threshold)
+            card_btn_dict = self.bkb.make_block_button(f'{num}', f'pick-{num}') if max_selected == 1 else None
+            card_blocks.append(self.bkb.make_block_section(f'*{num}*: {card.txt}', accessory=card_btn_dict))
+            # We'll still build this button list, as it's used below when we need to select multiple answers
             btn_list.append({'txt': f'{num}', 'value': f'pick-{num}'})
             randbtn_list.append({'txt': f'{num}', 'value': f'randpick-{num}'})
 
+        # This is kinda hacky, but add the divider here so that if we don't have a multiselect area to add,
+        #   we still have something to add to the return statement below to make the flow a bit better
+        definite_selection_area = [
+            self.bkb.make_block_divider()
+        ]
         if max_selected > 1:
             desc = f'{max_selected} picks required for this question'
-            definite_selection_area = self.bkb.make_block_multiselect(desc, f'Select {max_selected} picks',
-                                                                      btn_list, max_selected_items=max_selected)
-        else:
-            definite_selection_area = self.bkb.make_button_group(btn_list)
+            definite_selection_area += [
+                self.bkb.make_block_multiselect(desc, f'Select {max_selected} picks', btn_list,
+                                                max_selected_items=max_selected),
+                self.bkb.make_block_divider()
+            ]
 
         rand_options = [{'txt': 'All picks', 'value': 'randpick-all'}] + randbtn_list
 
-        return card_blocks + [
-            self.bkb.make_block_divider(),
-            definite_selection_area,
-            self.bkb.make_block_divider(),
+        return card_blocks + definite_selection_area + [
             self.bkb.make_block_multiselect('Randpick (all or subset)', 'Select picks', rand_options)
         ]
 

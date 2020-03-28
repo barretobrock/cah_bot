@@ -79,6 +79,7 @@ class CAHBot:
         self.help_block = []
 
         cat_basic = 'basic'
+        cat_debug = 'debug'
         cat_settings = 'settings'
         cat_player = 'player'
         cat_judge = 'judge'
@@ -95,6 +96,12 @@ class CAHBot:
                 'cat': cat_basic,
                 'desc': 'Bootup time, version and last update date',
                 'value': self.bootup_msg,
+            },
+            r'^test\s?run': {
+                'pattern': 'test run',
+                'cat': cat_debug,
+                'desc': 'Starts a new test game in #cah-test. Not for use outside of debug mode',
+                'value': [self.test_run]
             },
             r'^new game': {
                 'pattern': 'new game [FLAGS]',
@@ -271,7 +278,8 @@ class CAHBot:
             'basic': [],
             'settings': [],
             'player': [],
-            'judge': []
+            'judge': [],
+            'debug': []
         }
         for k, v in self.cmd_dict.items():
             if 'pattern' not in v.keys():
@@ -364,6 +372,13 @@ class CAHBot:
             self.st.send_message(self.channel_id, message='', blocks=blocks)
         else:
             raise ValueError('No data passed for message.')
+
+    def test_run(self, **kwargs):
+        """Bypass for running a test game in #cah-test with just myself and a test account"""
+        if self.debug:
+            self.new_game(message='new game -s techindeed -p <@um35he6r5> <@umrjkac2w>')
+        else:
+            self.message_grp('No.')
 
     @staticmethod
     def _get_text_after_flag(flags, msg, default=None):
@@ -495,7 +510,7 @@ class CAHBot:
 
         # Determine card set to use
         card_set = self._get_text_after_flag(['-set', '-s'], message, 'standard')
-        response_list.append(f'Using `{card_set}` card set')
+        response_list.append(f'Using `{card_set}` deck')
 
         # Refresh the players' names, get response from build function
         self.players.load_players_in_channel(self._build_players(), refresh=True)
@@ -597,9 +612,11 @@ class CAHBot:
         ]
         judge_pts = self.game.judge.points
         honorific = f'the {honorifics[-1] if judge_pts > len(honorifics) - 1 else honorifics[judge_pts]}'
+        # Assign this to the judge so we can refer to it in other areas.
+        self.game.judge.honorific = honorific.title()
 
         return [
-            self.bkb.make_block_section(f'Round *`{self.game.rounds}`* - {honorific.title()} '
+            self.bkb.make_block_section(f'Round *`{self.game.rounds}`* - {self.game.judge.honorific} '
                                         f'*Judge {self.game.judge.display_name.title()}* presiding.'),
             self.bkb.make_block_section(f'*Q: {self.game.current_question_card.txt}*'),
             self.bkb.make_block_divider()
@@ -796,15 +813,18 @@ class CAHBot:
         if len(remaining) == 0:
             messages.append('All players have made their picks.')
             if self.game.ping_judge:
-                judge_msg = f'{self.game.judge.player_tag} to judge.'
+                judge_msg = f'{self.game.judge.honorific} {self.game.judge.player_tag} to judge.'
             else:
-                judge_msg = f'`{self.game.judge.display_name}` to judge.'
+                judge_msg = f'`{self.game.judge.honorific} {self.game.judge.display_name.title()}` to judge.'
             messages.append(judge_msg)
             self.game.status = self.game.gs.judge_decision
-            self._display_picks()
+
+            self._display_picks(notifications=messages)
         else:
-            messages.append(f'`{len(remaining)}` players remaining to decide: {", ".join(remaining)}')
-        self.message_grp('\n'.join(messages))
+            # Make the remaining players more visible
+            remaining_txt = ' '.join([f'{x:.10}' for x in remaining])
+            messages.append(f'*`{len(remaining)}`* players remaining to decide: {remaining_txt}')
+            self.message_grp('\n'.join(messages))
 
     def _get_pick(self, user, message, judge_decide=False):
         """Processes a number from a message"""
@@ -848,16 +868,28 @@ class CAHBot:
                                  f'but the current question requires {req_ans}.')
         return None
 
-    def _display_picks(self):
+    def _display_picks(self, notifications: list = None):
         """Shows a random order of the picks"""
+        if notifications is not None:
+            public_response_block = [
+                self.bkb.make_block_section(notifications),
+                self.bkb.make_block_divider()
+            ]
+        else:
+            public_response_block = []
         question_block = self.make_question_block()
         choice_block = self.game.display_picks()
-        public_response_block = question_block + [choice_block[0]]
-        private_response_block = choice_block[1:]
+        public_response_block += question_block + [choice_block[0]]
+        private_response_block = question_block + choice_block[1:]
         # Show everyone's picks to the group, but only send the choice buttons to the judge
         self.message_grp(blocks=public_response_block)
-        self.st.private_channel_message(self.game.judge.player_id, self.channel_id,
-                                        message='', blocks=private_response_block)
+        if self.game.judge.dm_cards:
+            # DM choices to judge if they have card dming enabled
+            self.st.private_message(self.game.judge.player_id, message='', blocks=private_response_block)
+        else:
+            # ...If not, send as private in-channel message (though this sometimes goes unrendered)
+            self.st.private_channel_message(self.game.judge.player_id, self.channel_id,
+                                            message='', blocks=private_response_block)
 
     def choose_card(self, user, message, **kwargs):
         """For the judge to choose the winning card"""

@@ -115,6 +115,7 @@ class Player:
     def __init__(self, player_id, display_name):
         self.player_id = player_id
         self.player_tag = f'<@{self.player_id}>'
+        self.honorific = ''
         self.display_name = display_name
         self.dm_cards = True
         self.skip = False

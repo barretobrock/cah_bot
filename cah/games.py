@@ -180,24 +180,22 @@ class Game:
         shuffle(picks)
         self.picks = picks
 
-        card_blocks = []
-        btn_list = []  # Button info to be made into a button group
+        judge_card_blocks = []
+        public_card_blocks = []
         randbtn_list = []  # Just like above, but bear a 'rand' prefix to differentiate. These can be subset.
         for i, picks in enumerate(self.picks):
             num = i + 1
-            card_blocks.append(self.bkb.make_block_section(
-                f'*{num}*: {"|".join([f" *`{x}`* " for x in picks["picks"]])}'))
-
-            btn_list.append({'txt': f'{num}', 'value': f'choose-{num}'})
+            # Make a block specifically for the judge (with buttons)
+            card_btn_dict = self.bkb.make_block_button(f'{num}', f'choose-{num}')
+            pick_txt = f'*{num}*: {"|".join([f" *`{x}`* " for x in picks["picks"]])}'
+            judge_card_blocks.append(self.bkb.make_block_section(pick_txt, accessory=card_btn_dict))
+            # Make a "public" block that just shows the choices in the channel
+            public_card_blocks.append(self.bkb.make_block_section(pick_txt))
             randbtn_list.append({'txt': f'{num}', 'value': f'randchoose-{num}'})
-
-        definite_selection_area = self.bkb.make_button_group(btn_list)
 
         rand_options = [{'txt': 'All choices', 'value': 'randchoose-all'}] + randbtn_list
 
-        return card_blocks + [
-            self.bkb.make_block_divider(),
-            definite_selection_area,
+        return public_card_blocks + judge_card_blocks + [
             self.bkb.make_block_divider(),
             self.bkb.make_block_multiselect('Randchoose (all or subset)', 'Select choices', rand_options)
         ]
