@@ -195,7 +195,7 @@ class Game:
 
         rand_options = [{'txt': 'All choices', 'value': 'randchoose-all'}] + randbtn_list
 
-        return public_card_blocks + judge_card_blocks + [
+        return public_card_blocks, judge_card_blocks + [
             self.bkb.make_block_divider(),
             self.bkb.make_block_multiselect('Randchoose (all or subset)', 'Select choices', rand_options)
         ]

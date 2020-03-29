@@ -26,6 +26,7 @@ class CAHBot:
         self.bot_name = 'Wizzy'
         self.triggers = ['cah', 'c!'] if not debug else ['decah', 'dc!']
         self.channel_id = 'CMPV3K8AE' if not debug else 'CQ1DG4WB1'  # cah or cah-test
+        self.admin_user = ['UM35HE6R5']
         # We'll need this to avoid overwriting actual scores
         self.debug = debug
         # Read in common tools for interacting with Slack's API
@@ -58,16 +59,10 @@ class CAHBot:
         version_dict = get_versions()
         self.version = version_dict['version']
         self.update_date = pd.to_datetime(version_dict['date']).strftime('%F %T')
-        self.bootup_msg = [
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*Wizzy* *`{self.version}`* booted up at {pd.datetime.now():%F %T}!\n"
-                            f"(updated {self.update_date})"
-                }
-            }
-        ]
+        self.bootup_msg = [self.bkb.make_context_section([
+            f"*Wizzy* *`{self.version}`* booted up at {pd.datetime.now():%F %T}!",
+            f"(updated {self.update_date})"
+        ])]
         self.message_grp(blocks=self.bootup_msg)
 
         # Generate score wiping key
@@ -296,16 +291,10 @@ class CAHBot:
             command_frags.append(f'*{k.title()} Commands*:\n{list_of_cmds}')
 
         for command in command_frags:
-            blocks.append({
-                'type': 'section',
-                'text': {
-                    'type': 'mrkdwn',
-                    'text': command
-                }
-            })
-            blocks.append({
-                'type': 'divider'
-            })
+            blocks += [
+                self.bkb.make_block_section(command),
+                self.bkb.make_block_divider()
+            ]
 
         self.help_block = blocks
 
@@ -375,8 +364,17 @@ class CAHBot:
 
     def test_run(self, **kwargs):
         """Bypass for running a test game in #cah-test with just myself and a test account"""
+        # Toggle arp with these player ids and turn off card dming
+        arp_players = ['UM8N2JZE3', 'UM3AP9RQT']  # pip, weezy
+
         if self.debug:
-            self.new_game(message='new game -s techindeed -p <@um35he6r5> <@umrjkac2w>')
+            for player in self.players.player_list:
+                if player.player_id in arp_players:
+                    player.auto_randpick = True
+                    player.dm_cards = False
+                self.players.update_player(player)
+            self.new_game(message='new game -s techindeed')
+            self.game.ping_winner = False
         else:
             self.message_grp('No.')
 
@@ -616,9 +614,9 @@ class CAHBot:
         self.game.judge.honorific = honorific.title()
 
         return [
-            self.bkb.make_block_section(f'Round *`{self.game.rounds}`* - {self.game.judge.honorific} '
-                                        f'*Judge {self.game.judge.display_name.title()}* presiding.'),
-            self.bkb.make_block_section(f'*Q: {self.game.current_question_card.txt}*'),
+            self.bkb.make_block_section(f'Round *`{self.game.rounds}`* - *{self.game.judge.honorific} '
+                                        f'Judge {self.game.judge.display_name.title()}* presiding.'),
+            self.bkb.make_block_section(f'*:regional_indicator_q:: {self.game.current_question_card.txt}*'),
             self.bkb.make_block_divider()
         ]
 
@@ -813,18 +811,19 @@ class CAHBot:
         if len(remaining) == 0:
             messages.append('All players have made their picks.')
             if self.game.ping_judge:
-                judge_msg = f'{self.game.judge.honorific} {self.game.judge.player_tag} to judge.'
+                judge_msg = f'{self.game.judge.player_tag} to judge.'
             else:
-                judge_msg = f'`{self.game.judge.honorific} {self.game.judge.display_name.title()}` to judge.'
+                judge_msg = f'`{self.game.judge.display_name.title()}` to judge.'
             messages.append(judge_msg)
             self.game.status = self.game.gs.judge_decision
 
             self._display_picks(notifications=messages)
         else:
             # Make the remaining players more visible
-            remaining_txt = ' '.join([f'`{x:.10}`' for x in remaining])
+            remaining_txt = ' '.join([f'`{x}`' for x in remaining])
             messages.append(f'*`{len(remaining)}`* players remaining to decide: {remaining_txt}')
-            self.message_grp('\n'.join(messages))
+            msg_block = [self.bkb.make_context_section(messages)]
+            self.message_grp(blocks=msg_block)
 
     def _get_pick(self, user, message, judge_decide=False):
         """Processes a number from a message"""
@@ -872,15 +871,15 @@ class CAHBot:
         """Shows a random order of the picks"""
         if notifications is not None:
             public_response_block = [
-                self.bkb.make_block_section(notifications),
+                self.bkb.make_context_section(notifications),
                 self.bkb.make_block_divider()
             ]
         else:
             public_response_block = []
         question_block = self.make_question_block()
-        choice_block = self.game.display_picks()
-        public_response_block += question_block + [choice_block[0]]
-        private_response_block = question_block + choice_block[1:]
+        public_choices, private_choices = self.game.display_picks()
+        public_response_block += question_block + public_choices
+        private_response_block = question_block + private_choices
         # Show everyone's picks to the group, but only send the choice buttons to the judge
         self.message_grp(blocks=public_response_block)
         if self.game.judge.dm_cards:
@@ -901,6 +900,11 @@ class CAHBot:
             # Prevent this method from being called outside of the judge's decision stage
             self.message_grp(f'Not the right status for this command: `{self.game.status}`')
             return None
+
+        if user in self.admin_user and 'blueberry pie' in message:
+            # Overrides the block below to allow admin to make a choice during testing or special circumstances
+            user = self.game.judge.player_id
+            message = 'randchoose'
 
         if user == self.game.judge.player_id:
             if 'randchoose' in message:
@@ -942,15 +946,30 @@ class CAHBot:
                 picks = self.game.picks
                 winning_pick = picks[pick]
                 winner = self.game.players.get_player_by_id(winning_pick['id'])
-                winner.points += -1 if winner.new_hand else 1
-                decknuke_txt = '\nLMAO THEY LOST A POINT' if winner.new_hand else ''
+                points_won = -2 if winner.new_hand else 1
+                winner.points += points_won
+                decknuke_txt = '\nLOL HOW DID THAT DECKNUKE WORK OUT FOR YA' if winner.new_hand else ''
                 self.game.players.update_player(winner)
-                winner_details = winner.player_tag if self.game.ping_winner else f'`{winner.display_name}`'
-                self.message_grp(f"Winning card: `{','.join([x.txt for x in winner.hand.picks])}`\n"
-                                 f"\t({winner_details}) new score: *`{winner.points}`* :diddlecoin: "
-                                 f"({winner.get_grand_score() + winner.points} total){decknuke_txt}")
+                winner_details = winner.player_tag if self.game.ping_winner \
+                    else f'*`{winner.display_name.title()}`*'
+                winner_txt_blob = [
+                    f":regional_indicator_q: *{self.game.current_question_card.txt}*",
+                    f":tada:Winning card: `{','.join([x.txt for x in winner.hand.picks])}`",
+                    f"*`{points_won:+}`* :diddlecoin: to {winner_details}! "
+                    f"New score: *`{winner.points}`* :diddlecoin: "
+                    f"({winner.get_grand_score() + winner.points} total){decknuke_txt}"
+                ]
+
+                message_block = [
+                    self.bkb.make_block_section(winner_txt_blob)
+                ]
                 self.game.status = self.game.gs.end_round
-                self.message_grp('Round ended.')
+                message_block += [
+                    self.bkb.make_block_divider(),
+                    self.bkb.make_context_section('Round ended.')
+                ]
+                self.message_grp(blocks=message_block)
+
                 # Start new round
                 self.new_round()
         else:
@@ -1077,7 +1096,8 @@ class CAHBot:
 
         scores_list = []
         for i, r in points_df.iterrows():
-            line = f"{r['rank']} `{r['name'][:20]:.<30}` {r['diddles']} :diddlecoin: ({r['overall']} total)"
+            line = f"{r['rank']} `{r['name'][:20].title():.<30}` " \
+                   f"{r['diddles']:<3} :diddlecoin: ({r['overall']:<4}total)"
             scores_list.append(line)
 
         self.message_grp('*Current Scores*:\n{}'.format('\n'.join(scores_list)))
