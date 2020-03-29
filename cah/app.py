@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import signal
 from flask import Flask, request, make_response
 from slacktools import SlackEventAdapter
 from .utils import CAHBot
@@ -16,6 +17,9 @@ for t in ['SIGNING_SECRET', 'XOXB_TOKEN', 'XOXP_TOKEN', 'VERIFY_TOKEN']:
         key_dict[t.lower()] = f.read().strip()
 
 Bot = CAHBot(bot_name, key_dict['xoxb_token'], key_dict['xoxp_token'], debug=DEBUG)
+# Register the cleanup function as a signal handler
+signal.signal(signal.SIGINT, Bot.cleanup)
+signal.signal(signal.SIGTERM, Bot.cleanup)
 message_events = []
 app = Flask(__name__)
 
@@ -71,7 +75,7 @@ def scan_message(event_data):
 
     if msg_packet is not None:
         try:
-            Bot.handle_command(msg_packet)
+            Bot.st.handle_command(msg_packet)
         except Exception as e:
             if not isinstance(e, RuntimeError):
                 exception_msg = '{}: {}'.format(e.__class__.__name__, e)

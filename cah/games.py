@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from typing import List, Optional, Tuple
 from datetime import datetime
 from random import shuffle
 from slacktools import BlockKitBuilder
-from .players import Players
+from .players import Players, Player
+from .cards import Deck
 
 
 class GameStatus:
@@ -30,7 +32,7 @@ class GameStatus:
 
 class Game:
     """Holds data for current game"""
-    def __init__(self, players, deck, trigger_msg):
+    def __init__(self, players: List[Player], deck: Deck, trigger_msg: str):
         self.bkb = BlockKitBuilder()
         self.game_id = id(datetime.now().timestamp())
         self.players = Players(players, origin='prebuilt')
@@ -54,7 +56,7 @@ class Game:
         self.status = self.gs.current_status
         self._new_game()
 
-    def get_judge_order(self):
+    def get_judge_order(self) -> str:
         """Determines order of judges """
         order = ' :finger-wag-right: '.join([x.display_name for x in self.players.player_list])
         return f'Judge order: {order}'
@@ -67,7 +69,7 @@ class Game:
         # Set status as initiated
         self.status = self.gs.initiated
 
-    def new_round(self):
+    def new_round(self) -> Optional[List[dict]]:
         """Starts a new round"""
 
         if self.status not in [self.gs.end_round, self.gs.initiated]:
@@ -122,7 +124,7 @@ class Game:
         next_judge_pos = 0 if cur_judge_pos == len(self.players.player_list) - 1 else cur_judge_pos + 1
         self.judge = self.players.player_list[next_judge_pos]
 
-    def deal_cards(self, num_cards):
+    def deal_cards(self, num_cards: int):
         """Deals cards out to players by indicating the number of cards to give out"""
 
         for player in self.players.player_list:
@@ -133,7 +135,7 @@ class Game:
                 # Otherwise, we'll make sure the judge doesn't get dealt an extra card
                 self._card_dealer(player, num_cards)
 
-    def _card_dealer(self, player_obj, num_cards):
+    def _card_dealer(self, player_obj: Player, num_cards: int) -> Optional[str]:
         """Deals the actual cards"""
         for i in range(0, num_cards):
             # Distribute cards
@@ -143,7 +145,7 @@ class Game:
                 player_obj.hand.take_card(self.deck.deal_answer_card())
         self.players.update_player(player_obj)
 
-    def assign_player_pick(self, user_id, picks):
+    def assign_player_pick(self, user_id: str, picks: List[int]) -> str:
         """Takes in an int and assigns it to the player who wrote it"""
         player = self.players.get_player_by_id(user_id)
         success = player.hand.pick_card(picks)
@@ -155,7 +157,7 @@ class Game:
         else:
             return 'Pick not registered.'
 
-    def players_left_to_decide(self):
+    def players_left_to_decide(self) -> List[str]:
         """Returns a list of the players that have yet to pick a card"""
 
         remaining = []
@@ -172,7 +174,7 @@ class Game:
         """Toggles whether or not to ping the winner when they've won a round"""
         self.ping_winner = not self.ping_winner
 
-    def display_picks(self):
+    def display_picks(self) -> Tuple[List[dict], List[dict]]:
         """Shows the player's picks in random order"""
 
         picks = [{'id': player.player_id, 'picks': [x.txt for x in player.hand.picks]}

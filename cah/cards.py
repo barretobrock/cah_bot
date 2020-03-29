@@ -2,16 +2,18 @@
 # -*- coding: utf-8 -*-
 import re
 import pandas as pd
+from typing import List, Optional
 from random import shuffle
 from slacktools import BlockKitBuilder
+from .players import Player
 
 
 class Card:
     """A Card"""
-    def __init__(self, txt):
+    def __init__(self, txt: str):
         self.txt = txt
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.txt
 
 
@@ -19,14 +21,14 @@ class QuestionCard(Card):
     """Question card"""
     card_class = 'q'
 
-    def __init__(self, txt, req_answers=None):
+    def __init__(self, txt: str, req_answers: int = None):
         super().__init__(txt)
         if req_answers is not None:
             self.required_answers = req_answers
         else:
             self.required_answers = self.determine_required_answers()
 
-    def determine_required_answers(self):
+    def determine_required_answers(self) -> int:
         """Determines the number of required answer cards for the question"""
         blank_matcher = re.compile(r'(_+)', re.IGNORECASE)
         match = blank_matcher.findall(self.txt)
@@ -42,12 +44,12 @@ class AnswerCard(Card):
     """Answer Card"""
     card_class = 'a'
 
-    def __init__(self, txt):
+    def __init__(self, txt: str):
         super().__init__(txt)
         # Set once dealt
         self.owner = None
 
-    def set_owner(self, owner):
+    def set_owner(self, owner: Player):
         """Takes in owner's player object and sets to the card"""
         self.owner = owner
 
@@ -59,7 +61,7 @@ class Hand:
         self.picks = None
         self.bkb = BlockKitBuilder()
 
-    def pick_card(self, pos_list):
+    def pick_card(self, pos_list: List[int]) -> bool:
         """Picks card at index"""
         if all([-1 < x < len(self.cards) for x in pos_list]):
             if self.picks is None:
@@ -71,7 +73,7 @@ class Hand:
                 return True
         return False
 
-    def render_hand(self, max_selected=1):
+    def render_hand(self, max_selected: int = 1) -> List[dict]:
         """Prints out the hand to the player
         Args:
             max_selected: int, the maximum allowed number of definite selections (not randpicks) to make
@@ -112,7 +114,7 @@ class Hand:
             self.bkb.make_block_multiselect('Randpick (all or subset)', 'Select picks', rand_options)
         ]
 
-    def take_card(self, card):
+    def take_card(self, card: AnswerCard):
         """Takes popped card and puts in hand"""
         self.cards.append(card)
 
@@ -126,7 +128,7 @@ class CardPot:
     def __init__(self):
         self.cards = list()
 
-    def receive_card(self, card):
+    def receive_card(self, card: AnswerCard):
         """Takes in a played card"""
         self.cards.append(card)
 
@@ -137,7 +139,7 @@ class CardPot:
 
 class Deck:
     """Deck of question and answer cards for a game"""
-    def __init__(self, name, df):
+    def __init__(self, name: str, df: pd.DataFrame):
         self.name = name
         self.questions_card_list = list()
         # Read in cards to deck
@@ -169,28 +171,27 @@ class Deck:
         shuffle(self.questions_card_list)
         shuffle(self.answers_card_list)
 
-    def deal_answer_card(self):
+    def deal_answer_card(self) -> AnswerCard:
         """Deals an answer card in the deck."""
         return self.answers_card_list.pop(0)
 
-    def deal_question_card(self):
+    def deal_question_card(self) -> QuestionCard:
         """Deals a question card in the deck."""
         return self.questions_card_list.pop(0)
 
 
 class Decks:
     """Possible card decks to choose"""
-    def __init__(self, dict_of_dfs):
+    def __init__(self, dict_of_dfs: dict):
         """Read in a dictionary of dfs that serve as each deck"""
         self.deck_list = []
         for k, v in dict_of_dfs.items():
             self.deck_list.append(Deck(k, v))
         self.deck_names = [x.name for x in self.deck_list]
 
-    def get_deck_by_name(self, name):
+    def get_deck_by_name(self, name: str) -> Optional[Deck]:
         """Returns a deck matching the name provided. If no matches, returns None"""
         for d in self.deck_list:
             if d.name == name:
                 return d
         return None
-
