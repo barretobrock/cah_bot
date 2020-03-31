@@ -55,19 +55,19 @@ class Players:
             self.player_list = player_list
         self.eligible_players = None
 
-    def load_players_in_channel(self, player_list: Union[List[dict], List[Player]], refresh: bool = False,
+    def load_players_in_channel(self, player_list: List[Player], refresh: bool = False,
                                 names_only: bool = False) -> Optional[List[Player]]:
         """Loads all the human players in the channel from a list of dicts containing channel member info"""
         if refresh:
             # Check if someone hasn't yet been added, but preserve other players' details
             for p in player_list:
-                if self.get_player_index_by_id(p['id']) is None:
+                if self.get_player_index_by_id(p.player_id) is None:
                     # Player not in list
-                    self.player_list.append(Player(p['id'], p['display_name']))
+                    self.player_list.append(Player(p.player_id, p.display_name))
                 else:
-                    player = self.get_player_by_id(p['id'])
+                    player = self.get_player_by_id(p.player_id)
                     # Ensure the display_name is up to date
-                    player.display_name = p['display_name']
+                    player.display_name = p.display_name
                     if not names_only:
                         # Reset basic info
                         player.skip = False
@@ -76,7 +76,7 @@ class Players:
         else:
             plist = []
             for p in player_list:
-                plist.append(Player(p['id'], p['display_name']))
+                plist.append(Player(p.player_id, p.display_name))
             return plist
 
     def get_player_ids(self) -> List[str]:

@@ -1,5 +1,6 @@
 import os
 import json
+import traceback
 import requests
 import signal
 from flask import Flask, request, make_response
@@ -79,6 +80,14 @@ def scan_message(event_data):
         except Exception as e:
             if not isinstance(e, RuntimeError):
                 exception_msg = '{}: {}'.format(e.__class__.__name__, e)
-                Bot.st.send_message(msg_packet['channel'], "Exception occurred: \n```{}```".format(exception_msg))
+                if Bot.debug:
+                    blocks = [
+                        Bot.bkb.make_context_section("Exception occurred: \n```{}```".format(exception_msg)),
+                        Bot.bkb.make_block_divider(),
+                        Bot.bkb.make_context_section(f'```{traceback.format_exc()}```')
+                    ]
+                    Bot.st.send_message(msg_packet['channel'], message='', blocks=blocks)
+                else:
+                    Bot.st.send_message(msg_packet['channel'], f"Exception occurred: \n```{exception_msg}```")
 
 

@@ -5,7 +5,6 @@ import pandas as pd
 from typing import List, Optional
 from random import shuffle
 from slacktools import BlockKitBuilder
-from .players import Player
 
 
 class Card:
@@ -49,7 +48,7 @@ class AnswerCard(Card):
         # Set once dealt
         self.owner = None
 
-    def set_owner(self, owner: Player):
+    def set_owner(self, owner):
         """Takes in owner's player object and sets to the card"""
         self.owner = owner
 

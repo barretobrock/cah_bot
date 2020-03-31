@@ -25,7 +25,7 @@ class CAHBot:
             xoxp_token: str, user token to use
             debug: bool, if True, will use a different set of triggers for testing purposes
         """
-        self.bot_name = 'Wizzy'
+        self.bot_name = f'Wizzy {"Debugus" if debug else "Prodspero"}'
         self.triggers = ['cah', 'c!'] if not debug else ['decah', 'dc!']
         self.channel_id = 'CMPV3K8AE' if not debug else 'CQ1DG4WB1'  # cah or cah-test
         self.admin_user = ['UM35HE6R5']
@@ -38,27 +38,22 @@ class CAHBot:
         self.version = version_dict['version']
         self.update_date = pd.to_datetime(version_dict['date']).strftime('%F %T')
         self.bootup_msg = [self.bkb.make_context_section([
-            f"*Wizzy* *`{self.version}`* booted up at `{pd.datetime.now():%F %T}`!",
+            f"*{self.bot_name}* *`{self.version}`* booted up at `{pd.datetime.now():%F %T}`!",
             f"(updated {self.update_date})"
         ])]
 
-        # GSheets stuff
+        # GSheets setup stuff
         self.cah_gsheet_key = '1IVYlID7N-eGiBrmew4vgE7FgcVaGJ2PwyncPjfBHx-M'
         self.cah_sheets = {}
-        self._refresh_sheets()
-        # Score sheet name
-        self.score_sheet_name = 'x_scores' if not debug else 'x_test_scores'
-        # Game info (players, rounds, etc)
-        self.game_info_sheet_name = 'x_game_info' if not debug else 'x_test_game_info'
-        self.game_info_df = self.cah_sheets[self.game_info_sheet_name].set_index('index')
+
         # Generate score wipe confirmation key
         self.confirm_wipe = ''.join(random.choices(string.ascii_lowercase + string.digits, k=20))
 
-        intro = f"Hi! I'm *Wizzy* and I help you play Cards Against Humanity! \n" \
+        intro = f"Hi! I'm *{self.bot_name}* and I help you play Cards Against Humanity! \n" \
                 f"Be sure to call my attention first with *`{'`* or *`'.join(self.triggers)}`*\n " \
                 f"Example: *`c! new game -set standard`*\nHere's what I can do:"
         avi_url = "https://avatars.slack-edge.com/2020-01-28/925065624848_3efb45d2ac590a466dbd_512.png"
-        avi_alt = 'wizzy thumbnail'
+        avi_alt = 'dat me'
         # Command categories
         cat_basic = 'basic'
         cat_debug = 'debug'
@@ -160,13 +155,15 @@ class CAHBot:
             r'^refresh sheets': {
                 'pattern': 'refresh sheets',
                 'cat': cat_basic,
-                'desc': 'Refreshes the GSheet database that contains the card sets. Can only be done outside a game.',
+                'desc': 'Refreshes the GSheet database that contains the card sets. '
+                        'Can only be done outside a game.',
                 'value': [self.handle_refresh_decks]
             },
             r'^(gsheets?|show) link': {
                 'pattern': '(show|gsheet[s]?) link',
                 'cat': cat_basic,
-                'desc': 'Shows the link to the GSheets database whence Wizzy reads cards. Helpful for contributing.',
+                'desc': 'Shows the link to the GSheets database whence Wizzy reads cards. '
+                        'Helpful for contributing.',
                 'value': f'https://docs.google.com/spreadsheets/d/{self.cah_gsheet_key}/'
             },
             r'^p(ick)? \d[\d,]*': {
@@ -236,7 +233,16 @@ class CAHBot:
                                main_channel=self.channel_id, xoxp_token=xoxp_token, xoxb_token=xoxb_token,
                                commands=commands, cmd_categories=cmd_categories)
         self.bot_id = self.st.bot_id
+        self.user_id = self.st.user_id
         self.bot = self.st.bot
+
+        # Reading in GSheets
+        self._refresh_sheets()
+        # Score sheet name
+        self.score_sheet_name = 'x_scores' if not debug else 'x_test_scores'
+        # Game info (players, rounds, etc)
+        self.game_info_sheet_name = 'x_game_info' if not debug else 'x_test_game_info'
+        self.game_info_df = self.cah_sheets[self.game_info_sheet_name].set_index('index')
 
         # Build the help text based on the commands above and insert back into the commands dict
         commands[r'^help']['value'] = self.st.build_help_block(intro, avi_url, avi_alt)
@@ -749,13 +755,12 @@ class CAHBot:
         private_response_block = question_block + private_choices
         # Show everyone's picks to the group, but only send the choice buttons to the judge
         self.st.message_main_channel(blocks=public_response_block)
+        # send as private in-channel message (though this sometimes goes unrendered)
+        self.st.private_channel_message(self.game.judge.player_id, self.channel_id,
+                                        message='', blocks=private_response_block)
         if self.game.judge.dm_cards:
             # DM choices to judge if they have card dming enabled
             self.st.private_message(self.game.judge.player_id, message='', blocks=private_response_block)
-        else:
-            # ...If not, send as private in-channel message (though this sometimes goes unrendered)
-            self.st.private_channel_message(self.game.judge.player_id, self.channel_id,
-                                            message='', blocks=private_response_block)
 
     def choose_card(self, user: str, message: str, **kwargs) -> Optional:
         """For the judge to choose the winning card"""
