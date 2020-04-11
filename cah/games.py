@@ -48,6 +48,7 @@ class Game:
         self.deck = deck
         self.ping_judge = True
         self.ping_winner = True
+        self.announce_picked = True
         self.picks = None
         self.prev_question_card = None
         self.current_question_card = None
@@ -169,6 +170,10 @@ class Game:
     def toggle_judge_ping(self):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
         self.ping_judge = not self.ping_judge
+
+    def toggle_announce_picked(self):
+        """Toggles whether or not to ping the judge when all card decisions have been completed"""
+        self.announce_picked = not self.announce_picked
 
     def toggle_winner_ping(self):
         """Toggles whether or not to ping the winner when they've won a round"""

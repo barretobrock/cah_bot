@@ -61,6 +61,7 @@ class CAHBot:
         cat_player = 'player'
         cat_judge = 'judge'
         cmd_categories = [cat_basic, cat_settings, cat_player, cat_judge, cat_debug]
+
         commands = {
             r'^help': {
                 'pattern': 'help',
@@ -98,10 +99,16 @@ class CAHBot:
                     }
                 ]
             },
+            r'^new round': {
+                'pattern': 'new round',
+                'cat': cat_basic,
+                'desc': 'For manually transitioning to another round when Wizzy fails to.',
+                'value': [self.new_round]
+            },
             r'^(points|score[s]?)': {
                 'pattern': '(points|score[s]?)',
                 'cat': cat_basic,
-                'desc': 'Ghow points / score of all players',
+                'desc': 'Show points / score of all players',
                 'value': [self.display_points]
             },
             r'^status': {
@@ -116,6 +123,12 @@ class CAHBot:
                 'desc': 'Toggles whether or not the judge is pinged after all selections are made. default: `True`',
                 'value': [self.toggle_judge_ping]
             },
+            r'^toggle announcements': {
+                'pattern': 'toggle announcements',
+                'cat': cat_settings,
+                'desc': 'Toggles whether or not pick announcements are made. default: `True`',
+                'value': [self.toggle_announce_picks]
+            },
             r'^toggle (winner\s?|w)ping': {
                 'pattern': 'toggle (winner|w)ping',
                 'cat': cat_settings,
@@ -126,7 +139,7 @@ class CAHBot:
                 'pattern': 'toggle (auto randpick|arp)',
                 'cat': cat_settings,
                 'desc': 'Toggles automated randpicking. default: `False`',
-                'value': [self.toggle_auto_randpick, 'user']
+                'value': [self.toggle_auto_randpick, 'user', 'message']
             },
             r'^toggle (card\s?)?dm': {
                 'pattern': 'toggle (dm|card dm)',
@@ -227,7 +240,6 @@ class CAHBot:
                 'value': [self.handle_wipe_scores, 'message']
             }
         }
-
         # Initate the bot, which comes with common tools for interacting with Slack's API
         self.st = SlackBotBase(log_name, triggers=self.triggers, team='orbitalkettlerelay',
                                main_channel=self.channel_id, xoxp_token=xoxp_token, xoxb_token=xoxb_token,
@@ -405,6 +417,15 @@ class CAHBot:
         self.game.toggle_judge_ping()
         self.st.message_main_channel(f'Judge pinging set to: `{self.game.ping_judge}`')
 
+    def toggle_announce_picks(self, **kwargs) -> Optional:
+        """Toggles whether or not to post when a player has made a pick"""
+        if self.game is None:
+            self.st.message_main_channel('Start a game first, then tell me to do that.')
+            return None
+
+        self.game.toggle_announce_picked()
+        self.st.message_main_channel(f'Pick announcements set to: `{self.game.announce_picked}`')
+
     def toggle_winner_ping(self, **kwargs) -> Optional:
         """Toggles whether or not to ping the winner when they've won a round"""
         if self.game is None:
@@ -431,13 +452,23 @@ class CAHBot:
         else:
             self.players.update_player(player)
 
-    def toggle_auto_randpick(self, user_id: str, **kwargs):
+    def toggle_auto_randpick(self, user_id: str, message: str, **kwargs):
         """Toggles card dming"""
+        msg_split = message.split()
         if self.game is None:
             # Set the player object outside of the game
             player = self.players.get_player_by_id(user_id)
         else:
             player = self.game.players.get_player_by_id(user_id)
+
+        # Set the player as the user first, but see if the user is actually picking for someone else
+        if any(['<@' in x for x in msg_split]):
+            # Player has tagged someone. See if they tagged themselves or another person
+            if not any([player.player_tag in x for x in msg_split]):
+                # Tagged someone else. Get that other tag & use it to change the player.
+                ptag = next((x for x in msg_split if '<@' in x))
+                player = self.game.players.get_player_by_tag(ptag.upper())
+
         player.auto_randpick = not player.auto_randpick
         self.st.message_main_channel(f'Auto randpick for player `{player.display_name}` '
                                      f'set to `{player.auto_randpick}`')
@@ -445,7 +476,8 @@ class CAHBot:
             self.game.players.update_player(player)
             if all([self.game.status == self.game.gs.players_decision,
                     player.player_id != self.game.judge.player_id,
-                    player.auto_randpick]):
+                    player.auto_randpick,
+                    player.picks is None]):
                 # randpick for the player immediately
                 self.process_picks(player.player_id, 'randpick')
         else:
@@ -574,6 +606,8 @@ class CAHBot:
                 if player.auto_randpick:
                     # Player has elected to automatically pick their cards
                     self.process_picks(player.player_id, 'randpick')
+                    self.st.private_message(player.player_id, 'Your pick was handled automatically, '
+                                                              'as you have `auto randpick` enabled.')
             # Increment rounds played by this player by 1
             self.game.players.player_list[i].rounds_played += 1
 
@@ -695,7 +729,9 @@ class CAHBot:
             remaining_txt = ' '.join([f'`{x}`' for x in remaining])
             messages.append(f'*`{len(remaining)}`* players remaining to decide: {remaining_txt}')
             msg_block = [self.bkb.make_context_section(messages)]
-            self.st.message_main_channel(blocks=msg_block)
+            if self.game.announce_picked:
+                # Only announce the picks if it's been toggled
+                self.st.message_main_channel(blocks=msg_block)
 
     def _get_pick(self, user: str, message: str, judge_decide: bool = False) -> Union[int, Optional[List[int]]]:
         """Processes a number from a message"""
