@@ -136,7 +136,7 @@ class CAHBot:
                 'value': [self.toggle_winner_ping]
             },
             r'^toggle (auto\s?randpick|arp)': {
-                'pattern': 'toggle (auto randpick|arp)',
+                'pattern': 'toggle (auto randpick|arp) [-u <user>]',
                 'cat': cat_settings,
                 'desc': 'Toggles automated randpicking. default: `False`',
                 'value': [self.toggle_auto_randpick, 'user', 'message']
