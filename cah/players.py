@@ -16,9 +16,11 @@ class Player:
         self.dm_cards = True
         self.skip = False
         self.auto_randpick = False
-        self.new_hand = False   # If set to true, dealt entire new hand next round
-        self.picks = None
-        self.hand = Hand()
+        self.auto_randchoose = False
+        self.voted = False
+        self.nuked_hand = False   # If set to true, dealt entire new hand next round
+        self.current_blocks = {}   # Provides a means for us to update a block kit ui upon a successful pick
+        self.hand = Hand(owner=self.player_id)
         # Ending scores for games
         self.final_scores = list()
         # Current game score
@@ -40,6 +42,10 @@ class Player:
     def get_cumulative_score(self) -> str:
         """Retrieves the cumulative scores from all games"""
         return ', '.join([f'{x}' for x in np.cumsum(self.final_scores)])
+
+    def add_points(self, points: int):
+        """Adds points to the player's score"""
+        self.points += points
 
 
 class Players:
@@ -71,8 +77,7 @@ class Players:
                     if not names_only:
                         # Reset basic info
                         player.skip = False
-                        player.picks = None
-                        player.hand = Hand()
+                        player.hand = Hand(owner=player.player_id)
         else:
             plist = []
             for p in player_list:

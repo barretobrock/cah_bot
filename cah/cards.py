@@ -53,19 +53,54 @@ class AnswerCard(Card):
         self.owner = owner
 
 
+class Pick:
+    def __init__(self):
+        self.id = None
+        self.pick_txt_list = []
+        self.votes = 0
+
+    def assign(self, owner: str):
+        """Assign id to the pick"""
+        self.id = owner
+
+    def add_vote(self):
+        """Adds to votes"""
+        self.votes += 1
+
+    def add_card_to_pick(self, card: Card):
+        """Appends a card's text to the pick list"""
+        self.pick_txt_list.append(card.txt)
+
+    def is_empty(self) -> bool:
+        """Checks if anything has been assigned to the pick yet"""
+        return len(self.pick_txt_list) == 0
+
+    def assign_and_add(self, owner: str, cards: List[Card]):
+        """Assigns owner and adds cards"""
+        self.assign(owner)
+        for card in cards:
+            self.add_card_to_pick(card)
+
+    def clear_picks(self):
+        """Clears picks (usually in preparation for a new round)"""
+        self.pick_txt_list = []
+        self.votes = 0
+
+
 class Hand:
     """Player's stack of cards"""
-    def __init__(self):
+    def __init__(self, owner: str):
+        self.owner = owner
         self.cards = list()
-        self.picks = None
+        self.pick = Pick()
         self.bkb = BlockKitBuilder()
 
     def pick_card(self, pos_list: List[int]) -> bool:
         """Picks card at index"""
         if all([-1 < x < len(self.cards) for x in pos_list]):
-            if self.picks is None:
-                # Set our picks
-                self.picks = [self.cards[x] for x in pos_list]
+            if self.pick.is_empty():
+                # Set our pick
+                self.pick.assign_and_add(self.owner, self.cards)
                 # Then pop out those cards from max to min
                 for p in sorted(pos_list, reverse=True):
                     _ = self.cards.pop(p)

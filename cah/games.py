@@ -3,7 +3,7 @@
 from typing import List, Optional, Tuple
 from datetime import datetime
 from random import shuffle
-from slacktools import BlockKitBuilder
+from slacktools import BlockKitBuilder, SlackBotBase
 from .players import Players, Player
 from .cards import Deck
 
@@ -32,7 +32,8 @@ class GameStatus:
 
 class Game:
     """Holds data for current game"""
-    def __init__(self, players: List[Player], deck: Deck, trigger_msg: str):
+    def __init__(self, st_obj: SlackBotBase, players: List[Player], deck: Deck, trigger_msg: str):
+        self.st = st_obj
         self.bkb = BlockKitBuilder()
         self.game_id = id(datetime.now().timestamp())
         self.players = Players(players, origin='prebuilt')
@@ -48,8 +49,9 @@ class Game:
         self.deck = deck
         self.ping_judge = True
         self.ping_winner = True
-        self.announce_picked = True
-        self.picks = None
+        self.pick_voting = True  # Enables non-judge votes to keep the judge in line
+        self.round_picks = []
+        self.round_ts = None  # Stores the timestamp of the question card message for the round
         self.prev_question_card = None
         self.current_question_card = None
         self.rounds = 0
@@ -64,7 +66,6 @@ class Game:
 
     def _new_game(self):
         """Begin new game"""
-
         # Shuffle deck
         self.deck.shuffle_deck()
         # Set status as initiated
@@ -88,6 +89,8 @@ class Game:
 
         # Get new judge
         self.get_next_judge()
+        # Reset the round timestamp
+        self.round_ts = None
 
         # Determine number of cards to deal to each player & deal
         # either full deck or replacement cards for previous question
@@ -99,8 +102,9 @@ class Game:
         self.deal_cards(num_cards)
         # Set picks back to none
         for player in self.players.player_list:
-            player.hand.picks = None
+            player.hand.pick.clear_picks()
             player.new_hand = False
+            player.voted = False
             self.players.update_player(player)
         self.status = self.gs.players_decision
 
@@ -151,19 +155,26 @@ class Game:
         player = self.players.get_player_by_id(user_id)
         success = player.hand.pick_card(picks)
         if success:
+            # Replace the pick messages
+            for chan, ts in player.current_blocks.items():
+                blk = [
+                    self.bkb.make_block_section(f'Your pick(s): *`{"|".join(player.hand.pick.pick_txt_list)}`*')
+                ]
+                self.st.update_message(chan, ts, blocks=blk)
+            # Reset the blocks
+            player.current_blocks = {}
             self.players.update_player(player)
             return f'*`{player.display_name}`*\'s pick has been registered.'
-        elif not success and player.hand.picks is not None:
+        elif not success and not player.hand.pick.is_empty():
             return f'*`{player.display_name}`*\'s pick voided. You already picked.'
         else:
             return 'Pick not registered.'
 
     def players_left_to_decide(self) -> List[str]:
         """Returns a list of the players that have yet to pick a card"""
-
         remaining = []
         for player in self.players.player_list:
-            if player.hand.picks is None and player.player_id != self.judge.player_id:
+            if player.hand.pick.is_empty() and player.player_id != self.judge.player_id:
                 remaining.append(player.display_name)
         return remaining
 
@@ -182,19 +193,18 @@ class Game:
     def display_picks(self) -> Tuple[List[dict], List[dict]]:
         """Shows the player's picks in random order"""
 
-        picks = [{'id': player.player_id, 'picks': [x.txt for x in player.hand.picks]}
-                 for player in self.players.player_list if player.hand.picks is not None]
+        picks = [player.hand.pick for player in self.players.player_list if not player.hand.pick.is_empty()]
         shuffle(picks)
-        self.picks = picks
+        self.round_picks = picks
 
         judge_card_blocks = []
         public_card_blocks = []
         randbtn_list = []  # Just like above, but bear a 'rand' prefix to differentiate. These can be subset.
-        for i, picks in enumerate(self.picks):
+        for i, round_pick in enumerate(self.round_picks):
             num = i + 1
             # Make a block specifically for the judge (with buttons)
             card_btn_dict = self.bkb.make_block_button(f'{num}', f'choose-{num}')
-            pick_txt = f'*{num}*: {"|".join([f" *`{x}`* " for x in picks["picks"]])}'
+            pick_txt = f'*{num}*: {"|".join([f" *`{x}`* " for x in round_pick.pick_txt_list])}'
             judge_card_blocks.append(self.bkb.make_block_section(pick_txt, accessory=card_btn_dict))
             # Make a "public" block that just shows the choices in the channel
             public_card_blocks.append(self.bkb.make_block_section(pick_txt))
