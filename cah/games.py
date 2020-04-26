@@ -126,8 +126,11 @@ class Game:
         """Gets the following judge by the order set"""
         self.prev_judge = self.judge
         cur_judge_pos = self.players.get_player_index_by_id(self.judge.player_id)
+        self.players.player_list[cur_judge_pos].is_judge = False
         next_judge_pos = 0 if cur_judge_pos == len(self.players.player_list) - 1 else cur_judge_pos + 1
         self.judge = self.players.player_list[next_judge_pos]
+        self.judge.pick_idx = None
+        self.players.player_list[next_judge_pos].is_judge = True
 
     def deal_cards(self, num_cards: int):
         """Deals cards out to players by indicating the number of cards to give out"""
@@ -182,9 +185,9 @@ class Game:
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
         self.ping_judge = not self.ping_judge
 
-    def toggle_announce_picked(self):
-        """Toggles whether or not to ping the judge when all card decisions have been completed"""
-        self.announce_picked = not self.announce_picked
+    def toggle_pick_voting(self):
+        """Toggles whether or not we allow for non-judge players to vote for their picks"""
+        self.pick_voting = not self.pick_voting
 
     def toggle_winner_ping(self):
         """Toggles whether or not to ping the winner when they've won a round"""

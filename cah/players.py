@@ -11,6 +11,7 @@ class Player:
     def __init__(self, player_id: str, display_name: str):
         self.player_id = player_id
         self.player_tag = f'<@{self.player_id}>'
+        self.is_judge = False
         self.honorific = ''
         self.display_name = display_name
         self.dm_cards = True
@@ -152,8 +153,13 @@ class Players:
         """Sets list of eligible players"""
         self.eligible_players = [x for x in self.player_list if not x.skip]
 
+    def have_all_players_voted(self) -> bool:
+        """Determines if all non-judge players have voted"""
+        return all([x.voted for x in self.player_list if not x.is_judge])
+
 
 class Judge(Player):
     """Player who chooses winning card"""
     def __init__(self, player_id: str, display_name: str):
         super().__init__(player_id, display_name)
+        self.pick_idx = None

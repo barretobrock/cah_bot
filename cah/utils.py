@@ -135,11 +135,23 @@ class CAHBot:
                 'desc': 'Toggles whether or not the winner is pinged when they win a round. default: `True`',
                 'value': [self.toggle_winner_ping]
             },
+            r'^toggle voting': {
+                'pattern': 'toggle voting',
+                'cat': cat_settings,
+                'desc': 'Toggles whether or not players can vote on their favorite picks. default: `True`',
+                'value': [self.toggle_pick_voting]
+            },
             r'^toggle (auto\s?randpick|arp)': {
                 'pattern': 'toggle (auto randpick|arp) [-u <user>]',
                 'cat': cat_settings,
                 'desc': 'Toggles automated randpicking. default: `False`',
-                'value': [self.toggle_auto_randpick, 'user', 'channel', 'message']
+                'value': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'randpick']
+            },
+            r'^toggle (auto\s?randchoose|arc)': {
+                'pattern': 'toggle (auto randchoose|arc) [-u <user>]',
+                'cat': cat_settings,
+                'desc': 'Toggles automated randchoose (i.e., arp for judges). default: `False`',
+                'value': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'randchoose']
             },
             r'^toggle (card\s?)?dm': {
                 'pattern': 'toggle (dm|card dm)',
@@ -435,6 +447,15 @@ class CAHBot:
         self.game.toggle_winner_ping()
         self.st.message_main_channel(f'Weiner pinging set to: `{self.game.ping_winner}`')
 
+    def toggle_pick_voting(self) -> Optional:
+        """Toggles whether or not to ping the winner when they've won a round"""
+        if self.game is None:
+            self.st.message_main_channel('Start a game first, then tell me to do that.')
+            return None
+
+        self.game.toggle_pick_voting()
+        self.st.message_main_channel(f'Pick voting set to: `{self.game.pick_voting}`')
+
     def toggle_card_dm(self, user_id: str, channel: str):
         """Toggles card dming"""
         if self.game is None:
@@ -453,7 +474,7 @@ class CAHBot:
         else:
             self.players.update_player(player)
 
-    def toggle_auto_randpick(self, user_id: str, channel: str, message: str):
+    def toggle_auto_pick_or_choose(self, user_id: str, channel: str, message: str, pick_or_choose: str) -> str:
         """Toggles card dming"""
         msg_split = message.split()
         if self.game is None:
@@ -470,19 +491,35 @@ class CAHBot:
                 ptag = next((x for x in msg_split if '<@' in x))
                 player = self.game.players.get_player_by_tag(ptag.upper())
 
-        player.auto_randpick = not player.auto_randpick
-        resp_msg = f'Auto randpick for player `{player.display_name}` set to `{player.auto_randpick}`'
-        self.st.send_message(channel, resp_msg)
-        if self.game is not None:
-            self.game.players.update_player(player)
-            if all([self.game.status == self.game.gs.players_decision,
-                    player.player_id != self.game.judge.player_id,
-                    player.auto_randpick,
-                    not player.hand.pick.is_empty()]):
-                # randpick for the player immediately
-                self.process_picks(player.player_id, 'randpick')
+        is_randpick = pick_or_choose == 'randpick'
+
+        if is_randpick:
+            player.auto_randpick = not player.auto_randpick
+            resp_msg = f'Auto randpick for player `{player.display_name}` set to `{player.auto_randpick}`'
+            if self.game is not None:
+                self.game.players.update_player(player)
+                if all([self.game.status == self.game.gs.players_decision,
+                        player.player_id != self.game.judge.player_id,
+                        player.auto_randpick,
+                        not player.hand.pick.is_empty()]):
+                    # randpick for the player immediately
+                    self.process_picks(player.player_id, 'randpick')
+            else:
+                self.players.update_player(player)
         else:
-            self.players.update_player(player)
+            # Auto randchoose
+            player.auto_randchoose = not player.auto_randchoose
+            resp_msg = f'Auto randchoose for player `{player.display_name}` set to `{player.auto_randchoose}`'
+            if self.game is not None:
+                self.game.players.update_player(player)
+                if all([self.game.status == self.game.gs.judge_decision,
+                        player.player_id == self.game.judge.player_id,
+                        player.auto_randchoose]):
+                    self.choose_card(player.player_id, 'randchoose')
+            else:
+                self.players.update_player(player)
+
+        return resp_msg
 
     def dm_cards_now(self, user_id: str) -> Optional:
         """DMs current card set to user"""
@@ -799,15 +836,50 @@ class CAHBot:
         private_response_block = question_block + private_choices
         # Show everyone's picks to the group, but only send the choice buttons to the judge
         self.st.message_main_channel(blocks=public_response_block)
-        # send as private in-channel message (though this sometimes goes unrendered)
-        self.st.private_channel_message(self.game.judge.player_id, self.channel_id,
-                                        message='', blocks=private_response_block)
-        if self.game.judge.dm_cards:
-            # DM choices to judge if they have card dming enabled
-            self.st.private_message(self.game.judge.player_id, message='', blocks=private_response_block)
+        if self.game.pick_voting:
+            ids_to_send_to = [x.player_id for x in self.game.players.player_list]
+        else:
+            ids_to_send_to = [self.game.judge.player_id]
+
+        for p_id in ids_to_send_to:
+            # send as private in-channel message (though this sometimes goes unrendered)
+            self.st.private_channel_message(p_id, self.channel_id,
+                                            message='', blocks=private_response_block)
+            if self.game.players.get_player_by_id(p_id).dm_cards:
+                # DM choices to player if they have card dming enabled
+                self.st.private_message(p_id, message='', blocks=private_response_block)
+
+    def _randchoose_handling(self, message: str) -> Optional[int]:
+        """Contains all the logic for handling a randchoose command"""
+        if len(message.split(' ')) > 1:
+            randchoose_instructions = message.split(' ')[1]
+            # Use a subset of choices
+            card_subset = None
+            if randchoose_instructions.isnumeric():
+                card_subset = list(map(int, list(randchoose_instructions)))
+            elif ',' in randchoose_instructions:
+                card_subset = list(map(int, randchoose_instructions.split(',')))
+            if card_subset is not None:
+                # Pick from the card subset and subtract by 1 to bring it in line with 0-based index
+                pick = list(np.random.choice(card_subset, 1))[0] - 1
+            else:
+                # Card subset wasn't able to be parsed
+                self.st.message_main_channel('I wasn\'t able to parse the card subset you entered. '
+                                             'Try again!')
+                return None
+        else:
+            # Randomly choose from all cards
+            # available choices = total number of players - (judge + len factor)
+            available_choices = len(self.game.players.player_list) - 2
+            if available_choices == 0:
+                pick = 0
+            else:
+                pick = list(np.random.choice(available_choices, 1))[0]
+        return pick
 
     def choose_card(self, user: str, message: str) -> Optional:
-        """For the judge to choose the winning card"""
+        """For the judge to choose the winning card and
+        for other players to vote on the card they think should win"""
         if self.game is None:
             self.st.message_main_channel('Start a game first, then tell me to do that.')
             return None
@@ -822,59 +894,144 @@ class CAHBot:
             user = self.game.judge.player_id
             message = 'randchoose'
 
-        if user == self.game.judge.player_id:
-            if 'randchoose' in message:
-                if len(message.split(' ')) > 1:
-                    randchoose_instructions = message.split(' ')[1]
-                    # Use a subset of choices
-                    card_subset = None
-                    if randchoose_instructions.isnumeric():
-                        card_subset = list(map(int, list(randchoose_instructions)))
-                    elif ',' in randchoose_instructions:
-                        card_subset = list(map(int, randchoose_instructions.split(',')))
-                    if card_subset is not None:
-                        # Pick from the card subset and subtract by 1 to bring it in line with 0-based index
-                        pick = list(np.random.choice(card_subset, 1))[0] - 1
-                    else:
-                        # Card subset wasn't able to be parsed
-                        self.st.message_main_channel('I wasn\'t able to parse the card subset you entered. '
-                                                     'Try again!')
-                        return None
-                else:
-                    # Randomly choose from all cards
-                    # available choices = total number of players - (judge + len factor)
-                    available_choices = len(self.game.players.player_list) - 2
-                    if available_choices == 0:
-                        pick = 0
-                    else:
-                        pick = list(np.random.choice(available_choices, 1))[0]
-            else:
-                pick = self._get_pick(user, message, judge_decide=True)
+        used_randchoose = 'randchoose' in message
 
-            if pick > len(self.game.players.player_list) - 2 or pick < 0:
-                # Pick is rendered as an array index here.
-                # Pick can either be:
-                #   -less than total players minus judge, minus 1 more to account for array
-                #   -greater than -1
-                self.st.message_main_channel(f'I think you picked outside the range of suggestions. '
-                                             f'Your pick: {pick}')
+        if used_randchoose:
+            pick = self._randchoose_handling(message)
+            if pick is None:
+                # The randchoose method wasn't able to parse anything useful from the message
                 return None
-            else:
-                # TODO make sure all users have votes, even if judge makes decision already
-                # Handle the announcement of winner and distribution of points
-                self.st.message_main_channel(blocks=self._winner_selection(pick))
-                self.game.status = self.game.gs.end_round
-                # Start new round
-                self.new_round()
+        else:
+            pick = self._get_pick(user, message, judge_decide=True)
 
-    def _winner_selection(self, pick: int) -> List[dict]:
+        if pick > len(self.game.players.player_list) - 2 or pick < 0:
+            # Pick is rendered as an array index here.
+            # Pick can either be:
+            #   -less than total players minus judge, minus 1 more to account for array
+            #   -greater than -1
+            self.st.message_main_channel(f'I think you picked outside the range of suggestions. '
+                                         f'Your pick: {pick}')
+            return None
+        else:
+            if user == self.game.judge.player_id:
+                # Record the judge's pick
+                if self.game.judge.pick_idx is None:
+                    self.game.judge.pick_idx = pick
+                else:
+                    self.st.message_main_channel('Judge\'s pick voided. You\'ve already picked this round.')
+            else:
+                player = self.game.players.get_player_by_id(user)
+                if not player.voted:
+                    # Record the player's vote
+                    self.game.round_picks[pick].add_vote()
+                    player.voted = True
+                    self.game.players.update_player(player)
+                else:
+                    self.st.message_main_channel('Player\'s pick voided. You\'ve already voted this round.')
+
+        if self.game.pick_voting:
+            # We're allowing people to vote
+            if self.game.players.have_all_players_voted() and self.game.judge.pick_idx is not None:
+                # We're ready to wrap up the round
+                self._round_wrap_up()
+        else:
+            if self.game.judge.pick_idx is not None:
+                self._round_wrap_up()
+
+    def _round_wrap_up(self):
+        """Coordinates end-of-round logic (tallying votes, picking winner, etc.)"""
+        # Make sure all users have votes and judge has made decision before wrapping up the round
+        # Handle the announcement of winner and distribution of points
+        self.st.message_main_channel(blocks=self._winner_selection())
+        self.game.status = self.game.gs.end_round
+        # Start new round
+        self.new_round()
+
+    def _points_redistributer(self, penalty: int) -> str:
+        """Handles the logic covering redistribution of wealth among players"""
+        # Deduct points from the judge, give randomly to others
+        point_receivers = {}  # Store 'name' (of player) and 'points' (distributed)
+        # Determine the eligible receivers of the extra points
+        player_points_list = [x.points for x in self.game.players if not x.is_judge]
+        if sum(player_points_list) == 0:
+            # No one has made any points yet - everyone's eligible
+            eligible_receivers = [x for x in self.game.players if not x.is_judge]
+        else:
+            # Some people have earned points already. Make sure those with the highest points aren't eligible
+            max_points = max(player_points_list)
+            eligible_receivers = [x for x in self.game.players if not x.is_judge and x.points < max_points]
+        for pt in range(0, penalty * -1):
+            if len(eligible_receivers) > 1:
+                player = list(np.random.choice(eligible_receivers, 1))[0]
+            else:
+                # In case everyone has the max score except for one person
+                player = eligible_receivers[0]
+            player.add_points(1)
+            if player.player_id in point_receivers.keys():
+                # Add another point
+                point_receivers[player.player_id]['points'] += 1
+            else:
+                point_receivers[player.player_id] = {
+                    'name': player.display_name,
+                    'points': 1
+                }
+            self.game.players.update_player(player)
+        point_receivers_txt = ','.join([f'`{v["name"]}`: *`{v["points"]}`* :diddlecoin:'
+                                        for k, v in point_receivers.items()])
+        return point_receivers_txt
+
+    def _show_votes(self) -> List[str]:
+        """Will show the round's votes for analysis"""
+        if not self.game.pick_voting:
+            return []
+        selections = []
+        for i, pick in enumerate(self.game.round_picks):
+            num_votes = pick.votes
+            vote_txt = ':heavy_check_mark:' * num_votes
+            selections.append(f'*{i + 1}*: {"|".join(pick.pick_txt_list)}{vote_txt}')
+        # Add the judge's icon to whatever index they chose
+        selections[self.game.judge.pick_idx] += ':gavel:'
+        return selections
+
+    def _winner_selection(self) -> List[dict]:
         """Contains the logic that determines point distributions upon selection of a winner"""
         # Get the list of cards picked by each player
         rps = self.game.round_picks
-        winning_pick = rps[pick]
+        winning_pick = rps[self.game.judge.pick_idx]
+        if self.game.pick_voting:
+            # Vote logic
+            # The judge needs to have _manually_ selected a card that has at least
+            # 1/3 of the votes from other players. If judge is ARCing, threshold is set at 0
+            if self.game.judge.auto_randchoose:
+                vote_threshold = 0
+            else:
+                vote_threshold = round(1/3 * (len(self.game.players) - 1))
+            judge_penalty = -2
+            if winning_pick.votes >= vote_threshold:
+                vote_txt = 'Judge has wisely selected according to the demands of the masses.'
+            else:
+                point_receivers_txt = self._points_redistributer(judge_penalty)
+                vote_txt = f'Judge has chosen... _poorly_.\n' \
+                           f'The Judge\'s choice had *`{winning_pick.votes}`* votes, ' \
+                           f'missing the required {vote_threshold} votes for this game. Thus, Judge takes ' \
+                           f'a penalty of *`{judge_penalty}`* :diddlecoin:, which was redistributed ' \
+                           f'to the following manner: {point_receivers_txt} '
+        else:
+            vote_txt = ''
+
+        # Winner selection
+        decknuke_penalty = -2
         winner = self.game.players.get_player_by_id(winning_pick.id)
-        points_won = -2 if winner.nuked_hand else 1
-        decknuke_txt = '\nLOL HOW DAT DECKNUKE WORK FOR YA' if winner.nuked_hand else ''
+        # If decknuke occurred, distribute the points to others randomly
+        if winner.nuked_hand:
+            point_receivers_txt = self._points_redistributer(decknuke_penalty)
+            points_won = decknuke_penalty
+            decknuke_txt = f'\n:impact::impact::impact::impact:LOL HOW DAT DECKNUKE WORK FOR YA NOW??\n' \
+                           f'Your points were redistributed such: {point_receivers_txt}'
+        else:
+            points_won = 1
+            decknuke_txt = ''
+
         winner.add_points(points_won)
         self.game.players.update_player(winner)
         winner_details = winner.player_tag if self.game.ping_winner \
@@ -884,13 +1041,13 @@ class CAHBot:
             f":tada:Winning card: `{','.join([winner.hand.pick.pick_txt_list])}`",
             f"*`{points_won:+}`* :diddlecoin: to {winner_details}! "
             f"New score: *`{winner.points}`* :diddlecoin: "
-            f"({winner.get_grand_score() + winner.points} total){decknuke_txt}"
+            f"({winner.get_grand_score() + winner.points} total){decknuke_txt}\n{vote_txt}"
         ]
 
         message_block = [
             self.bkb.make_block_section(winner_txt_blob),
             self.bkb.make_block_divider(),
-            self.bkb.make_context_section('Round ended.')
+            self.bkb.make_context_section(self._show_votes() + ['Round ended.'])
         ]
         return message_block
 

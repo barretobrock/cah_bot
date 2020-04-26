@@ -71,6 +71,10 @@ class Pick:
         """Appends a card's text to the pick list"""
         self.pick_txt_list.append(card.txt)
 
+    def render_pick_list_as_str(self, delimiter: str = '|') -> str:
+        """Renders the list of picks as a string instead of list"""
+        return delimiter.join(self.pick_txt_list)
+
     def is_empty(self) -> bool:
         """Checks if anything has been assigned to the pick yet"""
         return len(self.pick_txt_list) == 0
