@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple
 from datetime import datetime
 from random import shuffle
 from slacktools import BlockKitBuilder, SlackBotBase
+from slack.errors import SlackApiError
 from .players import Players, Player
 from .cards import Deck
 
@@ -61,7 +62,8 @@ class Game:
 
     def get_judge_order(self) -> str:
         """Determines order of judges """
-        order = ' :finger-wag-right: '.join([x.display_name for x in self.players.player_list])
+        order_divider = ':finger-wag-right:'
+        order = f' {order_divider} '.join(self.players.get_player_names_monospace())
         return f'Judge order: {order}'
 
     def _new_game(self):
@@ -153,20 +155,45 @@ class Game:
                 player_obj.hand.take_card(self.deck.deal_answer_card())
         self.players.update_player(player_obj)
 
+    def replace_block_forms(self, player: Player, is_pick: bool = True):
+        """Replaces the Block UI form with another message"""
+        if is_pick:
+            blk = [
+                self.bkb.make_block_section(f'Your pick(s): {player.hand.pick.render_pick_list_as_str()}')
+            ]
+            replace_blocks = player.pick_blocks
+        else:
+            reactive_txt = 'choice' if player.is_judge else 'vote'
+            blk = [
+                self.bkb.make_block_section(f'Your {reactive_txt} has been made.')
+            ]
+            replace_blocks = player.vote_blocks
+        for chan, ts in replace_blocks.items():
+            if chan[0] == 'C':
+                # Ephemeral message - delete it, as it can't be updated
+                try:
+                    # This only posts if the person is active at time of distribution
+                    self.st.delete_message(channel=chan, ts=ts)
+                except SlackApiError:
+                    # Bypass this error - ephemeral message not found
+                    pass
+            else:
+                # DM - update it
+                self.st.update_message(chan, ts, blocks=blk)
+        # Reset the blocks
+        if is_pick:
+            player.pick_blocks = {}
+        else:
+            player.vote_blocks = {}
+        self.players.update_player(player)
+
     def assign_player_pick(self, user_id: str, picks: List[int]) -> str:
         """Takes in an int and assigns it to the player who wrote it"""
         player = self.players.get_player_by_id(user_id)
         success = player.hand.pick_card(picks)
         if success:
             # Replace the pick messages
-            for chan, ts in player.current_blocks.items():
-                blk = [
-                    self.bkb.make_block_section(f'Your pick(s): *`{"|".join(player.hand.pick.pick_txt_list)}`*')
-                ]
-                self.st.update_message(chan, ts, blocks=blk)
-            # Reset the blocks
-            player.current_blocks = {}
-            self.players.update_player(player)
+            self.replace_block_forms(player, is_pick=True)
             return f'*`{player.display_name}`*\'s pick has been registered.'
         elif not success and not player.hand.pick.is_empty():
             return f'*`{player.display_name}`*\'s pick voided. You already picked.'
@@ -178,6 +205,14 @@ class Game:
         remaining = []
         for player in self.players.player_list:
             if player.hand.pick.is_empty() and player.player_id != self.judge.player_id:
+                remaining.append(player.display_name)
+        return remaining
+
+    def players_left_to_vote(self) -> List[str]:
+        """Returns a list of the players that have yet to pick a card"""
+        remaining = []
+        for player in self.players.player_list:
+            if not player.voted and player.player_id != self.judge.player_id:
                 remaining.append(player.display_name)
         return remaining
 

@@ -20,7 +20,8 @@ class Player:
         self.auto_randchoose = False
         self.voted = False
         self.nuked_hand = False   # If set to true, dealt entire new hand next round
-        self.current_blocks = {}   # Provides a means for us to update a block kit ui upon a successful pick
+        self.pick_blocks = {}   # Provides a means for us to update a block kit ui upon a successful pick
+        self.vote_blocks = {}
         self.hand = Hand(owner=self.player_id)
         # Ending scores for games
         self.final_scores = list()
@@ -92,6 +93,10 @@ class Players:
     def get_player_names(self) -> List[str]:
         """Returns player display names"""
         return [x.display_name for x in self.player_list]
+
+    def get_player_names_monospace(self) -> List[str]:
+        """Returns player display names formatted for Slack's monospace"""
+        return [f'`{x}`' for x in self.get_player_names()]
 
     def get_player_index_by_id(self, player_id: str) -> Optional[int]:
         """Returns the index of a player in a list of players that has a matching 'id' value"""
