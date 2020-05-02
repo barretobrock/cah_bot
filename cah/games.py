@@ -254,5 +254,5 @@ class Game:
         return public_card_blocks, judge_card_blocks + [
             self.bkb.make_block_divider(),
             self.bkb.make_block_multiselect('Randchoose (all or subset)', 'Select choices', rand_options),
-            self.bkb.make_block_button('Force Close', '')
+            self.bkb.make_block_section('Force Close', accessory=self.bkb.make_block_button('Close', ''))
         ]
