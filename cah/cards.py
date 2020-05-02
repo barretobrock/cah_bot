@@ -150,7 +150,7 @@ class Hand:
 
         return card_blocks + definite_selection_area + [
             self.bkb.make_block_multiselect('Randpick (all or subset)', 'Select picks', rand_options),
-            self.bkb.make_block_section('Force Close', accessory=self.bkb.make_block_button('Close', ''))
+            self.bkb.make_block_section('Force Close', accessory=self.bkb.make_block_button('Close', 'none'))
         ]
 
     def take_card(self, card: AnswerCard):
