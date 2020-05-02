@@ -149,7 +149,8 @@ class Hand:
         rand_options = [{'txt': 'All picks', 'value': 'randpick-all'}] + randbtn_list
 
         return card_blocks + definite_selection_area + [
-            self.bkb.make_block_multiselect('Randpick (all or subset)', 'Select picks', rand_options)
+            self.bkb.make_block_multiselect('Randpick (all or subset)', 'Select picks', rand_options),
+            self.bkb.make_block_button('Force Close', '')
         ]
 
     def take_card(self, card: AnswerCard):

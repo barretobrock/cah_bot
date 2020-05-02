@@ -50,7 +50,7 @@ class Game:
         self.deck = deck
         self.ping_judge = True
         self.ping_winner = True
-        self.pick_voting = True  # Enables non-judge votes to keep the judge in line
+        self.pick_voting = False  # Enables non-judge votes to keep the judge in line
         self.round_picks = []
         self.round_ts = None  # Stores the timestamp of the question card message for the round
         self.prev_question_card = None
@@ -106,6 +106,7 @@ class Game:
         for player in self.players.player_list:
             player.hand.pick.clear_picks()
             player.new_hand = False
+            player.nuked_hand = False
             player.voted = False
             self.players.update_player(player)
         self.status = self.gs.players_decision
@@ -252,5 +253,6 @@ class Game:
 
         return public_card_blocks, judge_card_blocks + [
             self.bkb.make_block_divider(),
-            self.bkb.make_block_multiselect('Randchoose (all or subset)', 'Select choices', rand_options)
+            self.bkb.make_block_multiselect('Randchoose (all or subset)', 'Select choices', rand_options),
+            self.bkb.make_block_button('Force Close', '')
         ]
