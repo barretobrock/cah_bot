@@ -25,10 +25,12 @@ setup_args = {
         'https://github.com/barretobrock/slacktools/tarball/master#egg=slacktools'
     ],
     'install_requires': [
-        'slacktools',
-        'flask==1.1.1',
-        'slackeventsapi==2.1.0',
+        'Flask==1.1.2',
         'requests>=2.20.0'
+        'numpy==1.18.4',
+        'pandas==1.0.3',
+        'slacktools',
+        'slackeventsapi==2.1.0',
     ]
 }
 
