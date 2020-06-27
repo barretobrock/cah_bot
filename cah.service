@@ -12,7 +12,7 @@ After=multi-user.target
 User=bobrock
 Group=bobrock
 Type=idle
-ExecStart=/home/bobrock/venvs/kavkil/bin/python3 /home/bobrock/extras/cah_bot/run.py
+ExecStart=/home/bobrock/venvs/cah_bot/bin/python3 /home/bobrock/extras/cah_bot/run.py
 Restart=on-failure
 
 [Install]
