@@ -5,6 +5,7 @@ import string
 import random
 import pandas as pd
 import numpy as np
+from datetime import datetime
 from typing import List, Optional, Union, Tuple
 from random import randrange
 from slacktools import SlackBotBase, BlockKitBuilder
@@ -25,7 +26,7 @@ class CAHBot:
             creds: dict, dictionary of tokens & other credentials
             debug: bool, if True, will use a different set of triggers for testing purposes
         """
-        self.bot_name = f'Wizzy {"Debugus" if debug else "Prodspero"}'
+        self.bot_name = f'Wizzy Viktorovich {"Debugradov" if debug else "Prodborodov"}'
         self.log = Log(log_name, child_name='cah_bot')
         self.debug = debug
         self.triggers = ['cah', 'c!']
@@ -33,12 +34,14 @@ class CAHBot:
         self.admin_user = ['UM35HE6R5']
         self.bkb = BlockKitBuilder()
 
+        self.DECKNUKE_PENALTY = -3
+
         # Bot version stuff
         version_dict = get_versions()
         self.version = version_dict['version']
         self.update_date = pd.to_datetime(version_dict['date']).strftime('%F %T')
         self.bootup_msg = [self.bkb.make_context_section([
-            f"*{self.bot_name}* *`{self.version}`* booted up at `{pd.datetime.now():%F %T}`!",
+            f"*{self.bot_name}* *`{self.version}`* booted up at `{datetime.now():%F %T}`!",
             f"(updated {self.update_date})"
         ])]
 
@@ -153,6 +156,12 @@ class CAHBot:
                 'desc': 'Toggles automated randchoose (i.e., arp for judges). default: `False`',
                 'value': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'randchoose']
             },
+            r'^toggle arparca': {
+                'pattern': 'toggle arparca [-u <user>]',
+                'cat': cat_settings,
+                'desc': 'Toggles both automated randpicking and automated randchoose (i.e., arp for judges).',
+                'value': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'both']
+            },
             r'^toggle (card\s?)?dm': {
                 'pattern': 'toggle (dm|card dm)',
                 'cat': cat_settings,
@@ -202,7 +211,7 @@ class CAHBot:
                 'cat': cat_player,
                 'desc': 'Don\'t like any of your cards? Use this and one card will get randpicked from your '
                         'current deck. The other will be shuffled out and replaced with new cards \n\t\t'
-                        '_NOTE: If your randpicked card is chosen, you\'ll get 1:diddlecoin: deducted :hr-smile:_',
+                        f'_NOTE: If your randpicked card is chosen, you\'ll get {self.DECKNUKE_PENALTY} :diddlecoin: deducted :hr-smile:_',
                 'value': [self.decknuke, 'user']
             },
             r'^randpick': {
@@ -288,8 +297,7 @@ class CAHBot:
     def cleanup(self, *args):
         """Runs just before instance is destroyed"""
         notify_block = [
-            self.bkb.make_context_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:'),
-            self.bkb.make_context_section(self.st.build_phrase('pour one out'))
+            self.bkb.make_context_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
         ]
         self.st.message_test_channel(blocks=notify_block)
         sys.exit(0)
@@ -493,10 +501,13 @@ class CAHBot:
                 player = self.game.players.get_player_by_tag(ptag.upper())
 
         is_randpick = pick_or_choose == 'randpick'
+        is_both = pick_or_choose == 'both'
 
-        if is_randpick:
+        resp_msg = []
+
+        if is_randpick or is_both:
             player.auto_randpick = not player.auto_randpick
-            resp_msg = f'Auto randpick for player `{player.display_name}` set to `{player.auto_randpick}`'
+            resp_msg.append(f'Auto randpick for player `{player.display_name}` set to `{player.auto_randpick}`')
             if self.game is not None:
                 self.game.players.update_player(player)
                 if all([self.game.status == self.game.gs.players_decision,
@@ -507,10 +518,10 @@ class CAHBot:
                     self.process_picks(player.player_id, 'randpick')
             else:
                 self.players.update_player(player)
-        else:
+        if not is_randpick or is_both:
             # Auto randchoose
             player.auto_randchoose = not player.auto_randchoose
-            resp_msg = f'Auto randchoose for player `{player.display_name}` set to `{player.auto_randchoose}`'
+            resp_msg.append(f'Auto randchoose for player `{player.display_name}` set to `{player.auto_randchoose}`')
             if self.game is not None:
                 self.game.players.update_player(player)
                 if all([self.game.status == self.game.gs.judge_decision, player.auto_randchoose]):
@@ -518,7 +529,7 @@ class CAHBot:
             else:
                 self.players.update_player(player)
 
-        return resp_msg
+        return '\n'.join(resp_msg)
 
     def dm_cards_now(self, user_id: str) -> Optional:
         """DMs current card set to user"""
@@ -553,11 +564,16 @@ class CAHBot:
         honorific = f'the {honorifics[-1] if judge_pts > len(honorifics) - 1 else honorifics[judge_pts]}'
         # Assign this to the judge so we can refer to it in other areas.
         self.game.judge.honorific = honorific.title()
+        bot_moji = ':math:' if self.game.judge.auto_randchoose else ''
 
         return [
-            self.bkb.make_block_section(f'Round *`{self.game.rounds}`* - *{self.game.judge.honorific} '
-                                        f'Judge {self.game.judge.display_name.title()}* presiding.'),
-            self.bkb.make_block_section(f'*:regional_indicator_q:: {self.game.current_question_card.txt}*'),
+            self.bkb.make_block_section(
+                f'Round *`{self.game.rounds}`* - *{self.game.judge.honorific} '
+                f'Judge {self.game.judge.display_name.title()}* {bot_moji} presiding.'
+            ),
+            self.bkb.make_block_section(
+                f'*:regional_indicator_q:: {self.game.current_question_card.txt}*'
+            ),
             self.bkb.make_block_divider()
         ]
 
@@ -656,13 +672,16 @@ class CAHBot:
         """Deals the user a new hand while randpicking one of the cards from their current deck.
         The card that's picked will have a negative point value
         """
+        player = self.game.players.get_player_by_id(user)
+        if self.game.judge.player_id == player.player_id:
+            self.st.message_test_channel(f'Decknuke rejected. {player.player_tag} is the judge. :shame:')
+            return
         # Randpick a card for this user
         self.process_picks(user, 'randpick')
-        # Replace all remaining cards in hand
-        player = self.game.players.get_player_by_id(user)
-        # Remove all cards form their hand
+        # Remove all cards form their hand & tag player
         player.hand.burn_cards()
         player.nuked_hand = True
+        self.st.message_test_channel(f'{player.player_tag} nuked their deck! :frogsiren:')
         # Deal the player the unused new cards the number of cards played will be replaced after the round ends.
         self.game._card_dealer(player, self.game.DECK_SIZE - self.game.current_question_card.required_answers)
 
@@ -1053,13 +1072,12 @@ class CAHBot:
             vote_txt = ''
 
         # Winner selection
-        decknuke_penalty = -2
         winner = self.game.players.get_player_by_id(winning_pick.id)
         # If decknuke occurred, distribute the points to others randomly
         if winner.nuked_hand:
-            point_receivers_txt = self._points_redistributer(decknuke_penalty)
-            points_won = decknuke_penalty
-            decknuke_txt = f'\n:impact::impact::impact::impact:LOL HOW DAT DECKNUKE WORK FOR YA NOW??\n' \
+            point_receivers_txt = self._points_redistributer(self.DECKNUKE_PENALTY)
+            points_won = self.DECKNUKE_PENALTY
+            decknuke_txt = f'\n:impact::impact::impact::impact:LOLOLOLOLOL HOW DAT DECKNUKE WORK FOR YA NOW??\n' \
                            f'Your points were redistributed such: {point_receivers_txt}'
         else:
             points_won = 1
@@ -1086,7 +1104,9 @@ class CAHBot:
             ]
         else:
             last_section = []
-        last_section += [self.bkb.make_context_section('Round ended.')]
+        last_section += [
+            self.bkb.make_context_section(f'Round ended. Nice going, {self.game.judge.display_name}.')
+        ]
 
         message_block = [
             self.bkb.make_block_section(winner_txt_blob),

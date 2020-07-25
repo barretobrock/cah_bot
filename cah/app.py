@@ -8,7 +8,7 @@ from kavalkilu import Path, Log
 from .utils import CAHBot
 
 
-bot_name = 'cah'
+bot_name = 'wizzy'
 DEBUG = os.environ['CAH_DEBUG'] == '1'
 kpath = Path()
 logg = Log(bot_name)
@@ -26,7 +26,7 @@ message_events = []
 app = Flask(__name__)
 
 # Events API listener
-bot_events = SlackEventAdapter(key_dict['signing_secret'], "/cah/cahapi/events", app)
+bot_events = SlackEventAdapter(key_dict['signing-secret'], "/cah/cahapi/events", app)
 
 
 @app.route('/cah/cahapi/actions', methods=['GET', 'POST'])
