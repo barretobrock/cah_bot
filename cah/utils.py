@@ -8,6 +8,7 @@ import numpy as np
 from typing import List, Optional, Union, Tuple
 from random import randrange
 from slacktools import SlackBotBase, BlockKitBuilder
+from kavalkilu import Log
 from .cards import Decks, Deck
 from .players import Players, Player
 from .games import Game
@@ -17,20 +18,19 @@ from ._version import get_versions
 class CAHBot:
     """Bot for playing Cards Against Humanity on Slack"""
 
-    def __init__(self, log_name: str, xoxb_token: str, xoxp_token: str, debug: bool = False):
+    def __init__(self, log_name: str, creds: dict, debug: bool = False):
         """
         Args:
             log_name: str, name of the kavalkilu.Log object to retrieve
-            xoxb_token: str, bot token to use
-            xoxp_token: str, user token to use
+            creds: dict, dictionary of tokens & other credentials
             debug: bool, if True, will use a different set of triggers for testing purposes
         """
         self.bot_name = f'Wizzy {"Debugus" if debug else "Prodspero"}'
-        self.triggers = ['cah', 'c!'] if not debug else ['decah', 'dc!']
+        self.log = Log(log_name, child_name='cah_bot')
+        self.debug = debug
+        self.triggers = ['cah', 'c!']
         self.channel_id = 'CMPV3K8AE' if not debug else 'CQ1DG4WB1'  # cah or cah-test
         self.admin_user = ['UM35HE6R5']
-        # We'll need this to avoid overwriting actual scores
-        self.debug = debug
         self.bkb = BlockKitBuilder()
 
         # Bot version stuff
@@ -43,7 +43,7 @@ class CAHBot:
         ])]
 
         # GSheets setup stuff
-        self.cah_gsheet_key = '1IVYlID7N-eGiBrmew4vgE7FgcVaGJ2PwyncPjfBHx-M'
+        self.cah_gsheet_key = creds['spreadsheet-key']
         self.cah_sheets = {}
 
         # Generate score wipe confirmation key
@@ -253,8 +253,7 @@ class CAHBot:
             }
         }
         # Initate the bot, which comes with common tools for interacting with Slack's API
-        self.st = SlackBotBase(log_name, triggers=self.triggers, team='orbitalkettlerelay',
-                               main_channel=self.channel_id, xoxp_token=xoxp_token, xoxb_token=xoxb_token,
+        self.st = SlackBotBase(log_name, triggers=self.triggers, creds=creds, test_channel=self.channel_id,
                                commands=commands, cmd_categories=cmd_categories)
         self.bot_id = self.st.bot_id
         self.user_id = self.st.user_id
@@ -281,7 +280,7 @@ class CAHBot:
         self.players = Players(self._build_players())
         self.game = None
 
-        self.st.message_main_channel(blocks=self.bootup_msg)
+        self.st.message_test_channel(blocks=self.bootup_msg)
 
         # Check for preserved scores
         self.read_score()
@@ -292,7 +291,7 @@ class CAHBot:
             self.bkb.make_context_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:'),
             self.bkb.make_context_section(self.st.build_phrase('pour one out'))
         ]
-        self.st.message_main_channel(blocks=notify_block)
+        self.st.message_test_channel(blocks=notify_block)
         sys.exit(0)
 
     def test_run(self) -> Optional[str]:
@@ -397,7 +396,7 @@ class CAHBot:
         """Begins a new game"""
         if self.game is not None:
             if self.game.status != self.game.gs.ended:
-                self.st.message_main_channel('Looks like you haven\'t ended the current game yet. '
+                self.st.message_test_channel('Looks like you haven\'t ended the current game yet. '
                                              'Do that and then start a new game.')
                 return None
 
@@ -425,38 +424,38 @@ class CAHBot:
     def toggle_judge_ping(self) -> Optional:
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
         if self.game is None:
-            self.st.message_main_channel('Start a game first, then tell me to do that.')
+            self.st.message_test_channel('Start a game first, then tell me to do that.')
             return None
 
         self.game.toggle_judge_ping()
-        self.st.message_main_channel(f'Judge pinging set to: `{self.game.ping_judge}`')
+        self.st.message_test_channel(f'Judge pinging set to: `{self.game.ping_judge}`')
 
     def toggle_announce_picks(self) -> Optional:
         """Toggles whether or not to post when a player has made a pick"""
         if self.game is None:
-            self.st.message_main_channel('Start a game first, then tell me to do that.')
+            self.st.message_test_channel('Start a game first, then tell me to do that.')
             return None
 
         self.game.toggle_announce_picked()
-        self.st.message_main_channel(f'Pick announcements set to: `{self.game.announce_picked}`')
+        self.st.message_test_channel(f'Pick announcements set to: `{self.game.announce_picked}`')
 
     def toggle_winner_ping(self) -> Optional:
         """Toggles whether or not to ping the winner when they've won a round"""
         if self.game is None:
-            self.st.message_main_channel('Start a game first, then tell me to do that.')
+            self.st.message_test_channel('Start a game first, then tell me to do that.')
             return None
 
         self.game.toggle_winner_ping()
-        self.st.message_main_channel(f'Weiner pinging set to: `{self.game.ping_winner}`')
+        self.st.message_test_channel(f'Weiner pinging set to: `{self.game.ping_winner}`')
 
     def toggle_pick_voting(self) -> Optional:
         """Toggles whether or not to ping the winner when they've won a round"""
         if self.game is None:
-            self.st.message_main_channel('Start a game first, then tell me to do that.')
+            self.st.message_test_channel('Start a game first, then tell me to do that.')
             return None
 
         self.game.toggle_pick_voting()
-        self.st.message_main_channel(f'Pick voting set to: `{self.game.pick_voting}`')
+        self.st.message_test_channel(f'Pick voting set to: `{self.game.pick_voting}`')
 
     def toggle_card_dm(self, user_id: str, channel: str):
         """Toggles card dming"""
@@ -524,7 +523,7 @@ class CAHBot:
     def dm_cards_now(self, user_id: str) -> Optional:
         """DMs current card set to user"""
         if self.game is None:
-            self.st.message_main_channel('Start a game first, then tell me to do that.')
+            self.st.message_test_channel('Start a game first, then tell me to do that.')
             return None
 
         player = self.game.players.get_player_by_id(user_id)
@@ -620,13 +619,13 @@ class CAHBot:
         self.game.new_round()
         if self.game.status == self.game.gs.ended:
             # Game ended because we ran out of questions
-            self.st.message_main_channel(blocks=notification_block)
+            self.st.message_test_channel(blocks=notification_block)
             self.end_game()
             return None
 
         question_block = self.make_question_block()
         notification_block += question_block
-        self.st.message_main_channel(blocks=notification_block)
+        self.st.message_test_channel(blocks=notification_block)
 
         # Get the required number of answers for the current question
         req_ans = self.game.current_question_card.required_answers
@@ -670,12 +669,12 @@ class CAHBot:
     def process_picks(self, user: str, message: str) -> Optional:
         """Processes the card selection made by the user"""
         if self.game is None:
-            self.st.message_main_channel('Start a game first, then tell me to do that.')
+            self.st.message_test_channel('Start a game first, then tell me to do that.')
             return None
 
         if self.game.status != self.game.gs.players_decision:
             # Prevent this method from being called outside of the player's decision stage
-            self.st.message_main_channel(f'<@{user}> You cannot make selections '
+            self.st.message_test_channel(f'<@{user}> You cannot make selections '
                                          f'in the current status of this game: `{self.game.status}`.')
             return None
 
@@ -694,7 +693,7 @@ class CAHBot:
 
         # Make sure the player referenced isn't the judge
         if player.player_id == self.game.judge.player_id:
-            self.st.message_main_channel(f'{player.player_tag} is the judge this round. Judges can\'t pick!')
+            self.st.message_test_channel(f'{player.player_tag} is the judge this round. Judges can\'t pick!')
             return None
 
         # Player is set, now determine what we need to do
@@ -713,7 +712,7 @@ class CAHBot:
                         card_subset = list(map(int, after_randpick.split(',')))
                     else:
                         # Pick not understood; doesn't match expected syntax
-                        self.st.message_main_channel(
+                        self.st.message_test_channel(
                             f'<@{user}> I didn\'t understand your randpick message (`{message}`). Pick voided.')
                         return None
                 else:
@@ -729,7 +728,7 @@ class CAHBot:
                 if len(card_subset) >= req_ans:
                     picks = [x - 1 for x in np.random.choice(card_subset, req_ans, False).tolist()]
                 else:
-                    self.st.message_main_channel(f'<@{user}> your subset of picks is too small. '
+                    self.st.message_test_channel(f'<@{user}> your subset of picks is too small. '
                                                  f'At least (`{req_ans}`) picks required. Pick voided.')
                     return None
             else:
@@ -743,7 +742,7 @@ class CAHBot:
         if picks is None:
             return None
         elif any([x > len(player.hand.cards) - 1 or x < 0 for x in picks]):
-            self.st.message_main_channel(f'<@{user}> I think you picked outside the range of suggestions. '
+            self.st.message_test_channel(f'<@{user}> I think you picked outside the range of suggestions. '
                                          f'Your picks: `{picks}`.')
             return None
         messages = [self.game.assign_player_pick(player.player_id, picks)]
@@ -812,14 +811,14 @@ class CAHBot:
             picks = isolate_pick(pick_part)
 
         if picks is None:
-            self.st.message_main_channel(f'<@{user}> - I didn\'t understand your pick. You entered: `{message}` \n'
+            self.st.message_test_channel(f'<@{user}> - I didn\'t understand your pick. You entered: `{message}` \n'
                                          f'Try something like `p 12` or `pick 2`')
         elif judge_decide:
             if len(picks) == 1:
                 # Expected number of picks for judge
                 return picks[0] - 1
             else:
-                self.st.message_main_channel(f'<@{user}> - You\'re the judge. '
+                self.st.message_test_channel(f'<@{user}> - You\'re the judge. '
                                              f'You should be choosing only one set. Try again!')
         else:
             # Confirm that the number of picks matches the required number of answers
@@ -828,7 +827,7 @@ class CAHBot:
                 # Set picks to 0-based index and send onward
                 return [x - 1 for x in picks]
             else:
-                self.st.message_main_channel(f'<@{user}> - You chose {len(picks)} things, '
+                self.st.message_test_channel(f'<@{user}> - You chose {len(picks)} things, '
                                              f'but the current question requires {req_ans}.')
         return None
 
@@ -851,7 +850,7 @@ class CAHBot:
            self.bkb.make_block_section('Please vote for the best pick of this round!')
         ] + question_block[1:] + private_choices
         # Show everyone's picks to the group, but only send the choice buttons to the judge
-        self.st.message_main_channel(blocks=public_response_block)
+        self.st.message_test_channel(blocks=public_response_block)
         if self.game.pick_voting:
             ids_to_send_to = [x.player_id for x in self.game.players.player_list]
         else:
@@ -886,7 +885,7 @@ class CAHBot:
                 pick = list(np.random.choice(card_subset, 1))[0] - 1
             else:
                 # Card subset wasn't able to be parsed
-                self.st.message_main_channel('I wasn\'t able to parse the card subset you entered. '
+                self.st.message_test_channel('I wasn\'t able to parse the card subset you entered. '
                                              'Try again!')
                 return None
         else:
@@ -904,12 +903,12 @@ class CAHBot:
         """For the judge to choose the winning card and
         for other players to vote on the card they think should win"""
         if self.game is None:
-            self.st.message_main_channel('Start a game first, then tell me to do that.')
+            self.st.message_test_channel('Start a game first, then tell me to do that.')
             return None
 
         if self.game.status != self.game.gs.judge_decision:
             # Prevent this method from being called outside of the judge's decision stage
-            self.st.message_main_channel(f'Not the right status for this command: `{self.game.status}`')
+            self.st.message_test_channel(f'Not the right status for this command: `{self.game.status}`')
             return None
 
         if user in self.admin_user and 'blueberry pie' in message:
@@ -934,7 +933,7 @@ class CAHBot:
             # Pick can either be:
             #   -less than total players minus judge, minus 1 more to account for array
             #   -greater than -1
-            self.st.message_main_channel(f'I think you picked outside the range of suggestions. '
+            self.st.message_test_channel(f'I think you picked outside the range of suggestions. '
                                          f'Your pick: {pick}')
             return None
         else:
@@ -944,7 +943,7 @@ class CAHBot:
                 if self.game.judge.pick_idx is None:
                     self.game.judge.pick_idx = pick
                 else:
-                    self.st.message_main_channel('Judge\'s pick voided. You\'ve already picked this round.')
+                    self.st.message_test_channel('Judge\'s pick voided. You\'ve already picked this round.')
             else:
                 if not player.voted:
                     if not used_all:
@@ -953,7 +952,7 @@ class CAHBot:
                     player.voted = True
                     self.game.players.update_player(player)
                 else:
-                    self.st.message_main_channel('Player\'s pick voided. You\'ve already voted this round.')
+                    self.st.message_test_channel('Player\'s pick voided. You\'ve already voted this round.')
             # Replace the form with a message.
             self.game.replace_block_forms(player, is_pick=False)
 
@@ -970,7 +969,7 @@ class CAHBot:
         """Coordinates end-of-round logic (tallying votes, picking winner, etc.)"""
         # Make sure all users have votes and judge has made decision before wrapping up the round
         # Handle the announcement of winner and distribution of points
-        self.st.message_main_channel(blocks=self._winner_selection())
+        self.st.message_test_channel(blocks=self._winner_selection())
         self.game.status = self.game.gs.end_round
         # Start new round
         self.new_round()
@@ -1098,7 +1097,7 @@ class CAHBot:
     def end_game(self) -> Optional:
         """Ends the current game"""
         if self.game is None:
-            self.st.message_main_channel('You have to start a game before you can end it...????')
+            self.st.message_test_channel('You have to start a game before you can end it...????')
             return None
         if self.game.status != self.game.gs.ended:
             # Check if game was not already ended automatically
@@ -1106,7 +1105,7 @@ class CAHBot:
         # Save score history to file
         self.display_points()
         self.save_score(ended=True)
-        self.st.message_main_channel('The game has ended. :died:')
+        self.st.message_test_channel('The game has ended. :died:')
 
     def save_score(self, ended: bool = False):
         """Saves the score to directory"""
@@ -1153,9 +1152,9 @@ class CAHBot:
                         player.final_scores = list()
                         player.rounds_played = 0
                     self.players.update_player(player)
-            self.st.message_main_channel('Preserved scores have been read in from gsheets.')
+            self.st.message_test_channel('Preserved scores have been read in from gsheets.')
         else:
-            self.st.message_main_channel('Scores file was empty. No scores will be updated.')
+            self.st.message_test_channel('Scores file was empty. No scores will be updated.')
 
     def wipe_score(self):
         """Resets all player's score history"""
@@ -1172,7 +1171,7 @@ class CAHBot:
             player.rounds_played = 0
             self.players.update_player(player)
         self.save_score()
-        self.st.message_main_channel('All scores have been erased.')
+        self.st.message_test_channel('All scores have been erased.')
 
     def display_points(self) -> List[dict]:
         """Displays points for all players"""
@@ -1229,7 +1228,7 @@ class CAHBot:
         """Displays status of the game"""
 
         if self.game is None:
-            self.st.message_main_channel('I just stahted this wicked pissa game, go grab me some dunkies.')
+            self.st.message_test_channel('I just stahted this wicked pissa game, go grab me some dunkies.')
             return None
 
         status_block = [
