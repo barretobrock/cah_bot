@@ -8,3 +8,4 @@ REPO:
   DESC: A slack bot for playing Cards Against Humanity on Slack
   DEPS:
     - git+https://github.com/barretobrock/slacktools.git#egg=slacktools
+    - git+https://github.com/barretobrock/kavalkilu.git#egg=kavalkilu
