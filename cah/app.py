@@ -26,10 +26,10 @@ message_events = []
 app = Flask(__name__)
 
 # Events API listener
-bot_events = SlackEventAdapter(key_dict['signing-secret'], "/cah/cahapi/events", app)
+bot_events = SlackEventAdapter(key_dict['signing-secret'], "/api/events", app)
 
 
-@app.route('/cah/cahapi/actions', methods=['GET', 'POST'])
+@app.route('/api/actions', methods=['GET', 'POST'])
 def handle_action():
     """Handle a response when a user clicks a button from Wizzy in Slack"""
     event_data = json.loads(request.form["payload"])

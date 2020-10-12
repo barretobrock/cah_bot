@@ -518,7 +518,7 @@ class CAHBot:
                     self.process_picks(player.player_id, 'randpick')
             else:
                 self.players.update_player(player)
-        if not is_randpick or is_both:
+        if any([not is_randpick, is_both]):
             # Auto randchoose
             player.auto_randchoose = not player.auto_randchoose
             resp_msg.append(f'Auto randchoose for player `{player.display_name}` set to `{player.auto_randchoose}`')

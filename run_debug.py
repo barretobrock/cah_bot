@@ -5,7 +5,7 @@ os.environ['CAH_DEBUG'] = "1"
 from cah.app import app
 
 
-@app.route('/cah')
+@app.route('/')
 def index():
     return 'CAH'
 
