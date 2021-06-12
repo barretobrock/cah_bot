@@ -21,8 +21,9 @@ def read_props() -> Dict[str, str]:
     with open(os.path.abspath('./secretprops.properties'), 'r') as f:
         contents = f.read().split('\n')
         for item in contents:
-            key, value = item.split('=', 1)
-            props[key] = value.strip()
+            if item != '':
+                key, value = item.split('=', 1)
+                props[key] = value.strip()
     return props
 
 
