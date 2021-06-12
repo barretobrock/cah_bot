@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import numpy as np
-from typing import List, Optional, Union
+from typing import List, Optional
 from .cards import Hand
 
 

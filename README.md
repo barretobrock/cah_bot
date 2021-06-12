@@ -30,7 +30,7 @@ sudo systemctl enable cah.service
 
 ## Upgrade
 ```bash
-sh updaate_script.sh
+sh update_script.sh
 ```
 
 ## Run

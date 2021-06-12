@@ -8,8 +8,8 @@ import numpy as np
 from datetime import datetime
 from typing import List, Optional, Union, Tuple
 from random import randrange
-from slacktools import SlackBotBase, BlockKitBuilder
-from kavalkilu import Log
+from slacktools import SlackBotBase, BlockKitBuilder, SecretStore
+from easylogger import Log
 from .cards import Decks, Deck
 from .players import Players, Player
 from .games import Game
@@ -19,11 +19,11 @@ from ._version import get_versions
 class CAHBot:
     """Bot for playing Cards Against Humanity on Slack"""
 
-    def __init__(self, log_name: str, creds: dict, debug: bool = False):
+    def __init__(self, log_name: str, credstore: SecretStore, debug: bool = False):
         """
         Args:
             log_name: str, name of the kavalkilu.Log object to retrieve
-            creds: dict, dictionary of tokens & other credentials
+            credstore: SecretStore, dictionary of API tokens & other credentials
             debug: bool, if True, will use a different set of triggers for testing purposes
         """
         self.bot_name = f'Wizzy Viktorovich {"Debugradov" if debug else "Prodborodov"}'
@@ -33,8 +33,9 @@ class CAHBot:
         self.channel_id = 'CMPV3K8AE' if not debug else 'CQ1DG4WB1'  # cah or cah-test
         self.admin_user = ['UM35HE6R5']
         self.bkb = BlockKitBuilder()
+        self.cah_creds = credstore.get_key_and_make_ns('wizzy')
 
-        self.DECKNUKE_PENALTY = -3
+        self.DECKNUKE_PENALTY = -5
 
         # Bot version stuff
         version_dict = get_versions()
@@ -46,7 +47,7 @@ class CAHBot:
         ])]
 
         # GSheets setup stuff
-        self.cah_gsheet_key = creds['spreadsheet-key']
+        self.cah_gsheet_key = self.cah_creds.spreadsheet_key
         self.cah_sheets = {}
 
         # Generate score wipe confirmation key
@@ -211,7 +212,8 @@ class CAHBot:
                 'cat': cat_player,
                 'desc': 'Don\'t like any of your cards? Use this and one card will get randpicked from your '
                         'current deck. The other will be shuffled out and replaced with new cards \n\t\t'
-                        f'_NOTE: If your randpicked card is chosen, you\'ll get {self.DECKNUKE_PENALTY} :diddlecoin: deducted :hr-smile:_',
+                        f'_NOTE: If your randpicked card is chosen, you\'ll get {self.DECKNUKE_PENALTY}'
+                        f' :diddlecoin: deducted :hr-smile:_',
                 'value': [self.decknuke, 'user']
             },
             r'^randpick': {
@@ -262,8 +264,9 @@ class CAHBot:
             }
         }
         # Initate the bot, which comes with common tools for interacting with Slack's API
-        self.st = SlackBotBase(log_name, triggers=self.triggers, creds=creds, test_channel=self.channel_id,
-                               commands=commands, cmd_categories=cmd_categories)
+        self.st = SlackBotBase(log_name, triggers=self.triggers, credstore=credstore,
+                               test_channel=self.channel_id, commands=commands, cmd_categories=cmd_categories,
+                               slack_cred_name='wizzy')
         self.bot_id = self.st.bot_id
         self.user_id = self.st.user_id
         self.bot = self.st.bot
@@ -1308,7 +1311,7 @@ class CAHBot:
 
     def _refresh_sheets(self):
         """Refreshes the GSheet containing the Q&A cards & other info"""
-        self.cah_sheets = self.st.read_in_sheets(self.cah_gsheet_key)
+        self.cah_sheets = self.st.read_in_sheets()
 
     def refresh_decks(self):
         """Refreshes the GSheet containing the Q&A cards"""
