@@ -6,3 +6,4 @@ pandas
 pykeepass
 slacktools
 slackeventsapi==2.1.0
+sqlalchemy
