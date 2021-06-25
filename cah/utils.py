@@ -677,12 +677,16 @@ class CAHBot:
         elif action_id == 'new-game-users':
             self.new_game(deck=self.state_store['deck'], player_ids=action_dict['selected_users'])
         elif action_id == 'status':
-            self.display_status()
+            status_block = self.display_status()
+            if status_block is not None:
+                self.st.send_message(channel=channel, message='Game status', blocks=status_block)
         elif action_id == 'my-details':
             pass
             # TODO: make a show-my-details method that takes in a user and outputs privately all their info
         elif action_id == 'score':
-            self.display_points()
+            score_block = self.display_points()
+            if score_block is not None:
+                self.st.send_message(channel=channel, message='Scores', blocks=score_block)
         elif action_id == 'end-game':
             self.end_game()
         else:
