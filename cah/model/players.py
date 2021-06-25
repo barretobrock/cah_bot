@@ -1,9 +1,9 @@
-from sqlalchemy import Column, VARCHAR, Integer, Boolean, ForeignKey
+from sqlalchemy import Column, VARCHAR, Integer, ForeignKey
 # local imports
 from .base import Base
 
 
-class Players(Base):
+class TablePlayers(Base):
     """players table"""
     __tablename__ = 'players'
 
@@ -15,7 +15,7 @@ class Players(Base):
     total_rounds_played = Column(Integer, default=0, nullable=False)
 
 
-class PlayerGames(Base):
+class TablePlayerGames(Base):
     """player-level game info"""
 
     __tablename__ = 'playergames'

@@ -5,11 +5,12 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from .base import Base
 
 
-class Games(Base):
+class TableGames(Base):
     """games table - stores past game info"""
     __tablename__ = 'games'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    status = Column(VARCHAR(50), nullable=False)
     rounds = Column(Integer, default=0, nullable=False)
     players = Column(Integer, default=0, nullable=False)
     start_time = Column(TIMESTAMP, server_default=func.now(), nullable=False)

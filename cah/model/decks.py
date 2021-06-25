@@ -3,7 +3,7 @@ from sqlalchemy import Column, VARCHAR, Integer
 from .base import Base
 
 
-class Decks(Base):
+class TableDecks(Base):
     """decks table"""
     __tablename__ = 'decks'
 

@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, ForeignKey, Text
 from .base import Base
 
 
-class AnswerCards(Base):
+class TableAnswerCards(Base):
     """answer cards table"""
     __tablename__ = 'answer_cards'
 
@@ -12,7 +12,7 @@ class AnswerCards(Base):
     card_text = Column(Text, nullable=False)
 
 
-class QuestionCards(Base):
+class TableQuestionCards(Base):
     """question cards table"""
     __tablename__ = 'question_cards'
 
