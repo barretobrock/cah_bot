@@ -38,7 +38,13 @@ sh update_script.sh
 python3 run.py
 ```
 
+## Local testing
 
-
+### Testing with responses
+For local testing with Slack responses, get a different terminal window open and initiate `ngrok` in it to test the webhook outside of the live endpoint
+```bash
+ngrok http 5004
+```
+Then in another window, run the script to get the bot/app running. Don't forget to change the URL in Slack's preferences.
 
 

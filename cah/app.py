@@ -2,7 +2,7 @@ import os
 import json
 import requests
 import signal
-from typing import Dict
+from random import choice
 from flask import Flask, request, make_response
 from slacktools import SlackEventAdapter, SecretStore
 from easylogger import Log
@@ -13,22 +13,9 @@ from .utils import CAHBot
 bot_name = 'wizzy'
 DEBUG = os.environ['CAH_DEBUG'] == '1'
 kpath = Path()
-logg = Log(bot_name)
+logg = Log(bot_name, log_to_file=True)
 
-
-def read_props() -> Dict[str, str]:
-    props = {}
-    with open(os.path.abspath('./secretprops.properties'), 'r') as f:
-        contents = f.read().split('\n')
-        for item in contents:
-            if item != '':
-                key, value = item.split('=', 1)
-                props[key] = value.strip()
-    return props
-
-
-secretprops = read_props()
-credstore = SecretStore('secretprops-bobdev.kdbx', secretprops['slacktools_secret'])
+credstore = SecretStore('secretprops-bobdev.kdbx')
 cah_creds = credstore.get_key_and_make_ns(bot_name)
 
 logg.debug('Instantiating bot...')
@@ -54,14 +41,18 @@ def handle_action():
     # Not sure if we'll ever receive more than one action?
     action = actions[0]
     # Send that info onwards to determine how to deal with it
-    Bot.process_incoming_action(user, channel, action)
+    Bot.process_incoming_action(user, channel, action, event_dict=event_data)
 
     # Respond to the initial message and update it
+    responses = [
+        'Thanks, shithead!', 'Good job, you did a thing!', 'Look at you, doing things and shit!',
+        'Hey, you\'re a real pal!', 'Thanks, I guess...'
+    ]
     update_dict = {
         'replace_original': True,
-        'text': 'Thanks, shithead!'
+        'text': choice(responses)
     }
-    if event_data['container']['is_ephemeral']:
+    if event_data.get('container', {'is_ephemeral': False}).get('is_ephemeral', False):
         update_dict['response_type'] = 'ephemeral'
     resp = requests.post(event_data['response_url'], json=update_dict,
                          headers={'Content-Type': 'application/json'})

@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 import re
 import pandas as pd
-from typing import List, Optional
+from typing import List, Optional, Dict
 from random import shuffle
-from slacktools import BlockKitBuilder
+from slacktools import BlockKitBuilder as bkb
 
 
 class Card:
@@ -97,7 +97,6 @@ class Hand:
         self.owner = owner
         self.cards = list()
         self.pick = Pick()
-        self.bkb = BlockKitBuilder()
 
     def pick_card(self, pos_list: List[int]) -> bool:
         """Picks card at index"""
@@ -111,7 +110,7 @@ class Hand:
                 return True
         return False
 
-    def render_hand(self, max_selected: int = 1) -> List[dict]:
+    def render_hand(self, max_selected: int = 1) -> List[Dict]:
         """Prints out the hand to the player
         Args:
             max_selected: int, the maximum allowed number of definite selections (not randpicks) to make
@@ -127,8 +126,9 @@ class Hand:
             #   If we need to pick more than one card for the question, set this dictionary as None
             #   so buttons don't get confusingly rendered next to the cards.
             #   (one of these buttons == one answer, so Wizzy will deny its entry as it's under the threshold)
-            card_btn_dict = self.bkb.make_block_button(f'{num}', f'pick-{num}') if max_selected == 1 else None
-            card_blocks.append(self.bkb.make_block_section(f'*{num}*: {card.txt}', accessory=card_btn_dict))
+            card_btn_dict = bkb.make_action_button(f'{num}', f'pick-{num}', action_id=f'game-pick-{num}') if \
+                max_selected == 1 else None
+            card_blocks.append(bkb.make_block_section(f'*{num}*: {card.txt}', accessory=card_btn_dict))
             # We'll still build this button list, as it's used below when we need to select multiple answers
             btn_list.append({'txt': f'{num}', 'value': f'pick-{num}'})
             randbtn_list.append({'txt': f'{num}', 'value': f'randpick-{num}'})
@@ -136,21 +136,22 @@ class Hand:
         # This is kinda hacky, but add the divider here so that if we don't have a multiselect area to add,
         #   we still have something to add to the return statement below to make the flow a bit better
         definite_selection_area = [
-            self.bkb.make_block_divider()
+            bkb.make_block_divider()
         ]
         if max_selected > 1:
             desc = f'{max_selected} picks required for this question'
             definite_selection_area += [
-                self.bkb.make_block_multiselect(desc, f'Select {max_selected} picks', btn_list,
-                                                max_selected_items=max_selected),
-                self.bkb.make_block_divider()
+                bkb.make_block_multiselect(desc, f'Select {max_selected} picks', btn_list,
+                                           max_selected_items=max_selected),
+                bkb.make_block_divider()
             ]
 
         rand_options = [{'txt': 'All picks', 'value': 'randpick-all'}] + randbtn_list
 
         return card_blocks + definite_selection_area + [
-            self.bkb.make_block_multiselect('Randpick (all or subset)', 'Select picks', rand_options),
-            self.bkb.make_block_section('Force Close', accessory=self.bkb.make_block_button('Close', 'none'))
+            bkb.make_block_multiselect('Randpick (all or subset)', 'Select picks', rand_options),
+            bkb.make_block_section('Force Close', accessory=bkb.make_action_button('Close', 'none',
+                                                                                   action_id='close'))
         ]
 
     def take_card(self, card: AnswerCard):

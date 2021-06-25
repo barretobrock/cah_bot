@@ -3,7 +3,7 @@
 from typing import List, Optional, Tuple
 from datetime import datetime
 from random import shuffle
-from slacktools import BlockKitBuilder, SlackBotBase
+from slacktools import BlockKitBuilder as bkb, SlackBotBase
 from slack.errors import SlackApiError
 from .players import Players, Player
 from .cards import Deck
@@ -35,7 +35,6 @@ class Game:
     """Holds data for current game"""
     def __init__(self, st_obj: SlackBotBase, players: List[Player], deck: Deck, trigger_msg: str):
         self.st = st_obj
-        self.bkb = BlockKitBuilder()
         self.game_id = id(datetime.now().timestamp())
         self.players = Players(players, origin='prebuilt')
         shuffle(self.players.player_list)
@@ -84,7 +83,7 @@ class Game:
         if len(self.deck.questions_card_list) == 0:
             # No more questions, game hath ended
             self.end_game()
-            return [self.bkb.make_block_section(f'No more question cards! Game over! {":party-dead:" * 3}')]
+            return [bkb.make_block_section(f'No more question cards! Game over! {":party-dead:" * 3}')]
 
         # Increment rounds
         self.rounds += 1
@@ -160,13 +159,13 @@ class Game:
         """Replaces the Block UI form with another message"""
         if is_pick:
             blk = [
-                self.bkb.make_block_section(f'Your pick(s): {player.hand.pick.render_pick_list_as_str()}')
+                bkb.make_block_section(f'Your pick(s): {player.hand.pick.render_pick_list_as_str()}')
             ]
             replace_blocks = player.pick_blocks
         else:
             reactive_txt = 'choice' if player.is_judge else 'vote'
             blk = [
-                self.bkb.make_block_section(f'Your {reactive_txt} has been made.')
+                bkb.make_block_section(f'Your {reactive_txt} has been made.')
             ]
             replace_blocks = player.vote_blocks
         for chan, ts in replace_blocks.items():
@@ -211,11 +210,7 @@ class Game:
 
     def players_left_to_vote(self) -> List[str]:
         """Returns a list of the players that have yet to pick a card"""
-        remaining = []
-        for player in self.players.player_list:
-            if not player.voted and player.player_id != self.judge.player_id:
-                remaining.append(player.display_name)
-        return remaining
+        return self.players.get_players_that_havent_picked(name_only=True)
 
     def toggle_judge_ping(self):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
@@ -242,17 +237,18 @@ class Game:
         for i, round_pick in enumerate(self.round_picks):
             num = i + 1
             # Make a block specifically for the judge (with buttons)
-            card_btn_dict = self.bkb.make_block_button(f'{num}', f'choose-{num}')
+            card_btn_dict = bkb.make_action_button(f'{num}', f'choose-{num}', action_id=f'game-choose-{num}')
             pick_txt = f'*{num}*: {"|".join([f" *`{x}`* " for x in round_pick.pick_txt_list])}'
-            judge_card_blocks.append(self.bkb.make_block_section(pick_txt, accessory=card_btn_dict))
+            judge_card_blocks.append(bkb.make_block_section(pick_txt, accessory=card_btn_dict))
             # Make a "public" block that just shows the choices in the channel
-            public_card_blocks.append(self.bkb.make_block_section(pick_txt))
+            public_card_blocks.append(bkb.make_block_section(pick_txt))
             randbtn_list.append({'txt': f'{num}', 'value': f'randchoose-{num}'})
 
         rand_options = [{'txt': 'All choices', 'value': 'randchoose-all'}] + randbtn_list
 
         return public_card_blocks, judge_card_blocks + [
-            self.bkb.make_block_divider(),
-            self.bkb.make_block_multiselect('Randchoose (all or subset)', 'Select choices', rand_options),
-            self.bkb.make_block_section('Force Close', accessory=self.bkb.make_block_button('Close', 'none'))
+            bkb.make_block_divider(),
+            bkb.make_block_multiselect('Randchoose (all or subset)', 'Select choices', rand_options),
+            bkb.make_block_section('Force Close', accessory=bkb.make_action_button('Close', 'none',
+                                                                                   action_id='close'))
         ]

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import numpy as np
-from typing import List, Optional
+from typing import List, Optional, Union
 from .cards import Hand
 
 
@@ -19,6 +19,7 @@ class Player:
         self.auto_randpick = False
         self.auto_randchoose = False
         self.voted = False
+        self.picked = False
         self.nuked_hand = False   # If set to true, dealt entire new hand next round
         self.pick_blocks = {}   # Provides a means for us to update a block kit ui upon a successful pick
         self.vote_blocks = {}
@@ -61,7 +62,7 @@ class Players:
         else:
             # Already built Player objects, likely loading into a game
             self.player_list = player_list
-        self.eligible_players = None
+        self.eligible_players = None    # type: Optional[List[Player]]
 
     def load_players_in_channel(self, player_list: List[Player], refresh: bool = False,
                                 names_only: bool = False) -> Optional[List[Player]]:
@@ -154,9 +155,21 @@ class Players:
             # Skip player if not in our list of ids
             player.skip = player.player_id in player_ids
 
+    def get_eligible_players(self) -> List[Player]:
+        """Returns list of non-skipped players"""
+        return [x for x in self.player_list if not x.skip]
+
     def set_eligible_players(self):
         """Sets list of eligible players"""
-        self.eligible_players = [x for x in self.player_list if not x.skip]
+        self.eligible_players = self.get_eligible_players()
+
+    def get_players_that_havent_picked(self, name_only: bool = True) -> List[Union[str, Player]]:
+        """Returns a list of players that have yet to pick for the round"""
+        players = [x for x in self.eligible_players if x.hand.pick.is_empty() and not x.is_judge]
+        if name_only:
+            return [x.display_name for x in players]
+        else:
+            return players
 
     def have_all_players_voted(self) -> bool:
         """Determines if all non-judge players have voted"""
@@ -167,4 +180,4 @@ class Judge(Player):
     """Player who chooses winning card"""
     def __init__(self, player_id: str, display_name: str):
         super().__init__(player_id, display_name)
-        self.pick_idx = None
+        self.pick_idx = None    # type: Optional[int]
