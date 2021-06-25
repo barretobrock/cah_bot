@@ -4,22 +4,30 @@ import requests
 import signal
 from random import choice
 from flask import Flask, request, make_response
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from slacktools import SlackEventAdapter, SecretStore
 from easylogger import Log
-from kavalkilu import Path
-from .utils import CAHBot
+import cah.bot_base as botbase
+from .settings import auto_config
+from .model import Base
 
 
 bot_name = 'wizzy'
-DEBUG = os.environ['CAH_DEBUG'] == '1'
-kpath = Path()
 logg = Log(bot_name, log_to_file=True)
+
+# Load database
+db_path = os.path.join(os.path.expanduser('~'), *['data', 'cah_db.db'])
+engine = create_engine(f'sqlite:///{db_path}')
+Base.metadata.bind = engine
+DBSession = sessionmaker(bind=engine)
+session = DBSession()
 
 credstore = SecretStore('secretprops-bobdev.kdbx')
 cah_creds = credstore.get_key_and_make_ns(bot_name)
 
 logg.debug('Instantiating bot...')
-Bot = CAHBot(bot_name, credstore=credstore, debug=DEBUG)
+Bot = botbase.CAHBot(parent_log=logg)
 
 # Register the cleanup function as a signal handler
 signal.signal(signal.SIGINT, Bot.cleanup)

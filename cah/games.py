@@ -3,38 +3,28 @@
 from typing import List, Optional, Tuple
 from datetime import datetime
 from random import shuffle
-from slacktools import BlockKitBuilder as bkb, SlackBotBase
+from enum import Enum
+from slacktools import BlockKitBuilder as bkb
 from slack.errors import SlackApiError
+import cah.app as cah_app
 from .players import Players, Player
 from .cards import Deck
 
 
-class GameStatus:
+class GameStatus(Enum):
     """Holds info about current status"""
-    game_order = [
-        'stahted',
-        'initiated',
-        'players_decision',
-        'judge_decision',
-        'end_round',
-        'ended',
-    ]
-
-    def __init__(self):
-        # Load all the game statuses
-        self.stahted = 'stahted'
-        self.initiated = 'initiated'
-        self.players_decision = 'players_decision'
-        self.judge_decision = 'judge_decision'
-        self.end_round = 'end_round'
-        self.ended = 'ended'
-        self.current_status = self.stahted
+    stahted = 'stahted'
+    initiated = 'initiated'
+    players_decision = 'players_decision'
+    judge_decision = 'judge_decision'
+    end_round = 'end_round'
+    ended = 'ended'
 
 
 class Game:
     """Holds data for current game"""
-    def __init__(self, st_obj: SlackBotBase, players: List[Player], deck: Deck, trigger_msg: str):
-        self.st = st_obj
+    def __init__(self, players: List[Player], deck: Deck, trigger_msg: str):
+        self.st = cah_app.Bot.st
         self.game_id = id(datetime.now().timestamp())
         self.players = Players(players, origin='prebuilt')
         shuffle(self.players.player_list)
@@ -55,7 +45,7 @@ class Game:
         self.prev_question_card = None
         self.current_question_card = None
         self.rounds = 0
-        self.gs = GameStatus()
+        self.gs = GameStatus
         self.status = self.gs.current_status
         self._new_game()
 

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from .utils import CAHBot
 
 
 from ._version import get_versions
