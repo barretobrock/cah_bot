@@ -1,4 +1,4 @@
-from sqlalchemy import Column, VARCHAR, Integer, Boolean, TIMESTAMP
+from sqlalchemy import Column, VARCHAR, Integer, Boolean, TIMESTAMP, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.ext.hybrid import hybrid_property
 # local imports
@@ -20,3 +20,17 @@ class TableGames(Base):
     @hybrid_property
     def duration(self):
         return self.end_time - self.start_time if self.end_time is not None else self.last_update - self.start_time
+
+
+class TableGameRounds(Base):
+    """gamerounds table - stores past gameround info"""
+    __tablename__ = 'gamerounds'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    game_id = Column(Integer, ForeignKey('games.id'))
+    start_time = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    end_time = Column(TIMESTAMP, nullable=True)
+
+    @hybrid_property
+    def duration(self):
+        return self.end_time - self.start_time if self.end_time is not None else None

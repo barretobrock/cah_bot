@@ -13,6 +13,8 @@ class TablePlayers(Base):
     current_score = Column(Integer, default=0, nullable=False)
     total_score = Column(Integer, default=0, nullable=False)
     total_rounds_played = Column(Integer, default=0, nullable=False)
+    total_decknukes_issued = Column(Integer, default=0, nullable=False)
+    total_games_played = Column(Integer, default=0, nullable=False)
 
 
 class TablePlayerGames(Base):
@@ -24,4 +26,6 @@ class TablePlayerGames(Base):
     player_id = Column(Integer, ForeignKey('players.id'))
     game_id = Column(Integer, ForeignKey('games.id'))
     score = Column(Integer, default=0, nullable=False)
+    decknukes_issued = Column(Integer, default=0, nullable=False)
+    decknukes_caught = Column(Integer, default=0, nullable=False)
     rounds_played = Column(Integer, default=0, nullable=False)
