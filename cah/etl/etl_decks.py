@@ -1,6 +1,8 @@
-from cah.etl.etl_all import ETL
+
+deck_tables = ['decks', 'question_cards', 'answer_cards']
 
 
 if __name__ == '__main__':
-    etl = ETL(tables=['decks', 'question_cards', 'answer_cards'])
+    from cah.etl.etl_all import ETL
+    etl = ETL(tables=deck_tables)
     etl.etl_decks()

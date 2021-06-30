@@ -4,7 +4,11 @@ from sqlalchemy.orm import sessionmaker, Session
 from easylogger import Log
 from slacktools import SecretStore, GSheetReader, SlackTools
 import cah.cards as cahds
-from cah.model import Base, TableDecks, TableQuestionCards, TableAnswerCards, TablePlayers
+from cah.model import Base, TableDecks, TableQuestionCards, TableAnswerCards, TablePlayers, TableGameSettings, \
+    TableGames, GameStatuses, TableGameRounds
+from cah.etl.etl_decks import deck_tables
+from cah.etl.etl_games import game_tables
+from cah.etl.etl_players import player_tables
 
 
 class ETL:
@@ -20,7 +24,7 @@ class ETL:
         tbl_objs = []
         for table in tables:
             tbl_objs.append(Base.metadata.tables.get(table))
-        Base.metadata.drop_all(self.eng, tables=tbl_objs, checkfirst=True)
+        Base.metadata.drop_all(self.eng, tables=tbl_objs)
         self.log.debug('Establishing database...')
         Base.metadata.create_all(self.eng)
         self.session = self._make_session()
@@ -90,8 +94,14 @@ class ETL:
                               if not x['is_bot']])
         self.session.commit()
 
+    def etl_games(self):
+        # Add in the only row used in gamesettings
+        self.session.add(TableGameSettings())
+        self.session.commit()
+
 
 if __name__ == '__main__':
-    etl = ETL(tables=['decks', 'question_cards', 'answer_cards', 'players'])
+    etl = ETL(tables=deck_tables + game_tables + player_tables)
     etl.etl_decks()
     etl.etl_players()
+    etl.etl_games()
