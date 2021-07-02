@@ -1,4 +1,5 @@
 """Configuration setup"""
+import os
 from cah._version import get_versions
 
 
@@ -8,9 +9,10 @@ class Common(object):
     BOT_NICKNAME = 'wizzy'
     ADMINS = ['UM35HE6R5']
     TRIGGERS = ['cah', 'c!']
-    v = get_versions()
-    VERSION = v['version']
-    UPDATE_DATE = v['date']
+    _v = get_versions()
+    VERSION = _v['version']
+    UPDATE_DATE = _v['date']
+    DB_PATH = os.path.join(os.path.expanduser('~'), *['data', 'cah_db.db'])
 
 
 class Development(Common):

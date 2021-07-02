@@ -23,7 +23,6 @@ class TableGames(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     status = Column(Enum(GameStatuses), default=GameStatuses.initiated, nullable=False)
-    players = relationship('TablePlayers', back_populates='current_game')
     rounds = relationship('TableGameRounds', back_populates='game')
     start_time = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     last_update = Column(TIMESTAMP, onupdate=func.now())

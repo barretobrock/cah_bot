@@ -12,10 +12,11 @@ from easylogger import Log
 import cah.app as cah_app
 from .players import Players, Player, Judge
 from .model import TableGames, TableGameRounds, TableGameSettings, GameStatuses, TablePlayerRounds
+from .db import get_session, auto_config
 
 
 # Define statuses where game is not active
-game_not_active = [GameStatuses.stahted, GameStatuses.ended]
+game_not_active = [GameStatuses.initiated, GameStatuses.ended]
 # Status when ready to transition into new round
 new_round_ready = [GameStatuses.initiated, GameStatuses.end_round]
 
@@ -27,7 +28,7 @@ class Game:
     def __init__(self, players: List[str], deck: 'Deck', parent_log: Log):
         self.st = cah_app.Bot.st
         self.log = Log(parent_log, child_name=self.__class__.__name__)
-        self.session = cah_app.session      # type: Session
+        self.session = get_session()      # type: Session
 
         # Database table links
         # Create a new game
@@ -307,7 +308,7 @@ class Game:
             messages.append(judge_msg)
             self.game_tbl.status = GameStatuses.judge_decision
             # Update the "remaining picks" message
-            self.st.update_message(cah_app.auto_config.MAIN_CHANNEL, self.round_ts, message='lol')
+            self.st.update_message(auto_config.MAIN_CHANNEL, self.round_ts, message='lol')
             self._display_picks(notifications=messages)
             # Handle auto randchoose players
             for player in self.players.player_list:
@@ -323,11 +324,11 @@ class Game:
             if self.round_ts is None:
                 # Announcing the picks for the first time; capture the timestamp so
                 #   we can update that same message later
-                self.round_ts = self.st.send_message(cah_app.auto_config.MAIN_CHANNEL, message='', ret_ts=True,
+                self.round_ts = self.st.send_message(auto_config.MAIN_CHANNEL, message='', ret_ts=True,
                                                      blocks=msg_block)
             else:
                 # Update the message we've already got
-                self.st.update_message(cah_app.auto_config.MAIN_CHANNEL, self.round_ts, blocks=msg_block)
+                self.st.update_message(auto_config.MAIN_CHANNEL, self.round_ts, blocks=msg_block)
 
     def _get_pick(self, user: str, message: str, judge_decide: bool = False) -> Union[int, Optional[List[int]]]:
         """Processes a number from a message"""
@@ -391,7 +392,7 @@ class Game:
 
         # Handle sending judge messages
         # send as private in-channel message (though this sometimes goes unrendered)
-        pchan_ts = self.st.private_channel_message(self.judge.player_id, cah_app.auto_config.MAIN_CHANNEL,
+        pchan_ts = self.st.private_channel_message(self.judge.player_id, auto_config.MAIN_CHANNEL,
                                                    message='', ret_ts=True, blocks=judge_response_block)
         if self.judge.player_table.is_dm_cards:
             # DM choices to player if they have card dming enabled
@@ -461,7 +462,7 @@ class Game:
         """For the judge to choose the winning card and
         for other players to vote on the card they think should win"""
 
-        if user in cah_app.auto_config.ADMINS and 'blueberry pie' in message:
+        if user in auto_config.ADMINS and 'blueberry pie' in message:
             # Overrides the block below to allow admin to make a choice during testing or special circumstances
             user = self.judge.player_id
             message = 'randchoose'

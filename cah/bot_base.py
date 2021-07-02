@@ -14,6 +14,7 @@ import cah.cards as cahds
 import cah.games as cah_game
 from .players import Players
 from .model import TablePlayers, TableDecks, TablePlayerRounds
+from .db import auto_config, get_session
 
 
 class CAHBot:
@@ -24,13 +25,15 @@ class CAHBot:
         Args:
 
         """
-        self.bot_name = f'{cah_app.auto_config.BOT_FIRST_NAME} {cah_app.auto_config.BOT_LAST_NAME}'
+        self.bot_name = f'{auto_config.BOT_FIRST_NAME} {auto_config.BOT_LAST_NAME}'
         self.log = Log(parent_log, child_name='cah_bot')
-        self.triggers = cah_app.auto_config.TRIGGERS
-        self.channel_id = cah_app.auto_config.MAIN_CHANNEL  # cah or cah-test
-        self.admin_user = cah_app.auto_config.ADMINS
-        self.version = cah_app.auto_config.VERSION
-        self.update_date = cah_app.auto_config.UPDATE_DATE
+        self.triggers = auto_config.TRIGGERS
+        self.channel_id = auto_config.MAIN_CHANNEL  # cah or cah-test
+        self.admin_user = auto_config.ADMINS
+        self.version = auto_config.VERSION
+        self.update_date = auto_config.UPDATE_DATE
+        # create a session
+        self.session = get_session()
 
         # Begin loading and organizing commands
         # Command categories
@@ -45,25 +48,25 @@ class CAHBot:
                 'pattern': 'help',
                 'cat': cat_basic,
                 'desc': 'Description of all the commands I respond to!',
-                'value': [],
+                'response': [],
             },
             r'^about$': {
                 'pattern': 'about',
                 'cat': cat_basic,
                 'desc': 'Bootup time, version and last update date',
-                'value': self.get_bootup_msg,
+                'response': self.get_bootup_msg,
             },
             r'^m(ain\s?menu|m)': {
                 'pattern': 'main menu|mm',
                 'cat': cat_basic,
                 'desc': 'Access CAH main menu',
-                'value': [self.build_main_menu, 'user', 'channel'],
+                'response': [self.build_main_menu, 'user', 'channel'],
             },
             r'^new game': {
                 'pattern': 'new game [FLAGS]',
                 'cat': cat_basic,
                 'desc': 'Start a new CAH game',
-                'value': [self.new_game, 'message'],
+                'response': [self.new_game, 'message'],
                 'flags': [
                     {
                         'pattern': '-(set|s) <card-set-name>',
@@ -78,87 +81,87 @@ class CAHBot:
                 'pattern': 'new round',
                 'cat': cat_basic,
                 'desc': 'For manually transitioning to another round when Wizzy fails to.',
-                'value': [self.new_round]
+                'response': [self.new_round]
             },
             r'^(points|score[s]?)': {
                 'pattern': '(points|score[s]?)',
                 'cat': cat_basic,
                 'desc': 'Show points / score of all players',
-                'value': [self.display_points]
+                'response': [self.display_points]
             },
             r'^status': {
                 'pattern': 'status',
                 'cat': cat_basic,
                 'desc': 'Get current status of the game and other metadata',
-                'value': [self.display_status]
+                'response': [self.display_status]
             },
             r'^toggle (judge\s?|j)ping': {
                 'pattern': 'toggle (judge|j)ping',
                 'cat': cat_settings,
                 'desc': 'Toggles whether or not the judge is pinged after all selections are made. '
                         'default: `True`',
-                'value': [self.toggle_judge_ping]
+                'response': [self.toggle_judge_ping]
             },
             r'^toggle (winner\s?|w)ping': {
                 'pattern': 'toggle (winner|w)ping',
                 'cat': cat_settings,
                 'desc': 'Toggles whether or not the winner is pinged when they win a round. default: `True`',
-                'value': [self.toggle_winner_ping]
+                'response': [self.toggle_winner_ping]
             },
             r'^toggle (auto\s?randpick|arp)': {
                 'pattern': 'toggle (auto randpick|arp) [-u <user>]',
                 'cat': cat_settings,
                 'desc': 'Toggles automated randpicking. default: `False`',
-                'value': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'randpick']
+                'response': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'randpick']
             },
             r'^toggle (auto\s?randchoose|arc)': {
                 'pattern': 'toggle (auto randchoose|arc) [-u <user>]',
                 'cat': cat_settings,
                 'desc': 'Toggles automated randchoose (i.e., arp for judges). default: `False`',
-                'value': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'randchoose']
+                'response': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'randchoose']
             },
             r'^toggle arparca': {
                 'pattern': 'toggle arparca [-u <user>]',
                 'cat': cat_settings,
                 'desc': 'Toggles both automated randpicking and automated randchoose (i.e., arp for judges).',
-                'value': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'both']
+                'response': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'both']
             },
             r'^toggle (card\s?)?dm': {
                 'pattern': 'toggle (dm|card dm)',
                 'cat': cat_settings,
                 'desc': 'Toggles whether or not you receive cards as a DM from Wizzy. default: `True`',
-                'value': [self.toggle_card_dm, 'user', 'channel']
+                'response': [self.toggle_card_dm, 'user', 'channel']
             },
             r'^cahds now': {
                 'pattern': 'cahds now',
                 'cat': cat_player,
                 'desc': 'Toggles whether or not you receive cards as a DM from Wizzy. default: `True`',
-                'value': [self.dm_cards_now, 'user']
+                'response': [self.dm_cards_now, 'user']
             },
             r'^end game': {
                 'pattern': 'end game',
                 'cat': cat_basic,
                 'desc': 'Ends the current game and saves scores',
-                'value': [self.end_game]
+                'response': [self.end_game]
             },
             r'^show decks': {
                 'pattern': 'show decks',
                 'cat': cat_basic,
                 'desc': 'Shows the decks currently available',
-                'value': [self.show_decks]
+                'response': [self.show_decks]
             },
             r'^(gsheets?|show) link': {
                 'pattern': '(show|gsheet[s]?) link',
                 'cat': cat_basic,
                 'desc': 'Shows the link to the GSheets database whence Wizzy reads cards. '
                         'Helpful for contributing.',
-                'value': self.show_gsheets_link
+                'response': self.show_gsheets_link
             },
             r'^p(ick)? \d[\d,]*': {
                 'pattern': '(p|pick) <card-num>[<next-card>]',
                 'cat': cat_player,
                 'desc': 'Pick your card(s) for the round',
-                'value': [self.process_picks, 'user', 'message']
+                'response': [self.process_picks, 'user', 'message']
             },
             r'^decknuke': {
                 'pattern': 'decknuke',
@@ -166,7 +169,7 @@ class CAHBot:
                 'desc': 'Don\'t like any of your cards? Use this and one card will get randpicked from your '
                         'current deck. The other will be shuffled out and replaced with new cards \n\t\t'
                         f'_NOTE: If your randpicked card is chosen, you\'ll get PENALIZED',
-                'value': [self.decknuke, 'user']
+                'response': [self.decknuke, 'user']
             },
             r'^randpick': {
                 'pattern': 'randpick [FLAGS]',
@@ -181,19 +184,19 @@ class CAHBot:
                         'desc': 'Randomly select from a subset of your cards'
                     }
                 ],
-                'value': [self.process_picks, 'user', 'message']
+                'response': [self.process_picks, 'user', 'message']
             },
             r'^c(hoose)? \d': {
                 'pattern': '(c|choose) <card-num>',
                 'cat': cat_judge,
                 'desc': 'Used by the judge to select the :Q:best:Q: card from the picks.',
-                'value': [self.choose_card, 'user', 'message']
+                'response': [self.choose_card, 'user', 'message']
             },
             r'^randchoose': {
                 'pattern': 'randchoose [FLAGS]',
                 'cat': cat_judge,
                 'desc': 'Randomly choose the best card from all the cards or a subset.',
-                'value': [self.choose_card, 'user', 'message'],
+                'response': [self.choose_card, 'user', 'message'],
                 'flags': [
                     {
                         'pattern': '234` or `2,3,4',
@@ -205,7 +208,7 @@ class CAHBot:
         # Initate the bot, which comes with common tools for interacting with Slack's API
         self.st = SlackBotBase(triggers=self.triggers, credstore=cah_app.credstore,
                                test_channel=self.channel_id, commands=self.commands,
-                               cmd_categories=cmd_categories, slack_cred_name=cah_app.auto_config.BOT_NICKNAME,
+                               cmd_categories=cmd_categories, slack_cred_name=auto_config.BOT_NICKNAME,
                                parent_log=self.log)
         self.bot_id = self.st.bot_id
         self.user_id = self.st.user_id
@@ -216,8 +219,7 @@ class CAHBot:
         # Read in decks
         self.decks = None       # type: Optional['Decks']
         # Build out all possible players (for possibly applying settings outside of a game)
-        self.potential_players = Players([x.slack_id for x in cah_app.session.query(TablePlayers).all()],
-                                         cah_app.session, slack_api=self.st, parent_log=self.log)  # type: Players
+        self.potential_players = None  # type: Optional[Players]
         self.game = None        # type: Optional[cah_game.Game]
 
         self.st.message_test_channel(blocks=self.get_bootup_msg())
@@ -257,10 +259,9 @@ class CAHBot:
         """
         self.game.decknuke(player_id=user)
 
-    @staticmethod
-    def show_decks() -> str:
+    def show_decks(self) -> str:
         """Returns the deck names currently available"""
-        deck_list = [x.name for x in cah_app.session.query(TableDecks).all()]
+        deck_list = [x.name for x in self.session.query(TableDecks).all()]
         return f'`{",".join(deck_list)}`'
 
     @staticmethod
@@ -269,11 +270,11 @@ class CAHBot:
 
     def _read_in_cards(self, card_set: str = 'standard') -> cahds.Deck:
         """Reads in the cards"""
-        deck = cah_app.session.query(TableDecks).filter_by(name=card_set).one_or_none()
+        deck = self.session.query(TableDecks).filter_by(name=card_set).one_or_none()
         if deck is None:
             raise ValueError(f'The card set `{card_set}` was not found. '
                              f'Possible sets: `{",".join(self.decks.deck_names)}`.')
-        return cahds.Deck(name=deck.name, session=cah_app.session)
+        return cahds.Deck(name=deck.name, session=self.session)
 
     def new_game(self, deck: str = 'standard', player_ids: List[str] = None, message: str = None):
         """Begins a new game"""
@@ -378,7 +379,7 @@ class CAHBot:
                 if all([self.game.game_tbl.status == cah_game.GameStatuses.judge_decision,
                         player.player_table.is_auto_randchoose]):
                     self.choose_card(player.player_id, 'randchoose')
-            cah_app.session.commit()
+            self.session.commit()
 
         return '\n'.join(resp_msg)
 
@@ -694,10 +695,10 @@ class CAHBot:
     def display_points(self) -> List[dict]:
         """Displays points for all players"""
         if self.game is None:
-            plist = cah_app.session.query(TablePlayers, func.sum(TablePlayerRounds.score).label('game_score'))\
+            plist = self.session.query(TablePlayers, func.sum(TablePlayerRounds.score).label('game_score'))\
                 .join(TablePlayerRounds).all()
         else:
-            plist = cah_app.session.query(TablePlayers, func.sum(TablePlayerRounds.score).label('game_score'))\
+            plist = self.session.query(TablePlayers, func.sum(TablePlayerRounds.score).label('game_score'))\
                 .join(TablePlayerRounds)\
                 .filter(TablePlayerRounds.game_id == self.game.game_tbl.id).all()
 

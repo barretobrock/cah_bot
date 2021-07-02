@@ -1,27 +1,15 @@
-import os
 import json
 import requests
 import signal
 from random import choice
 from flask import Flask, request, make_response
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from slacktools import SlackEventAdapter, SecretStore
 from easylogger import Log
 import cah.bot_base as botbase
-from .settings import auto_config
-from .model import Base
 
 
 bot_name = 'wizzy'
 logg = Log(bot_name, log_to_file=True)
-
-# Load database
-db_path = os.path.join(os.path.expanduser('~'), *['data', 'cah_db.db'])
-engine = create_engine(f'sqlite:///{db_path}')
-Base.metadata.bind = engine
-DBSession = sessionmaker(bind=engine)
-session = DBSession()
 
 credstore = SecretStore('secretprops-bobdev.kdbx')
 cah_creds = credstore.get_key_and_make_ns(bot_name)

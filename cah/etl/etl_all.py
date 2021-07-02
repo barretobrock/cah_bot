@@ -76,13 +76,13 @@ class ETL:
                     TableQuestionCards(deck_id=deck_item.id, responses_required=question_card.required_answers,
                                        card_text=question_card.txt))
             self.session.add_all([TableAnswerCards(deck_id=deck_item.id, card_text=x) for x in answers if x != ''])
-            self.session.commit()
             added_questions = self.session.query(TableQuestionCards).join(TableDecks).filter(
                 TableDecks.name == deck).all()
             added_answers = self.session.query(TableAnswerCards).join(TableDecks)\
                 .filter(TableDecks.name == deck).all()
             self.log.debug(f'For deck {deck}, questions {len(questions)}:{len(added_questions)},'
                            f' answers: {len(answers)}:{len(added_answers)}')
+        self.session.commit()
 
     def etl_players(self):
         """ETL for decks and card tables"""
@@ -93,11 +93,13 @@ class ETL:
         self.session.add_all([TablePlayers(slack_id=x['id'], name=x['display_name']) for x in users
                               if not x['is_bot']])
         self.session.commit()
+        self.log.debug(f'Loaded {len(self.session.query(TablePlayers).all())} players into table.')
 
     def etl_games(self):
         # Add in the only row used in gamesettings
         self.session.add(TableGameSettings())
         self.session.commit()
+        self.log.debug('Game settings refreshed.')
 
 
 if __name__ == '__main__':
