@@ -1,6 +1,4 @@
 from typing import List
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
 from easylogger import Log
 from slacktools import SecretStore, GSheetReader, SlackTools
 import cah.cards as cahds
@@ -9,6 +7,7 @@ from cah.model import Base, TableDecks, TableQuestionCards, TableAnswerCards, Ta
 from cah.etl.etl_decks import deck_tables
 from cah.etl.etl_games import game_tables
 from cah.etl.etl_players import player_tables
+from cah.settings import auto_config
 
 
 class ETL:
@@ -17,7 +16,7 @@ class ETL:
     def __init__(self, tables: List[str]):
         self.log = Log('cah-etl', log_level_str='DEBUG', log_to_file=True)
         self.log.debug('Opening up the database...')
-        self.eng = create_engine('sqlite:////home/bobrock/data/cahdb.db')
+        self.session, self.eng = auto_config.SESSION(), auto_config.engine
 
         # Determine tables to drop
         self.log.debug(f'Dropping tables: {tables} from db...')
@@ -27,23 +26,12 @@ class ETL:
         Base.metadata.drop_all(self.eng, tables=tbl_objs)
         self.log.debug('Establishing database...')
         Base.metadata.create_all(self.eng)
-        self.session = self._make_session()
 
         self.log.debug('Authenticating credentials for services...')
         credstore = SecretStore('secretprops-bobdev.kdbx')
         cah_creds = credstore.get_key_and_make_ns('wizzy')
         self.gsr = GSheetReader(sec_store=credstore, sheet_key=cah_creds.spreadsheet_key)
         self.st = SlackTools(credstore, 'wizzy', self.log)
-
-    def _make_session(self) -> Session:
-        # Bind the engine to the metadata of the Base class so that
-        #   the declaratives can be accessed through a DBSession instance
-        Base.metadata.bind = self.eng
-        DBSession = sessionmaker(bind=self.eng)
-        # A DBSession() instance establises all conversations with the database
-        #   and represents a 'staging zone' for all the objects loaded into the database session object
-        session = DBSession()
-        return session
 
     def etl_decks(self):
         """ETL for decks and card tables"""

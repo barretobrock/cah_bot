@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from typing import List, Optional, Union, Dict
-from sqlalchemy.orm.session import Session
+from sqlalchemy.orm import Session
 from easylogger import Log
 from slacktools import SlackTools
 import cah.cards as cahds
-from .settings import auto_config
 from .model import TablePlayers, TablePlayerRounds
+from .settings import auto_config
 
 
 class Player:
@@ -23,7 +23,7 @@ class Player:
         if self.player_table is None:
             # Add player to table
             self.player_table = self.session.add(TablePlayers(slack_id=self.player_id, name=self.display_name))
-            self.session.commit()
+        self.session.commit()
 
         # For tracking rounds that the player plays. This will be None until the player is loaded into a game
         self.player_round_table = None  # type: Optional[TablePlayerRounds]
@@ -34,60 +34,81 @@ class Player:
     def start_round(self, game_id: int, round_id: int):
         """Begins a new round"""
         self.hand.pick.clear_picks()
-        self.player_round_table = TablePlayerRounds(player_id=self.player_id, game_id=game_id, round_id=round_id)
+        self.player_round_table = TablePlayerRounds(player_id=self.player_id, game_id=game_id,
+                                                    round_id=round_id)
+        self.session.add(self.player_round_table)
         self.session.commit()
 
     def toggle_cards_dm(self):
         """Toggles whether or not to DM cards to player"""
         self.player_table.is_dm_cards = not self.player_table.is_dm_cards
+        self.session.add(self.player_table)
         self.session.commit()
 
     def toggle_arp(self):
         """Toggles auto randpick"""
         self.player_table.is_auto_randpick = not self.player_table.is_auto_randpick
+        self.session.add(self.player_table)
         self.session.commit()
 
     def toggle_arc(self):
         """Toggles auto randpick"""
         self.player_table.is_auto_randchoose = not self.player_table.is_auto_randchoose
+        self.session.add(self.player_table)
         self.session.commit()
 
     def add_points(self, points: int):
         """Adds points to the player's score"""
         self.player_round_table.score += points
+        self.session.add(self.player_table)
         self.session.commit()
 
 
 class Players:
     """Methods for handling all players"""
-    def __init__(self, player_id_list: List[str], session: Session, slack_api: SlackTools, parent_log: Log):
+    def __init__(self, player_id_list: List[str], slack_api: SlackTools, parent_log: Log, session: Session):
         """
 
         """
-        self.player_list = self._build_players(player_id_list=player_id_list)
-        self.session = session
-        self.st = slack_api
         self.log = Log(parent_log, child_name=self.__class__.__name__)
+        self.st = slack_api
+        self.session = session
+        self.player_list = self._build_players(player_id_list=player_id_list)
 
     @staticmethod
     def _extract_name(user_info_dict: Dict[str, str]) -> str:
         return user_info_dict['display_name'] if user_info_dict['display_name'] != '' else user_info_dict['name']
 
+    def _check_player_existence_in_table(self, user_id: str, display_name: str):
+        """Checks whether player exists in the player table and, if not, will add them to the table"""
+        # Check if player table exists
+        player_table = self.session.query(TablePlayers).filter_by(slack_id=user_id).one_or_none()
+
+        if player_table is None:
+            # Add missing player to
+            self.log.debug(f'Player {display_name} was not found in the players table. Adding...')
+            self.session.add(TablePlayers(slack_id=user_id, name=display_name))
+        self.session.commit()
+
     def _build_players(self, player_id_list: List[str]) -> List[Player]:
         """Builds out the list of players - Typically used when a new game is started"""
         players = []
-        for user in self.st.get_channel_members(auto_config.MAIN_CHANNEL, humans_only=True):
+        channel_members = self.st.get_channel_members(auto_config.MAIN_CHANNEL, humans_only=True)
+        for user in channel_members:
             uid = user['id']
             if uid in player_id_list:
                 # Make sure display name is not empty
                 dis_name = self._extract_name(user_info_dict=user)
-
-                if self.session.query(TablePlayers).filter_by(slack_id=uid).one_or_none() is None:
-                    # Add missing player to
-                    self.log.debug(f'Player {dis_name} was not found in the players table. Adding...')
-                    self.session.add(TablePlayers(slack_id=uid, name=dis_name))
+                # Make sure player is in table
+                self._check_player_existence_in_table(user_id=uid, display_name=dis_name)
                 players.append(Player(uid, display_name=dis_name, session=self.session))
-        self.session.commit()
+        # Determine missed users
+        missed_users = [x for x in player_id_list if x not in [y.player_id for y in players]]
+        if len(missed_users) > 0:
+            # Message channel about missing users
+            usr_tags = ', '.join([f'<@{x.upper()}>' for x in missed_users])
+            msg = f'These users aren\'t in the channel and therefore were skipped: {usr_tags}'
+            self.st.send_message(auto_config.MAIN_CHANNEL, msg)
         return players
 
     def get_player_ids(self) -> List[str]:
@@ -97,8 +118,8 @@ class Players:
     def get_player_names(self, monospace: bool = False) -> List[str]:
         """Returns player display names"""
         if monospace:
-            return [f'`{x.player_table.display_name}`' for x in self.player_list]
-        return [x.player_table.display_name for x in self.player_list]
+            return [f'`{x.player_table.name}`' for x in self.player_list]
+        return [x.player_table.name for x in self.player_list]
 
     def get_player_index(self, player_attr: str, attr_name: str = 'player_id') -> Optional[int]:
         """Returns the index of a player in a list of players based on a given attribute"""
@@ -134,13 +155,9 @@ class Players:
         user_info = self.st.get_users_info([player_id])[0]
         dis_name = self._extract_name(user_info_dict=user_info)
 
-        if self.session.query(TablePlayers).filter_by(slack_id=player_id).one_or_none() is None:
-            # Add missing player to
-            self.log.debug(f'Player {dis_name} was not found in the players table. Adding...')
-            self.session.add(TablePlayers(slack_id=player_id, name=dis_name))
-
+        # Make sure player is in table
+        self._check_player_existence_in_table(user_id=player_id, display_name=dis_name)
         self.player_list.append(Player(player_id, display_name=dis_name, session=self.session))
-        self.session.commit()
 
     def remove_player_from_game(self, player_id: str):
         """Removes a player from the existing game"""
@@ -153,6 +170,23 @@ class Players:
         """Players-level new round routines"""
         for player in self.player_list:
             player.start_round(game_id=game_id, round_id=round_id)
+            self._update_player(player)
+
+    def render_hands(self, judge_id: str, question_block: List[Dict], req_ans: int):
+        """Renders each players' hands"""
+        for player in self.player_list:
+            if player.player_id == judge_id or player.player_table.is_auto_randpick:
+                continue
+            cards_block = player.hand.render_hand(max_selected=req_ans)  # Returns list of blocks
+            if player.player_table.is_dm_cards:
+                msg_block = question_block + cards_block
+                dm_chan, ts = self.st.private_message(player.player_id, message='', ret_ts=True,
+                                                      blocks=msg_block)
+                player.pick_blocks[dm_chan] = ts
+            pchan_ts = self.st.private_channel_message(player.player_id, auto_config.MAIN_CHANNEL, ret_ts=True,
+                                                       message='', blocks=cards_block)
+            player.pick_blocks[auto_config.MAIN_CHANNEL] = pchan_ts
+
             self._update_player(player)
 
     def take_dealt_cards(self, player_obj: Player, card_list: List[cahds.AnswerCard]):
@@ -172,6 +206,8 @@ class Players:
         """Handles the player aspect of decknuking."""
         player_obj.hand.burn_cards()
         player_obj.player_round_table.is_nuked_hand = True
+        self.session.add(player_obj.player_round_table)
+        self.session.commit()
         self._update_player(player_obj)
 
 

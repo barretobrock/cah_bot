@@ -108,6 +108,7 @@ class Hand:
                     card = self.cards.pop(p)
                     self.session.query(TableAnswerCards).filter_by(id=card.id).update({
                         'times_picked': TableAnswerCards.times_picked + 1})
+                    self.session.commit()
                 return True
         return False
 
@@ -162,7 +163,8 @@ class Hand:
     def burn_cards(self):
         """Removes all cards in the hand"""
         self.session.query(TableAnswerCards).filter(TableAnswerCards.id.in_([x.id for x in self.cards])).update({
-            'times_burned': TableAnswerCards.times_burned + 1})
+                'times_burned': TableAnswerCards.times_burned + 1})
+        self.session.commit()
         self.cards = list()
 
 
@@ -173,11 +175,11 @@ class Deck:
         self.session = session
         self.questions_card_list = list()
         # Read in cards to deck
-        # Read in questions
+        # Read in questions and answers
         qcards = self.session.query(TableQuestionCards).join(TableDecks).filter(TableDecks.name == name).all()
-        self.questions_card_list = [QuestionCard(q.card_text, q.id) for q in qcards]
-        # Read in answers
         acards = self.session.query(TableAnswerCards).join(TableDecks).filter(TableDecks.name == name).all()
+
+        self.questions_card_list = [QuestionCard(q.card_text, q.id) for q in qcards]
         self.answers_card_list = [AnswerCard(a.card_text, a.id) for a in acards]
 
     def shuffle_deck(self):
@@ -191,6 +193,7 @@ class Deck:
         # Increment the card usage by one
         self.session.query(TableAnswerCards).filter_by(id=card.id).update({
             'times_drawn': TableAnswerCards.times_drawn + 1})
+        self.session.commit()
         return card
 
     def deal_question_card(self) -> QuestionCard:
@@ -198,7 +201,8 @@ class Deck:
         card = self.questions_card_list.pop(0)
         # Increment the card usage by one
         self.session.query(TableQuestionCards).filter_by(id=card.id).update({
-            'times_drawn': TableQuestionCards.times_drawn + 1})
+                'times_drawn': TableQuestionCards.times_drawn + 1})
+        self.session.commit()
         return card
 
 
@@ -207,7 +211,8 @@ class Decks:
     def __init__(self, session: Session):
         """Read in a dictionary of dfs that serve as each deck"""
         self.session = session
-        self.deck_list = [x.name for x in self.session.query(TableDecks).all()]
+        decks = self.session.query(TableDecks).all()
+        self.deck_list = [x.name for x in decks]
 
     def get_deck_by_name(self, name: str) -> Optional[Deck]:
         """Returns a deck matching the name provided. If no matches, returns None"""

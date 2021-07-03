@@ -6,16 +6,20 @@ from flask import Flask, request, make_response
 from slacktools import SlackEventAdapter, SecretStore
 from easylogger import Log
 import cah.bot_base as botbase
+from .settings import auto_config
 
 
 bot_name = 'wizzy'
 logg = Log(bot_name, log_to_file=True)
+# This is basically a session maker. We'll use it to ensure that sessions stay independent and short-lived
+#   while also not having them become an encumbrance to the state of the code
+Session = auto_config.SESSION
 
 credstore = SecretStore('secretprops-bobdev.kdbx')
 cah_creds = credstore.get_key_and_make_ns(bot_name)
 
 logg.debug('Instantiating bot...')
-Bot = botbase.CAHBot(parent_log=logg)
+Bot = botbase.CAHBot(parent_log=logg, session=Session())
 
 # Register the cleanup function as a signal handler
 signal.signal(signal.SIGINT, Bot.cleanup)
@@ -37,7 +41,7 @@ def handle_action():
     # Not sure if we'll ever receive more than one action?
     action = actions[0]
     # Send that info onwards to determine how to deal with it
-    Bot.process_incoming_action(user, channel, action, event_dict=event_data)
+    Bot.process_incoming_action(user, channel, action, event_dict=event_data, session=Session())
 
     # Respond to the initial message and update it
     responses = [
@@ -60,3 +64,14 @@ def handle_action():
 @bot_events.on('message')
 def scan_message(event_data):
     Bot.st.parse_event(event_data)
+
+
+@app.route('/api/slash', methods=['GET', 'POST'])
+def handle_slash():
+    """Handles a slash command"""
+    event_data = request.form
+    # Handle the command
+    Bot.process_slash_command(event_data, Session())
+
+    # Send HTTP 200 response with an empty body so Slack knows we're done
+    return make_response('', 200)

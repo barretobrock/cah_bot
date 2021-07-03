@@ -22,7 +22,6 @@ class TableGames(Base):
     __tablename__ = 'games'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    status = Column(Enum(GameStatuses), default=GameStatuses.initiated, nullable=False)
     rounds = relationship('TableGameRounds', back_populates='game')
     start_time = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     last_update = Column(TIMESTAMP, onupdate=func.now())
@@ -55,7 +54,6 @@ class TablePlayerRounds(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     player_id = Column(Integer, ForeignKey('players.id'))
-    player = relationship("TablePlayers", back_populates='all_rounds')
     game_id = Column(Integer, ForeignKey('games.id'))
     round_id = Column(Integer, ForeignKey('gamerounds.id'))
     score = Column(Integer, default=0, nullable=False)

@@ -1,6 +1,9 @@
 """Configuration setup"""
 import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from cah._version import get_versions
+from cah.model import Base
 
 
 class Common(object):
@@ -12,13 +15,19 @@ class Common(object):
     _v = get_versions()
     VERSION = _v['version']
     UPDATE_DATE = _v['date']
-    DB_PATH = os.path.join(os.path.expanduser('~'), *['data', 'cah_db.db'])
+    DB_PATH = os.path.join(os.path.expanduser('~'), *['data', 'cahdb.db'])
+    if not os.path.exists(DB_PATH):
+        raise FileNotFoundError(f'DB_PATH at {DB_PATH} invalid...')
+    engine = create_engine(f'sqlite:///{DB_PATH}')
+    Base.metadata.bind = engine
+    SESSION = sessionmaker(bind=engine)
 
 
 class Development(Common):
     """Configuration for development environment"""
     BOT_LAST_NAME = 'Debugradov'
-    MAIN_CHANNEL = 'CQ1DG4WB1'
+    # MAIN_CHANNEL = 'CQ1DG4WB1'
+    MAIN_CHANNEL = 'CMPV3K8AE'
     DEBUG = True
 
 

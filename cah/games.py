@@ -12,7 +12,7 @@ from easylogger import Log
 import cah.app as cah_app
 from .players import Players, Player, Judge
 from .model import TableGames, TableGameRounds, TableGameSettings, GameStatuses, TablePlayerRounds
-from .db import get_session, auto_config
+from .settings import auto_config
 
 
 # Define statuses where game is not active
@@ -25,26 +25,29 @@ DECK_SIZE = 5
 
 class Game:
     """Holds data for current game"""
-    def __init__(self, players: List[str], deck: 'Deck', parent_log: Log):
+    def __init__(self, players: List[str], deck: 'Deck', parent_log: Log, session: Session):
         self.st = cah_app.Bot.st
         self.log = Log(parent_log, child_name=self.__class__.__name__)
-        self.session = get_session()      # type: Session
+        self.session = session    # type: Session
 
         # Database table links
         # Create a new game
+        self.status = GameStatuses.initiated
         self.game_tbl = TableGames()  # type: TableGames
         self.session.add(self.game_tbl)
+
         # Bring in the settings
-        self.game_settings_tbl = self.session.query(TableGameSettings).one_or_none()
+        self.game_settings_tbl = session.query(TableGameSettings).one_or_none()
         if self.game_settings_tbl is None:
             # No table found... make a new one
+            self.log.debug('Game settings table not found. Making a new one.')
             self.game_settings_tbl = TableGameSettings()
             self.session.add(self.game_settings_tbl)
         self.session.commit()
         # This one will be set when new_round() is called
         self.gameround = None   # type: Optional[TableGameRounds]
 
-        self.players = Players(players, session=self.session, slack_api=self.st, parent_log=self.log)
+        self.players = Players(players, slack_api=self.st, parent_log=self.log, session=self.session)
         shuffle(self.players.player_list)
         self.judge_order = self.get_judge_order()
         self.judge = self.players.player_list[0]    # type: Judge
@@ -70,16 +73,15 @@ class Game:
         """Procedures for ending the round"""
         # Update the previous round with an end time
         self.gameround.end_time = datetime.utcnow()
-        self.game_tbl.status = GameStatuses.end_round
-        self.session.commit()
+        self.status = GameStatuses.end_round
 
     def new_round(self) -> Optional[List[dict]]:
         """Starts a new round"""
 
-        if self.game_tbl.status not in new_round_ready:
+        if self.status not in new_round_ready:
             # Avoid starting a new round when one has already been started
             raise ValueError(f'Cannot transition to new round due to current status '
-                             f'(`{self.game_tbl.status.name}`)')
+                             f'(`{self.status.name}`)')
 
         if self.gameround is not None:
             # Not the first round...
@@ -92,13 +94,13 @@ class Game:
             return [bkb.make_block_section(f'No more question cards! Game over! {":party-dead:" * 3}')]
 
         self.gameround = TableGameRounds(game_id=self.game_tbl.id)
-        # Increment rounds
-        self.game_tbl.rounds += 1
+        self.session.add(self.gameround)
+        self.session.commit()
 
         # Get new judge if not the first round
-        if self.game_tbl.rounds > 1:
+        if len(self.game_tbl.rounds) > 1:
             self.get_next_judge()
-        # Reset the round timestamp
+        # Reset the round timestamp (used to keep track of the main round message in channel)
         self.round_ts = None
 
         # Prep player list for new round
@@ -106,30 +108,48 @@ class Game:
 
         # Determine number of cards to deal to each player & deal
         # either full deck or replacement cards for previous question
-        if self.game_tbl.rounds == 1:
+        if len(self.game_tbl.rounds) == 1:
             num_cards = DECK_SIZE
         else:
             self.prev_question_card = self.current_question_card
             num_cards = self.prev_question_card.required_answers
         self.deal_cards(num_cards)
 
-        self.game_tbl.status = GameStatuses.players_decision
+        self.game_tbl = self.session.query(TableGames).get(self.game_tbl.id)
+        self.session.commit()
+
+        self.status = GameStatuses.players_decision
 
         # Deal question card
         self.current_question_card = self.deck.deal_question_card()
 
-        self.gameround = TableGameRounds(game_id=self.game_tbl.id)
+        self.st.private_channel_message(self.judge.player_id, auto_config.MAIN_CHANNEL,
+                                        "You're the judge this round!")
 
-        self.session.commit()
+    def handle_render_hands(self):
+        # Get the required number of answers for the current question
+        req_ans = self.current_question_card.required_answers
+        question_block = self.make_question_block()
+        self.players.render_hands(judge_id=self.judge.player_id, question_block=question_block, req_ans=req_ans)
+        # Determine randpick players and pick for them
+        for player in self.players.player_list:
+            if player.player_id == self.judge.player_id:
+                continue
+            if player.player_table.is_auto_randpick:
+                # Player has elected to automatically pick their cards
+                self.process_picks(player.player_id, 'randpick')
+                if player.player_table.is_dm_cards:
+                    self.st.private_message(player.player_id, 'Your pick was handled automatically, '
+                                                              'as you have `auto randpick` enabled.')
 
     def end_game(self):
         """Ends the game"""
-        if self.game_tbl.status is game_not_active:
+        if self.status is game_not_active:
             # Avoid starting a new round when one has already been started
-            raise ValueError(f'No active game to end - status: (`{self.game_tbl.status.name}`)')
+            raise ValueError(f'No active game to end - status: (`{self.status.name}`)')
         self.end_round()
         self.game_tbl.end_time = datetime.utcnow()
-        self.game_tbl.status = GameStatuses.ended
+        self.status = GameStatuses.ended
 
     def get_next_judge(self):
         """Gets the following judge by the order set"""
@@ -149,7 +169,7 @@ class Game:
     def deal_cards(self, num_cards: int):
         """Deals cards out to players by indicating the number of cards to give out"""
         for player in self.players.player_list:
-            if self.game_tbl.rounds > 1 and self.judge.player_id == player.player_id:
+            if len(self.game_tbl.rounds) > 1 and self.judge.player_id == player.player_id:
                 # Skip judge if dealing after first round
                 continue
             card_list = [self._deal_card() for i in range(num_cards)]
@@ -214,11 +234,13 @@ class Game:
 
     def toggle_judge_ping(self):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
-        self.game_settings_tbl.ping_judge = not self.game_settings_tbl.ping_judge
+        self.game_settings_tbl.is_ping_judge = not self.game_settings_tbl.is_ping_winner
+        self.session.commit()
 
     def toggle_winner_ping(self):
         """Toggles whether or not to ping the winner when they've won a round"""
-        self.game_settings_tbl.ping_winner = not self.game_settings_tbl.ping_winner
+        self.game_settings_tbl.is_ping_winner = not self.game_settings_tbl.is_ping_winner
+        self.session.commit()
 
     def process_picks(self, user: str, message: str) -> Optional:
         """Processes the card selection made by the user"""
@@ -306,7 +328,7 @@ class Game:
             else:
                 judge_msg = f'`{self.judge.display_name.title()}` to judge.'
             messages.append(judge_msg)
-            self.game_tbl.status = GameStatuses.judge_decision
+            self.status = GameStatuses.judge_decision
             # Update the "remaining picks" message
             self.st.update_message(auto_config.MAIN_CHANNEL, self.round_ts, message='lol')
             self._display_picks(notifications=messages)
@@ -437,19 +459,19 @@ class Game:
             'elder', 'ruler of the lower cards', 'most fair dictator of difficult choices',
             'benevolent and omniscient chief of dutiful diddling', 'supreme high chancellor of card justice'
         ]
-        judge_pts = self.session.query(func.sum(TablePlayerRounds)).filter(and_(
+        judge_pts = self.session.query(func.coalesce(TablePlayerRounds.score, 0)).filter(and_(
             TablePlayerRounds.player_id == self.judge.player_id,
             TablePlayerRounds.game_id == self.game_tbl.id
         )).scalar()
+        judge_pts = judge_pts if judge_pts is not None else 0
         honorific = f'the {honorifics[-1] if judge_pts > len(honorifics) - 1 else honorifics[judge_pts]}'
         # Assign this to the judge so we can refer to it in other areas.
         self.judge.player_table.honorific = honorific.title()
-        self.session.commit()
         bot_moji = ':math:' if self.judge.player_table.is_auto_randchoose else ''
 
         return [
             bkb.make_block_section(
-                f'Round *`{self.game_tbl.rounds}`* - *{self.judge.player_table.honorific} '
+                f'Round *`{len(self.game_tbl.rounds)}`* - *{self.judge.player_table.honorific} '
                 f'Judge {self.judge.display_name.title()}* {bot_moji} presiding.'
             ),
             bkb.make_block_section(

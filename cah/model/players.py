@@ -18,7 +18,6 @@ class TablePlayers(Base):
     is_auto_randchoose = Column(Boolean, default=False, nullable=False)
     is_skip = Column(Boolean, default=False, nullable=False)
     total_score = Column(Integer, default=0, nullable=False)
-    all_rounds = relationship("TablePlayerRounds", back_populates='player')
     total_decknukes_issued = Column(Integer, default=0, nullable=False)
     total_games_played = Column(Integer, default=0, nullable=False)
 
