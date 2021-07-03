@@ -34,7 +34,7 @@ class Player:
     def start_round(self, game_id: int, round_id: int):
         """Begins a new round"""
         self.hand.pick.clear_picks()
-        self.player_round_table = TablePlayerRounds(player_id=self.player_id, game_id=game_id,
+        self.player_round_table = TablePlayerRounds(player_id=self.player_table.id, game_id=game_id,
                                                     round_id=round_id)
         self.session.add(self.player_round_table)
         self.session.commit()
@@ -66,13 +66,21 @@ class Player:
 
 class Players:
     """Methods for handling all players"""
-    def __init__(self, player_id_list: List[str], slack_api: SlackTools, parent_log: Log, session: Session):
+    def __init__(self, player_id_list: List[str], slack_api: SlackTools, parent_log: Log, session: Session,
+                 is_global: bool = False):
         """
-
+        Args:
+            player_id_list: list of player slack ids
+            slack_api: slack api to send messages to the channel
+            parent_log: log object to record important details
+            session: sqlalchemy session to communicate with the database
+            is_global: if True, players will be built according to active workspace members,
+                not necessarily only channel members
         """
         self.log = Log(parent_log, child_name=self.__class__.__name__)
         self.st = slack_api
         self.session = session
+        self.is_global = is_global
         self.player_list = self._build_players(player_id_list=player_id_list)
 
     @staticmethod
@@ -102,13 +110,16 @@ class Players:
                 # Make sure player is in table
                 self._check_player_existence_in_table(user_id=uid, display_name=dis_name)
                 players.append(Player(uid, display_name=dis_name, session=self.session))
-        # Determine missed users
-        missed_users = [x for x in player_id_list if x not in [y.player_id for y in players]]
-        if len(missed_users) > 0:
-            # Message channel about missing users
-            usr_tags = ', '.join([f'<@{x.upper()}>' for x in missed_users])
-            msg = f'These users aren\'t in the channel and therefore were skipped: {usr_tags}'
-            self.st.send_message(auto_config.MAIN_CHANNEL, msg)
+        if not self.is_global:
+            # Building players specifically for a game, so determine if we included people
+            #   that aren't currently members
+            # Determine missed users
+            missed_users = [x for x in player_id_list if x not in [y.player_id for y in players]]
+            if len(missed_users) > 0:
+                # Message channel about missing users
+                usr_tags = ', '.join([f'<@{x.upper()}>' for x in missed_users])
+                msg = f'These users aren\'t in the channel and therefore were skipped: {usr_tags}'
+                self.st.send_message(auto_config.MAIN_CHANNEL, msg)
         return players
 
     def get_player_ids(self) -> List[str]:
@@ -148,6 +159,27 @@ class Players:
             return [x.player_table.display_name for x in players]
         else:
             return players
+
+    def get_players_with_dm_cards(self, name_only: bool = True) -> List[Union[str, Player]]:
+        """Returns a list of names (monospaced) or players that have is_dm_cards turned on"""
+        players = [x for x in self.player_list if x.player_table.is_dm_cards]
+        if name_only:
+            return [f'`{x.display_name}`' for x in players]
+        return players
+
+    def get_players_with_arp(self, name_only: bool = True) -> List[Union[str, Player]]:
+        """Returns a list of names (monospaced) or players that have is_auto_randpick turned on"""
+        players = [x for x in self.player_list if x.player_table.is_auto_randpick]
+        if name_only:
+            return [f'`{x.display_name}`' for x in players]
+        return players
+
+    def get_players_with_arc(self, name_only: bool = True) -> List[Union[str, Player]]:
+        """Returns a list of names (monospaced) or players that have is_auto_randchoose turned on"""
+        players = [x for x in self.player_list if x.player_table.is_auto_randchoose]
+        if name_only:
+            return [f'`{x.display_name}`' for x in players]
+        return players
 
     def add_player_to_game(self, player_id: str):
         """Adds a player to an existing game"""

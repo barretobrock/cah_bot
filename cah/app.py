@@ -1,6 +1,7 @@
 import json
 import requests
 import signal
+import sqlite3
 from random import choice
 from flask import Flask, request, make_response
 from slacktools import SlackEventAdapter, SecretStore
@@ -36,17 +37,31 @@ def handle_action():
     """Handle a response when a user clicks a button from Wizzy in Slack"""
     event_data = json.loads(request.form["payload"])
     user = event_data['user']['id']
-    channel = event_data['channel']['id']
-    actions = event_data['actions']
-    # Not sure if we'll ever receive more than one action?
-    action = actions[0]
+    # if channel empty, it's a shortcut
+    if event_data.get('channel') is None:
+        # shortcut - grab callback, put in action dict according to expected ac
+        action = {
+            'action_id': event_data.get('callback_id'),
+            'action_value': '',
+            'type': 'shortcut'
+        }
+        channel = auto_config.MAIN_CHANNEL
+    else:
+        # Action from button click, etc...
+        channel = event_data['channel']['id']
+        actions = event_data['actions']
+        # Not sure if we'll ever receive more than one action?
+        action = actions[0]
     # Send that info onwards to determine how to deal with it
-    Bot.process_incoming_action(user, channel, action, event_dict=event_data, session=Session())
+    Bot.process_incoming_action(user, channel, action_dict=action, event_dict=event_data, session=Session())
 
     # Respond to the initial message and update it
     responses = [
-        'Thanks, shithead!', 'Good job, you did a thing!', 'Look at you, doing things and shit!',
-        'Hey, you\'re a real pal!', 'Thanks, I guess...'
+        'Thanks, shithead!',
+        'Good job, you did a thing!',
+        'Look at you, doing things and shit!',
+        'Hey, you\'re a real pal!',
+        'Thanks, I guess...'
     ]
     update_dict = {
         'replace_original': True,
@@ -54,8 +69,11 @@ def handle_action():
     }
     if event_data.get('container', {'is_ephemeral': False}).get('is_ephemeral', False):
         update_dict['response_type'] = 'ephemeral'
-    resp = requests.post(event_data['response_url'], json=update_dict,
-                         headers={'Content-Type': 'application/json'})
+    response_url = event_data.get('response_url')
+    if response_url is not None:
+        # Update original message
+        resp = requests.post(event_data['response_url'], json=update_dict,
+                             headers={'Content-Type': 'application/json'})
 
     # Send HTTP 200 response with an empty body so Slack knows we're done
     return make_response('', 200)
@@ -63,7 +81,11 @@ def handle_action():
 
 @bot_events.on('message')
 def scan_message(event_data):
-    Bot.st.parse_event(event_data)
+    session = Session()
+    try:
+        Bot.process_event(event_data, session=session)
+    except sqlite3.ProgrammingError:
+        session.rollback()
 
 
 @app.route('/api/slash', methods=['GET', 'POST'])

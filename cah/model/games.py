@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, VARCHAR, Integer, Boolean, TIMESTAMP, ForeignKey, CheckConstraint, Enum
+from sqlalchemy import Column, VARCHAR, Integer, Boolean, TIMESTAMP, ForeignKey, CheckConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -24,7 +24,7 @@ class TableGames(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     rounds = relationship('TableGameRounds', back_populates='game')
     start_time = Column(TIMESTAMP, server_default=func.now(), nullable=False)
-    last_update = Column(TIMESTAMP, onupdate=func.now())
+    last_update = Column(TIMESTAMP, onupdate=func.now(), server_default=func.now())
     end_time = Column(TIMESTAMP, nullable=True)
 
     @hybrid_property
@@ -37,7 +37,7 @@ class TableGameRounds(Base):
     __tablename__ = 'gamerounds'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    game_id = Column(Integer, ForeignKey('games.id'))
+    game_id = Column(Integer, ForeignKey('games.id'), nullable=False)
     game = relationship("TableGames", back_populates='rounds')
     start_time = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     end_time = Column(TIMESTAMP, nullable=True)
@@ -53,9 +53,10 @@ class TablePlayerRounds(Base):
     __tablename__ = 'playerrounds'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    player_id = Column(Integer, ForeignKey('players.id'))
-    game_id = Column(Integer, ForeignKey('games.id'))
-    round_id = Column(Integer, ForeignKey('gamerounds.id'))
+    player_id = Column(Integer, ForeignKey('players.id'), nullable=False)
+    player = relationship('TablePlayers', back_populates='rounds')
+    game_id = Column(Integer, ForeignKey('games.id'), nullable=False)
+    round_id = Column(Integer, ForeignKey('gamerounds.id'), nullable=False)
     score = Column(Integer, default=0, nullable=False)
     is_picked = Column(Boolean, default=False, nullable=False)
     is_judge = Column(Boolean, default=False, nullable=False)

@@ -69,12 +69,6 @@ class Game:
         order = f' {order_divider} '.join(self.players.get_player_names(monospace=True))
         return f'Judge order: {order}'
 
-    def end_round(self):
-        """Procedures for ending the round"""
-        # Update the previous round with an end time
-        self.gameround.end_time = datetime.utcnow()
-        self.status = GameStatuses.end_round
-
     def new_round(self) -> Optional[List[dict]]:
         """Starts a new round"""
 
@@ -97,14 +91,14 @@ class Game:
         self.session.add(self.gameround)
         self.session.commit()
 
-        # Get new judge if not the first round
-        if len(self.game_tbl.rounds) > 1:
-            self.get_next_judge()
         # Reset the round timestamp (used to keep track of the main round message in channel)
         self.round_ts = None
 
         # Prep player list for new round
         self.players.new_round(game_id=self.game_tbl.id, round_id=self.gameround.id)
+
+        # Get new judge if not the first round. Mark judge as such in the db
+        self.get_next_judge(n_round=len(self.game_tbl.rounds))
 
         # Determine number of cards to deal to each player & deal
         # either full deck or replacement cards for previous question
@@ -124,7 +118,24 @@ class Game:
         self.current_question_card = self.deck.deal_question_card()
 
         self.st.private_channel_message(self.judge.player_id, auto_config.MAIN_CHANNEL,
-                                        "You're the judge this round!")
+                                        ":gavel::gavel::gavel: You're the judge this round! :gavel::gavel::gavel:")
+
+    def end_round(self):
+        """Procedures for ending the round"""
+        # Update the previous round with an end time
+        self.gameround.end_time = datetime.utcnow()
+        self.status = GameStatuses.end_round
+        self.session.commit()
+
+    def end_game(self):
+        """Ends the game"""
+        if self.status is game_not_active:
+            # Avoid starting a new round when one has already been started
+            raise ValueError(f'No active game to end - status: (`{self.status.name}`)')
+        self.end_round()
+        self.game_tbl.end_time = datetime.utcnow()
+        self.status = GameStatuses.ended
+        self.session.commit()
 
     def handle_render_hands(self):
         # Get the required number of answers for the current question
@@ -142,24 +153,20 @@ class Game:
                     self.st.private_message(player.player_id, 'Your pick was handled automatically, '
                                                               'as you have `auto randpick` enabled.')
 
-    def end_game(self):
-        """Ends the game"""
-        if self.status is game_not_active:
-            # Avoid starting a new round when one has already been started
-            raise ValueError(f'No active game to end - status: (`{self.status.name}`)')
-        self.end_round()
-        self.game_tbl.end_time = datetime.utcnow()
-        self.status = GameStatuses.ended
-
-    def get_next_judge(self):
+    def get_next_judge(self, n_round: int):
         """Gets the following judge by the order set"""
-        self.prev_judge = self.judge
-        cur_judge_pos = self.players.get_player_index(self.judge.player_id)
-        self.players.player_list[cur_judge_pos].player_round_table.is_judge = False
-        next_judge_pos = 0 if cur_judge_pos == len(self.players.player_list) - 1 else cur_judge_pos + 1
-        self.judge = self.players.player_list[next_judge_pos]
-        self.judge.pick_idx = None
-        self.players.player_list[next_judge_pos].player_round_table.is_judge = True
+        if n_round > 1:
+            # Rotate judge
+            self.prev_judge = self.judge
+            cur_judge_pos = self.players.get_player_index(self.judge.player_id)
+            self.players.player_list[cur_judge_pos].player_round_table.is_judge = False
+            next_judge_pos = 0 if cur_judge_pos == len(self.players.player_list) - 1 else cur_judge_pos + 1
+            self.judge = self.players.player_list[next_judge_pos]
+            self.judge.pick_idx = None
+            self.players.player_list[next_judge_pos].player_round_table.is_judge = True
+        else:
+            self.judge.player_round_table.is_judge = True
+        self.session.commit()
 
     def _deal_card(self):
         if len(self.deck.answers_card_list) == 0:

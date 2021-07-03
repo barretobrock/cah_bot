@@ -1,9 +1,10 @@
 from typing import List
+from random import choice
 from easylogger import Log
 from slacktools import SecretStore, GSheetReader, SlackTools
 import cah.cards as cahds
-from cah.model import Base, TableDecks, TableQuestionCards, TableAnswerCards, TablePlayers, TableGameSettings, \
-    TableGames, GameStatuses, TableGameRounds
+from cah.model import Base, TableDecks, TableQuestionCards, TableAnswerCards, TablePlayers, TableGameSettings,\
+    TablePlayerRounds, TableGames, TableGameRounds
 from cah.etl.etl_decks import deck_tables
 from cah.etl.etl_games import game_tables
 from cah.etl.etl_players import player_tables
@@ -81,7 +82,32 @@ class ETL:
         self.session.add_all([TablePlayers(slack_id=x['id'], name=x['display_name']) for x in users
                               if not x['is_bot']])
         self.session.commit()
+
         self.log.debug(f'Loaded {len(self.session.query(TablePlayers).all())} players into table.')
+
+    def game_sim(self):
+        """Simulate db functions over a game"""
+        players = self.session.query(TablePlayers).all()[:4]
+        game = TableGames()
+        self.session.add(game)
+        self.session.commit()
+
+        for i in range(10):
+            self.log.debug(f'Beginning round {i}...')
+            gameround = TableGameRounds(game_id=game.id)
+            self.session.add(gameround)
+            self.session.commit()
+            player_rounds = []
+            for p in players:
+                player_round = TablePlayerRounds(player_id=p.id, game_id=game.id, round_id=gameround.id)
+                self.session.add(player_round)
+                player_rounds.append(player_round)
+            self.session.commit()
+            for p_round in player_rounds:
+                p_round.score += choice(range(-3, 5))
+            self.session.commit()
+
+        ps = self.session.query(TablePlayers.total_score).all()
 
     def etl_games(self):
         # Add in the only row used in gamesettings
