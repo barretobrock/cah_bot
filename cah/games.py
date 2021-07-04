@@ -51,7 +51,7 @@ class Game:
         shuffle(self.players.player_list)
         self.judge_order = self.get_judge_order()
         _judge = self.players.player_list[0]
-        self.judge = Judge(_judge.player_id, _judge.display_name, session=self.session)    # type: Judge
+        self.judge = Judge(_judge, session=self.session)    # type: Judge
         self.prev_judge = None
         self.game_start_time = self.round_start_time = datetime.now()
 
@@ -163,11 +163,8 @@ class Game:
             self.players.player_list[cur_judge_pos].player_round_table.is_judge = False
             next_judge_pos = 0 if cur_judge_pos == len(self.players.player_list) - 1 else cur_judge_pos + 1
             _judge = self.players.player_list[next_judge_pos]
-            self.judge = Judge(_judge.player_id, _judge.display_name, session=self.session)
-            self.judge.pick_idx = None
-            self.players.player_list[next_judge_pos].player_round_table.is_judge = True
-        else:
-            self.judge.player_round_table.is_judge = True
+            self.judge = Judge(_judge, session=self.session)
+        self.judge.player_round_table.is_judge = True
         self.session.commit()
 
     def _deal_card(self):

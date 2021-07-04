@@ -245,6 +245,7 @@ class Players:
 
 class Judge(Player):
     """Player who chooses winning card"""
-    def __init__(self, player_id: str, display_name: str, session: Session):
-        super().__init__(player_id, display_name=display_name, session=session)
+    def __init__(self, player_obj: Player, session: Session):
+        super().__init__(player_obj.player_id, display_name=player_obj.display_name, session=session)
         self.pick_idx = None    # type: Optional[int]
+        self.player_round_table = player_obj.player_round_table
