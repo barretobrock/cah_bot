@@ -448,8 +448,13 @@ class CAHBot:
                 if all([self.game.status == cah_game.GameStatuses.players_decision,
                         player.player_id != self.game.judge.player_id,
                         player.player_table.is_auto_randpick,
-                        not player.hand.pick.is_empty()]):
-                    # randpick for the player immediately
+                        player.hand.pick.is_empty()]):
+                    # randpick for the player immediately if:
+                    #   - game active
+                    #   - players' decision status
+                    #   - player not judge
+                    #   - autorandpick was turned on
+                    #   - player picks are empty
                     self.process_picks(player.player_id, 'randpick')
 
         if any([not is_randpick, is_both]):
@@ -459,7 +464,15 @@ class CAHBot:
                             f'`{player.player_table.is_auto_randchoose}`')
             if self.game is not None:
                 if all([self.game.status == cah_game.GameStatuses.judge_decision,
-                        player.player_table.is_auto_randchoose]):
+                        player.player_id == self.game.judge.player_id,
+                        player.player_table.is_auto_randchoose,
+                        self.game.judge.pick_idx is None]):
+                    # randchoose for the player immediately if:
+                    #   - game active
+                    #   - judge's decision status
+                    #   - player is judge
+                    #   - autorandchoose was turned on
+                    #   - judge picks are empty
                     self.choose_card(player.player_id, 'randchoose')
 
         return '\n'.join(resp_msg)
