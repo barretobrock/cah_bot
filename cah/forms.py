@@ -85,14 +85,14 @@ class Forms:
                                                   danger_style=not v['bool']))
 
         honorific = f', {player.honorific}' if player.honorific is not None else ''
+        stats_dict = {
+            'Overall score': player.total_score,
+            'Games played': player.total_games_played,
+            'Decknukes used': player.total_decknukes_issued,
+            'Decknukes caught': player.total_decknukes_caught,
+        }
 
         return [
             bkb.make_header(f'Player details: {player.name.title()}{honorific}'),
-            bkb.make_block_section([
-                f'Overall score:\t\t*`{player.total_score}`*',
-                f'Games played:\t\t*`{player.total_games_played}`*',
-                f'Decknukes used:\t\t*`{player.total_decknukes_issued}`*',
-                f'Decknukes caught:\t\t*`{player.total_decknukes_caught}`*',
-            ])
+            bkb.make_block_section([f'`{k:_<20}{v:_>5,}`' for k, v in stats_dict.items()])
         ] + [bkb.make_action_button_group([x]) for x in buttons]
-

@@ -345,7 +345,7 @@ class Game:
             self._display_picks(notifications=messages)
             # Handle auto randchoose players
             for player in self.players.player_list:
-                if player.auto_randchoose:
+                if player.player_table.is_auto_randchoose:
                     if player.player_id == self.judge.player_id:
                         # Judge only
                         self.choose_card(player.player_id, 'randchoose')

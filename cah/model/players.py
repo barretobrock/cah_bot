@@ -1,5 +1,5 @@
 from sqlalchemy import Column, VARCHAR, Integer, Boolean, event, select
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, and_
 from sqlalchemy.orm import relationship, column_property, mapper
 # local imports
 from .base import Base
@@ -26,7 +26,7 @@ def set_thread_count(mapper, cls) -> None:
     if issubclass(cls, TablePlayers):
         # Calculate total score
         total_score_subquery = (
-            select([func.sum(TablePlayerRounds.score)])
+            select([func.coalesce(func.sum(TablePlayerRounds.score), 0)])
             .where(TablePlayerRounds.player_id == cls.id)
             .label('total_score')
         )
@@ -43,7 +43,10 @@ def set_thread_count(mapper, cls) -> None:
         # Calculate decknukes issued
         total_decknukes_issued_subquery = (
             select([func.count(TablePlayerRounds.is_nuked_hand)])
-            .where(TablePlayerRounds.player_id == cls.id)
+            .where(and_(
+                TablePlayerRounds.player_id == cls.id,
+                TablePlayerRounds.is_nuked_hand
+            ))
             .label('total_decknukes_issued')
         )
         cls.total_decknukes_issued = column_property(total_decknukes_issued_subquery, deferred=True)
@@ -51,7 +54,10 @@ def set_thread_count(mapper, cls) -> None:
         # Calculate decknukes caught
         total_decknukes_caught_subquery = (
             select([func.count(TablePlayerRounds.is_nuked_hand_caught)])
-            .where(TablePlayerRounds.player_id == cls.id)
+            .where(and_(
+                TablePlayerRounds.player_id == cls.id,
+                TablePlayerRounds.is_nuked_hand_caught
+            ))
             .label('total_decknukes_caught')
         )
         cls.total_decknukes_caught = column_property(total_decknukes_caught_subquery, deferred=True)
