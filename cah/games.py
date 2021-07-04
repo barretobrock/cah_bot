@@ -164,6 +164,11 @@ class Game:
             next_judge_pos = 0 if cur_judge_pos == len(self.players.player_list) - 1 else cur_judge_pos + 1
             _judge = self.players.player_list[next_judge_pos]
             self.judge = Judge(_judge, session=self.session)
+        if self.judge.player_round_table is None:
+            self.judge.player_round_table = TablePlayerRounds(player_id=self.judge.player_table.id,
+                                                              game_id=self.game_tbl.id, round_id=self.gameround.id)
+        self.session.add(self.judge.player_round_table)
+        self.session.commit()
         self.judge.player_round_table.is_judge = True
         self.session.commit()
 
