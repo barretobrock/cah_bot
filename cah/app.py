@@ -9,8 +9,15 @@ from easylogger import Log
 import cah.bot_base as botbase
 from .settings import auto_config
 
+# TODO:
+#  - add menu to control other users that are unresponsive (e.g., arparca)
+#  - split out the main menu into general and in-game commands
+#       - in-game commands given priority when a game is active, otherwise general commands are priority.
+#           (this will require adding an overflow element to the menu)
+#  - add in-game button to ping all players who haven't yet picked
 
-bot_name = 'wizzy'
+
+bot_name = auto_config.BOT_NICKNAME
 logg = Log(bot_name, log_to_file=True)
 # This is basically a session maker. We'll use it to ensure that sessions stay independent and short-lived
 #   while also not having them become an encumbrance to the state of the code

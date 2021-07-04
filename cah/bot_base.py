@@ -250,6 +250,8 @@ class CAHBot:
             bkb.make_context_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
         ]
         self.st.message_test_channel(blocks=notify_block)
+        self.log.info('Bot shutting down...')
+        self.log.close()
         sys.exit(0)
 
     def process_slash_command(self, event_dict: Dict, session: Session):
