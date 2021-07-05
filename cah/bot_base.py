@@ -708,10 +708,16 @@ class CAHBot:
 
     def display_points(self) -> List[dict]:
         """Displays points for all players"""
+        self.log.debug('Generating scores...')
         scores = self.get_score(in_game=True)  # type: List[Dict[str, Union[str, int]]]
         points_df = pd.DataFrame(scores)
-
+        self.log.debug(f'Retrieved {points_df.shape[0]} players\' scores')
         points_df = points_df.loc[points_df['is_playing']].copy()
+        self.log.debug(f'Filtered to {points_df.shape[0]} players\' scores')
+        if points_df.shape[0] == 0:
+            return [
+                bkb.make_block_section('No one has scored yet. Check back later!')
+            ]
         # Apply fun emojis
         poops = ['poop_wtf', 'poop', 'poop_ugh', 'poop_tugh', 'poopfire', 'poopstar']
 
