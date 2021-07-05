@@ -4,11 +4,10 @@ import sys
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 from random import randrange, choice
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Session
-from sqlalchemy.engine import Row
 from slacktools import SlackBotBase, BlockKitBuilder as bkb
 from easylogger import Log
 import cah.app as cah_app
@@ -676,41 +675,43 @@ class CAHBot:
         self.game = None
         self.st.message_test_channel('The game has ended. :died:')
 
-    def get_score(self, in_game: bool = True) -> List[Row]:
+    def get_score(self, in_game: bool = True) -> List[Dict[str, Union[str, int]]]:
         """Queries db for players' scores"""
+        # Get overall score
+        overall = self.session.query(
+            TablePlayers.id,
+            TablePlayers.name,
+            TablePlayers.total_score
+        ).group_by(TablePlayers.id).all()
+        current = None
         if in_game and self.game is not None:
             # Calculate in-game score
-            res = self.session.query(
+            current = self.session.query(
+                    TablePlayers.id,
                     TablePlayers.name,
-                    TablePlayers.total_score,
                     func.sum(TablePlayerRounds.score).label('diddles')
-                )\
-                .join(TablePlayers, TablePlayerRounds.player_id == TablePlayers.slack_id)\
+                ).join(TablePlayers, TablePlayerRounds.player_id == TablePlayers.id)\
                 .filter(TablePlayerRounds.game_id == self.game.game_tbl.id)\
-                .group_by(TablePlayerRounds.player_id)\
-                .order_by(TablePlayerRounds.score, TablePlayers.total_score).all()
-        else:
-            res = self.session.query(
-                TablePlayers.name,
-                func.coalesce(TablePlayers.total_score, 0).label('total_score')
-            ).order_by(TablePlayers.total_score).all()
+                .group_by(TablePlayers.id).all()
         self.session.commit()
-        return res
+        # Loop through results, build out a usable dictionary
+        scores = []
+        for player in overall:
+            current_results = next(iter([x for x in current if x.id == player.id]), None)
+            scores.append({
+                'name': player.name,
+                'diddles': current_results.diddles if current_results is not None else 0,
+                'overall': player.total_score,
+                'is_playing': current_results is not None or player.total_score > 0
+            })
+        return scores
 
     def display_points(self) -> List[dict]:
         """Displays points for all players"""
-        plist = self.get_score(in_game=True)  # type: List[Row]
-        points_df = pd.DataFrame()
-        for player in plist:
-            pdict = player._asdict()    # type: Dict
-            row = {
-                'name': pdict.get('name'),
-                'diddles': pdict.get('diddles', 0),
-                'overall': pdict.get('total_score', 0)
-            }
-            points_df = points_df.append(pd.DataFrame(row, index=[0]))
+        scores = self.get_score(in_game=True)  # type: List[Dict[str, Union[str, int]]]
+        points_df = pd.DataFrame(scores)
 
-        points_df = points_df.reset_index(drop=True)
+        points_df = points_df.loc[points_df['is_playing']].copy()
         # Apply fun emojis
         poops = ['poop_wtf', 'poop', 'poop_ugh', 'poop_tugh', 'poopfire', 'poopstar']
 
@@ -734,8 +735,8 @@ class CAHBot:
 
         scores_list = []
         for i, r in points_df.iterrows():
-            line = f"{r['rank']} `{r['name'][:20].title():.<30}` " \
-                   f"{r['diddles']:<3} :diddlecoin: ({r['overall']:<4}total)"
+            line = f"{r['rank']} `{r['name'][:20].title():_<25}`:diddlecoin:`" \
+                   f"{r['diddles']:<3} ({r['overall']:<4}overall)`"
             scores_list.append(line)
         return [
             bkb.make_context_section('*Current Scores*'),
