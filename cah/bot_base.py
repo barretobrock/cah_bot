@@ -683,7 +683,7 @@ class CAHBot:
             TablePlayers.name,
             TablePlayers.total_score
         ).group_by(TablePlayers.id).all()
-        current = None
+        current = []
         if in_game and self.game is not None:
             # Calculate in-game score
             current = self.session.query(
