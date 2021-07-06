@@ -39,11 +39,6 @@ app = Flask(__name__)
 bot_events = SlackEventAdapter(cah_creds.signing_secret, "/api/events", app)
 
 
-@app.teardown_appcontext
-def shutdown_session(exception=None):
-    Session.remove()
-
-
 @app.route('/api/actions', methods=['GET', 'POST'])
 def handle_action():
     """Handle a response when a user clicks a button from Wizzy in Slack"""
