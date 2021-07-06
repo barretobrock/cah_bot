@@ -187,7 +187,13 @@ class CAHBot:
                         'desc': 'Choose randomly from a subset'
                     }
                 ]
-            }
+            },
+            r'^ping ppl': {
+                'pattern': 'ping ppl',
+                'cat': cat_basic,
+                'desc': 'Ping players who haven\'t yet picked',
+                'response': [self.ping_players_left_to_pick]
+            },
         }
         # Initate the bot, which comes with common tools for interacting with Slack's API
         self.st = SlackBotBase(triggers=self.triggers, credstore=cah_app.credstore,
@@ -302,11 +308,12 @@ class CAHBot:
         elif action_id == 'new-game-start':
             # Kicks off the new game form process
             # First ask for the deck
+            self.st.send_message(channel=channel, message=f'Looks like <@{user}>, is starting a game. '
+                                                          f'Might take a few seconds while they select stuff...')
             formp1 = Forms.build_new_game_form_p1(self.decks.deck_list)
             resp = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p1',
                                                    blocks=formp1)
-            self.st.send_message(channel=channel, message=f'Looks like <@{user}>, is starting a game. '
-                                                          f'Might take a few seconds while they select stuff...')
+
         elif action_id == 'new-game-deck':
             # Set the deck for the new game and then send the second form
             self.state_store['deck'] = action_dict['selected_option']['value'].replace('deck_', '')
@@ -323,6 +330,21 @@ class CAHBot:
             settings_form = Forms.build_my_settings_form(session_object=self.session, user_id=user)
             resp = self.st.private_channel_message(user_id=user, channel=channel, message='Settings form',
                                                    blocks=settings_form)
+        elif action_id == 'add-player':
+            add_user = Forms.build_add_user_form()
+            resp = self.st.private_channel_message(user_id=user, channel=channel, message='Add player form',
+                                                   blocks=add_user)
+        elif action_id == 'add-player-done':
+            if self.game is not None:
+                self.game.players.add_player_to_game(action_value, game_id=self.game.game_tbl.id,
+                                                     round_id=self.game.gameround.id)
+        elif action_id == 'remove-player':
+            rem_user = Forms.build_remove_user_form()
+            resp = self.st.private_channel_message(user_id=user, channel=channel, message='Remove player form',
+                                                   blocks=rem_user)
+        elif action_id == 'remove-player-done':
+            if self.game is not None:
+                self.game.players.remove_player_from_game(action_value)
         elif action_id.startswith('toggle-'):
             if action_id == 'toggle-auto-randpick':
                 self.toggle_auto_pick_or_choose(user_id=user, channel=channel, message=action_id.replace('-', ' '),
@@ -661,6 +683,20 @@ class CAHBot:
             bkb.make_block_divider(),
             bkb.make_block_section(scores_list)
         ]
+
+    def ping_players_left_to_pick(self):
+        """Generates a string to tag any players that have yet to pick"""
+        if self.game is None:
+            return 'I can\'t really do this outside of a game WHAT DO YOU WANT FROM ME?!?!?!?!??!'
+        self.log.debug('Determining players that haven\'t yet picked for pinging...')
+        remaining = []
+        for player in self.game.players.player_list:
+            if player.hand.pick.is_empty() and player.player_id != self.game.judge.player_id:
+                remaining.append(player.player_id)
+        if len(remaining) > 0:
+            tagged = ' and '.join([f'<@{x}>' for x in remaining])
+            return f'Hey {tagged} - get out there and make pickles!'
+        return 'Looks like everyone\'s made picks?'
 
     def display_status(self) -> Optional[List[dict]]:
         """Displays status of the game"""

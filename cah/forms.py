@@ -23,8 +23,8 @@ class Forms:
             bkb.make_action_button('Scores', value='score', action_id='score'),
             bkb.make_action_button('My Settings', value='my-settings', action_id='my-settings'),
             bkb.make_action_button('New Game', value='newgame', action_id='new-game-start', danger_style=False),
-            bkb.make_action_button('Kick/Add to Game', value='kick-add', action_id='kick-add',
-                                   url=choice(links)),
+            bkb.make_action_button('Add', value='add-player', action_id='add-player'),
+            bkb.make_action_button('Kick', value='remove-player', action_id='remove-player'),
         ]
         if game_obj is not None and game_obj.status not in [GameStatuses.ended]:
             button_list.append(
@@ -53,6 +53,16 @@ class Forms:
         """Builds the second part to the new game form with Block Kit"""
         return [bkb.make_multi_user_select('Select the players', initial_users=[user_id],
                                            action_id='new-game-users')]
+
+    @staticmethod
+    def build_add_user_form() -> List[Dict]:
+        """Builds the second part to the new game form with Block Kit"""
+        return [bkb.make_user_select('Select the player to add', action_id='add-player-done')]
+
+    @staticmethod
+    def build_remove_user_form() -> List[Dict]:
+        """Builds the second part to the new game form with Block Kit"""
+        return [bkb.make_user_select('Select the player to remove', action_id='remove-player-done')]
 
     @staticmethod
     def build_my_settings_form(session_object: Session, user_id: str) -> List[Dict]:

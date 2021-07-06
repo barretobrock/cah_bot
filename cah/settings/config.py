@@ -1,7 +1,7 @@
 """Configuration setup"""
 import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, scoped_session
 from cah._version import get_versions
 from cah.model import Base
 
@@ -18,7 +18,7 @@ class Common(object):
     DB_PATH = os.path.join(os.path.expanduser('~'), *['data', 'cahdb.db'])
     if not os.path.exists(DB_PATH):
         raise FileNotFoundError(f'DB_PATH at {DB_PATH} invalid...')
-    engine = create_engine(f'sqlite:///{DB_PATH}')
+    engine = create_engine(f'sqlite:///{DB_PATH}', isolation_level='SERIALIZABLE')
     Base.metadata.bind = engine
     SESSION = sessionmaker(bind=engine)
 

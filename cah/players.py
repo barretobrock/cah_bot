@@ -187,22 +187,34 @@ class Players:
             return [f'`{x.display_name}`' for x in players]
         return players
 
-    def add_player_to_game(self, player_id: str):
+    def add_player_to_game(self, player_id: str, game_id: int, round_id: int) -> str:
         """Adds a player to an existing game"""
         # Get the player's info
-        user_info = self.st.get_users_info([player_id])[0]
+        user_info = self.st.clean_user_info(self.st.get_user_info(player_id).get('user'))
         dis_name = self._extract_name(user_info_dict=user_info)
 
         # Make sure player is in table
         self._check_player_existence_in_table(user_id=player_id, display_name=dis_name)
-        self.player_list.append(Player(player_id, display_name=dis_name, session=self.session))
+        # Make sure player is not already in game
+        player = self.get_player(player_id)
+        if player is not None:
+            return f'*`{dis_name}`* already in game...'
+        player = Player(player_id, display_name=dis_name, session=self.session)
+        player.start_round(game_id=game_id, round_id=round_id)
+        self.player_list.append(player)
+        self.log.debug(f'Player with name "{dis_name}" added to game...')
+        return f'*`{dis_name}`* successfully added to game...'
 
-    def remove_player_from_game(self, player_id: str):
+    def remove_player_from_game(self, player_id: str) -> str:
         """Removes a player from the existing game"""
         # Get player's index in list
+        player = self.get_player(player_id)
+        if player is None:
+            return f'That player is not in the current game...'
         pidx = self.get_player_index(player_attr=player_id, attr_name='player_id')
         _ = self.player_list.pop(pidx)
-        self.log.debug(f'Player with id "{player_id}" removed from game...')
+        self.log.debug(f'Player with name "{player.display_name}" removed from game...')
+        return f'*`{player.display_name}`* successfully removed from game...'
 
     def new_round(self, game_id: int, round_id: int):
         """Players-level new round routines"""

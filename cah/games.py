@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple, Union
 from datetime import datetime
 from random import shuffle
 import numpy as np
-from sqlalchemy.sql import and_, func
+from sqlalchemy.sql import func
 from sqlalchemy.orm.session import Session
 from slacktools import BlockKitBuilder as bkb
 from slack.errors import SlackApiError
@@ -28,6 +28,7 @@ class Game:
     def __init__(self, players: List[str], deck: 'Deck', parent_log: Log, session: Session):
         self.st = cah_app.Bot.st
         self.log = Log(parent_log, child_name=self.__class__.__name__)
+        self.log.debug('Building out new game...')
         self.session = session    # type: Session
 
         # Database table links
@@ -87,10 +88,12 @@ class Game:
             # No more questions, game hath ended
             self.end_game()
             return [bkb.make_block_section(f'No more question cards! Game over! {":party-dead:" * 3}')]
-
+        self.round_start_time = datetime.now()
         self.gameround = TableGameRounds(game_id=self.game_tbl.id)
         self.session.add(self.gameround)
         self.session.commit()
+        lines = '=' * 32
+        self.log.debug(f'\n{lines}\n\t\t\tROUND {len(self.game_tbl.rounds)} STARTED\n{lines}')
 
         # Reset the round timestamp (used to keep track of the main round message in channel)
         self.round_ts = None
@@ -123,6 +126,7 @@ class Game:
 
     def end_round(self):
         """Procedures for ending the round"""
+        self.log.debug('Ending round.')
         # Update the previous round with an end time
         self.gameround.end_time = datetime.utcnow()
         self.status = GameStatuses.end_round
@@ -130,6 +134,7 @@ class Game:
 
     def end_game(self):
         """Ends the game"""
+        self.log.debug('End game process started')
         if self.status is game_not_active:
             # Avoid starting a new round when one has already been started
             raise ValueError(f'No active game to end - status: (`{self.status.name}`)')
@@ -140,6 +145,7 @@ class Game:
 
     def handle_render_hands(self):
         # Get the required number of answers for the current question
+        self.log.debug('Rendering hands process beginning.')
         req_ans = self.current_question_card.required_answers
         question_block = self.make_question_block()
         self.players.render_hands(judge_id=self.judge.player_id, question_block=question_block, req_ans=req_ans)
@@ -156,6 +162,7 @@ class Game:
 
     def get_next_judge(self, n_round: int):
         """Gets the following judge by the order set"""
+        self.log.debug('Determining judge.')
         if n_round > 1:
             # Rotate judge
             self.prev_judge = self.judge
@@ -188,6 +195,7 @@ class Game:
 
     def decknuke(self, player_id: str):
         player = self.players.get_player(player_attr=player_id, attr_name='player_id')
+        self.log.debug(f'Player {player.display_name} has nuked their deck. Processing command.')
         if self.judge.player_id == player.player_id:
             self.st.message_test_channel(f'Decknuke rejected. {player.player_tag} is the judge. :shame:')
             return
@@ -203,6 +211,7 @@ class Game:
 
     def get_current_scores(self) -> List[TablePlayers]:
         """Gets the current scores of the ongoing game"""
+        self.log.debug('Retrieving current player scores from database')
         return self.session.query(
             TablePlayers.id,
             TablePlayers.name,
@@ -214,6 +223,7 @@ class Game:
     def winner_selection(self) -> List[dict]:
         """Contains the logic that determines point distributions upon selection of a winner"""
         # Get the list of cards picked by each player
+        self.log.debug('Selecting winner')
         rps = self.round_picks
         winning_pick = rps[self.judge.pick_idx]
 
@@ -256,6 +266,7 @@ class Game:
 
     def _points_redistributer(self, penalty: int) -> str:
         """Handles the logic covering redistribution of wealth among players"""
+        self.log.debug('Redistributing points post discovered decknuke')
         # Deduct points from the judge, give randomly to others
         point_receivers = {}  # Store 'name' (of player) and 'points' (distributed)
         # Determine the eligible receivers of the extra points
@@ -331,6 +342,7 @@ class Game:
 
     def players_left_to_pick(self) -> List[str]:
         """Returns a list of the players that have yet to pick a card"""
+        self.log.debug('Determining players remaining to pick')
         remaining = []
         for player in self.players.player_list:
             if player.hand.pick.is_empty() and player.player_id != self.judge.player_id:
@@ -339,17 +351,19 @@ class Game:
 
     def toggle_judge_ping(self):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
+        self.log.debug('Toggling winner pinging')
         self.game_settings_tbl.is_ping_judge = not self.game_settings_tbl.is_ping_winner
         self.session.commit()
 
     def toggle_winner_ping(self):
         """Toggles whether or not to ping the winner when they've won a round"""
+        self.log.debug('Toggling winner pinging')
         self.game_settings_tbl.is_ping_winner = not self.game_settings_tbl.is_ping_winner
         self.session.commit()
 
     def process_picks(self, user: str, message: str) -> Optional:
         """Processes the card selection made by the user"""
-
+        self.log.debug(f'Received pick message: {message}')
         # We're in the right status and the user isn't a judge. Let's break this down further
         card_subset = None  # For when player wants to pick from a subset
         msg_split = message.split()
@@ -459,6 +473,7 @@ class Game:
 
     def _get_pick(self, user: str, message: str, judge_decide: bool = False) -> Union[int, Optional[List[int]]]:
         """Processes a number from a message"""
+        self.log.debug(f'Extracting pick from message: {message}')
 
         def isolate_pick(pick_txt: str) -> Optional[List[int]]:
             if ',' in pick_txt:
@@ -528,7 +543,7 @@ class Game:
 
     def display_picks(self) -> Tuple[List[dict], List[dict]]:
         """Shows the player's picks in random order"""
-
+        self.log.debug('Rendering picks...')
         picks = [player.hand.pick for player in self.players.player_list if not player.hand.pick.is_empty()]
         shuffle(picks)
         self.round_picks = picks
@@ -558,20 +573,19 @@ class Game:
     def make_question_block(self) -> List[dict]:
         """Generates the question block for the current round"""
         # Determine honorific for judge
+        self.log.debug('Determining honorific for judge...')
         honorifics = [
             'lackey', 'intern', 'young padawan', 'master apprentice', 'honorable', 'respected and just',
             'cold and yet still fair', 'worthy inheriter of daddy\'s millions', 'mother of dragons', 'excellent',
             'elder', 'ruler of the lower cards', 'most fair dictator of difficult choices',
             'benevolent and omniscient chief of dutiful diddling', 'supreme high chancellor of card justice'
         ]
-        judge_pts = self.session.query(func.coalesce(TablePlayerRounds.score, 0)).filter(and_(
-            TablePlayerRounds.player_id == self.judge.player_id,
-            TablePlayerRounds.game_id == self.game_tbl.id
-        )).scalar()
+        judge_pts = self.judge.get_current_score()
         judge_pts = judge_pts if judge_pts is not None else 0
         honorific = f'the {honorifics[-1] if judge_pts > len(honorifics) - 1 else honorifics[judge_pts]}'
         # Assign this to the judge so we can refer to it in other areas.
         self.judge.player_table.honorific = honorific.title()
+        self.session.commit()
         bot_moji = ':math:' if self.judge.player_table.is_auto_randchoose else ''
 
         return [
@@ -588,7 +602,7 @@ class Game:
     def choose_card(self, user: str, message: str) -> Optional:
         """For the judge to choose the winning card and
         for other players to vote on the card they think should win"""
-
+        self.log.debug(f'Choose command used: {message}')
         if user in auto_config.ADMINS and 'blueberry pie' in message:
             # Overrides the block below to allow admin to make a choice during testing or special circumstances
             user = self.judge.player_id
@@ -623,6 +637,7 @@ class Game:
 
     def _randchoose_handling(self, message: str) -> Optional[Tuple[int, bool]]:
         """Contains all the logic for handling a randchoose command"""
+        self.log.debug(f'Randchoose command used: {message}')
         used_all = False
         if len(message.split(' ')) > 1:
             randchoose_instructions = message.split(' ')[1]
