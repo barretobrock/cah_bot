@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 from typing import List, Optional, Union, Dict
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import func
 from easylogger import Log
 from slacktools import SlackTools
 import cah.cards as cahds
@@ -62,6 +63,11 @@ class Player:
         self.player_round_table.score += points
         self.session.add(self.player_table)
         self.session.commit()
+
+    def get_current_score(self):
+        """Retrieves the players current score"""
+        return self.session.query(func.sum(TablePlayerRounds.score))\
+            .filter(TablePlayerRounds.player_id == self.player_table.id).scalar()
 
 
 class Players:

@@ -2,11 +2,9 @@
 # -*- coding: utf-8 -*-
 import sys
 import pandas as pd
-import numpy as np
 from datetime import datetime
 from typing import List, Optional, Dict, Union
-from random import randrange, choice
-from sqlalchemy.sql import func
+from random import randrange
 from sqlalchemy.orm import Session
 from slacktools import SlackBotBase, BlockKitBuilder as bkb
 from easylogger import Log
@@ -14,7 +12,7 @@ import cah.app as cah_app
 import cah.cards as cahds
 import cah.games as cah_game
 from .players import Players, Player
-from .model import TablePlayers, TableDecks, TablePlayerRounds, TableGameSettings
+from .model import TablePlayers, TableDecks, TableGameSettings
 from .settings import auto_config
 from .forms import Forms
 
@@ -577,90 +575,10 @@ class CAHBot:
         """Coordinates end-of-round logic (tallying votes, picking winner, etc.)"""
         # Make sure all users have votes and judge has made decision before wrapping up the round
         # Handle the announcement of winner and distribution of points
-        self.st.message_test_channel(blocks=self._winner_selection())
+        self.st.message_test_channel(blocks=self.game.winner_selection())
         self.game.status = cah_game.GameStatuses.end_round
         # Start new round
         self.new_round()
-
-    def _points_redistributer(self, penalty: int) -> str:
-        """Handles the logic covering redistribution of wealth among players"""
-        # Deduct points from the judge, give randomly to others
-        point_receivers = {}  # Store 'name' (of player) and 'points' (distributed)
-        # Determine the eligible receivers of the extra points
-        nonjudge_players = [x for x in self.game.players.player_list if not x.is_judge]
-        player_points_list = [x.points for x in nonjudge_players]
-        if sum(player_points_list) == 0:
-            # No one has made any points yet - everyone's eligible
-            eligible_receivers = [x for x in nonjudge_players]
-        else:
-            # Some people have earned points already. Make sure those with the highest points aren't eligible
-            max_points = max(player_points_list)
-            eligible_receivers = [x for x in nonjudge_players if x.points < max_points]
-        for pt in range(0, penalty * -1):
-            if len(eligible_receivers) > 1:
-                player = list(np.random.choice(eligible_receivers, 1))[0]
-            elif len(eligible_receivers) == 1:
-                # In case everyone has the max score except for one person
-                player = eligible_receivers[0]
-            else:
-                # Everyone has the same score lol. Just pick a random player
-                player = list(np.random.choice(nonjudge_players, 1))[0]
-
-            player.add_points(1)
-            if player.player_id in point_receivers.keys():
-                # Add another point
-                point_receivers[player.player_id]['points'] += 1
-            else:
-                point_receivers[player.player_id] = {
-                    'name': player.display_name,
-                    'points': 1
-                }
-            self.game.players.update_player(player)
-        point_receivers_txt = '\n'.join([f'`{v["name"]}`: *`{v["points"]}`* :diddlecoin:'
-                                         for k, v in point_receivers.items()])
-        return point_receivers_txt
-
-    def _winner_selection(self) -> List[dict]:
-        """Contains the logic that determines point distributions upon selection of a winner"""
-        # Get the list of cards picked by each player
-        rps = self.game.round_picks
-        winning_pick = rps[self.game.judge.pick_idx]
-
-        # Winner selection
-        winner = self.game.players.get_player(winning_pick.id)
-        # If decknuke occurred, distribute the points to others randomly
-        if winner.player_round_table.is_nuked_hand:
-            penalty = self.game.game_settings_tbl.decknuke_penalty
-            point_receivers_txt = self._points_redistributer(penalty)
-            points_won = penalty
-            decknuke_txt = f'\n:impact::impact::impact::impact:LOLOLOLOLOL HOW DAT DECKNUKE WORK FOR YA NOW??\n' \
-                           f'Your points were redistributed such: {point_receivers_txt}'
-            winner.player_round_table.is_nuked_hand_caught = True
-            self.session.commit()
-        else:
-            points_won = 1
-            decknuke_txt = ''
-
-        winner.add_points(points_won)
-        self.game.players.update_player(winner)
-        winner_details = winner.player_tag if self.game.game_settings_tbl.is_ping_winner \
-            else f'*`{winner.display_name.title()}`*'
-        winner_txt_blob = [
-            f":regional_indicator_q: *{self.game.current_question_card.txt}*",
-            f":tada:Winning card: {winner.hand.pick.render_pick_list_as_str()}",
-            f"*`{points_won:+}`* :diddlecoin: to {winner_details}! "
-            f"New score: *`{winner.points}`* :diddlecoin: "
-            f"({winner.get_grand_score() + winner.points} total){decknuke_txt}\n"
-        ]
-        last_section = [
-            bkb.make_context_section(f'Round ended. Nice going, {self.game.judge.display_name}.')
-        ]
-
-        message_block = [
-            bkb.make_block_section(winner_txt_blob),
-            bkb.make_block_divider(),
-        ]
-        return message_block + last_section
 
     def end_game(self) -> Optional:
         """Ends the current game"""
@@ -686,13 +604,7 @@ class CAHBot:
         current = []
         if in_game and self.game is not None:
             # Calculate in-game score
-            current = self.session.query(
-                    TablePlayers.id,
-                    TablePlayers.name,
-                    func.sum(TablePlayerRounds.score).label('diddles')
-                ).join(TablePlayers, TablePlayerRounds.player_id == TablePlayers.id)\
-                .filter(TablePlayerRounds.game_id == self.game.game_tbl.id)\
-                .group_by(TablePlayers.id).all()
+            current = self.game.get_current_scores()
         self.session.commit()
         # Loop through results, build out a usable dictionary
         scores = []
