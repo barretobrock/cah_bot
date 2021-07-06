@@ -13,10 +13,11 @@ from .settings import auto_config
 class Player:
     """Player-specific things"""
 
-    def __init__(self, player_id: str, display_name: str, session: Session):
+    def __init__(self, player_id: str, display_name: str, session: Session, avi_url: str = ''):
         self.player_id = player_id
         self.player_tag = f'<@{self.player_id}>'
         self.display_name = display_name
+        self.avi_url = avi_url
         self.session = session
 
         self.player_table = self.session.query(TablePlayers)\
@@ -115,7 +116,7 @@ class Players:
                 dis_name = self._extract_name(user_info_dict=user)
                 # Make sure player is in table
                 self._check_player_existence_in_table(user_id=uid, display_name=dis_name)
-                players.append(Player(uid, display_name=dis_name, session=self.session))
+                players.append(Player(uid, display_name=dis_name, session=self.session, avi_url=user['avi32']))
         if not self.is_global:
             # Building players specifically for a game, so determine if we included people
             #   that aren't currently members
@@ -199,7 +200,7 @@ class Players:
         player = self.get_player(player_id)
         if player is not None:
             return f'*`{dis_name}`* already in game...'
-        player = Player(player_id, display_name=dis_name, session=self.session)
+        player = Player(player_id, display_name=dis_name, session=self.session, avi_url=user_info['avi32'])
         player.start_round(game_id=game_id, round_id=round_id)
         self.player_list.append(player)
         self.log.debug(f'Player with name "{dis_name}" added to game...')

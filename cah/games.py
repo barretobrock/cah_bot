@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Dict
 from datetime import datetime
 from random import shuffle
 import numpy as np
@@ -71,7 +71,7 @@ class Game:
         order = f' {order_divider} '.join(self.players.get_player_names(monospace=True))
         return f'Judge order: {order}'
 
-    def new_round(self) -> Optional[List[dict]]:
+    def new_round(self, notification_block: List[Dict] = None) -> Optional[List[dict]]:
         """Starts a new round"""
 
         if self.status not in new_round_ready:
@@ -88,6 +88,10 @@ class Game:
             # No more questions, game hath ended
             self.end_game()
             return [bkb.make_block_section(f'No more question cards! Game over! {":party-dead:" * 3}')]
+
+        if notification_block is None:
+            notification_block = []
+
         self.round_start_time = datetime.now()
         self.gameround = TableGameRounds(game_id=self.game_tbl.id)
         self.session.add(self.gameround)
@@ -123,6 +127,10 @@ class Game:
 
         self.st.private_channel_message(self.judge.player_id, auto_config.MAIN_CHANNEL,
                                         ":gavel::gavel::gavel: You're the judge this round! :gavel::gavel::gavel:")
+        question_block = self.make_question_block()
+        notification_block += question_block
+        self.st.message_test_channel(blocks=notification_block)
+        self.handle_render_hands()
 
     def end_round(self):
         """Procedures for ending the round"""
@@ -220,6 +228,15 @@ class Game:
             .filter(TablePlayerRounds.game_id == self.game_tbl.id) \
             .group_by(TablePlayers.id).all()
 
+    def round_wrap_up(self):
+        """Coordinates end-of-round logic (tallying votes, picking winner, etc.)"""
+        # Make sure all users have votes and judge has made decision before wrapping up the round
+        # Handle the announcement of winner and distribution of points
+        self.st.message_test_channel(blocks=self.winner_selection())
+        self.status = GameStatuses.end_round
+        # Start new round
+        self.new_round()
+
     def winner_selection(self) -> List[dict]:
         """Contains the logic that determines point distributions upon selection of a winner"""
         # Get the list of cards picked by each player
@@ -255,7 +272,9 @@ class Game:
             f"({winner.player_table.total_score} total){decknuke_txt}\n"
         ]
         last_section = [
-            bkb.make_context_section(f'Round ended. Nice going, {self.judge.display_name}.')
+            bkb.make_context_section([
+                bkb.markdown_section(f'Round ended. Nice going, {self.judge.display_name}.')
+            ])
         ]
 
         message_block = [
@@ -351,7 +370,7 @@ class Game:
 
     def toggle_judge_ping(self):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
-        self.log.debug('Toggling winner pinging')
+        self.log.debug('Toggling judge pinging')
         self.game_settings_tbl.is_ping_judge = not self.game_settings_tbl.is_ping_winner
         self.session.commit()
 
@@ -449,19 +468,17 @@ class Game:
             messages.append(judge_msg)
             self.status = GameStatuses.judge_decision
             # Update the "remaining picks" message
-            self.st.update_message(auto_config.MAIN_CHANNEL, self.round_ts, message='lol')
+            self.st.update_message(auto_config.MAIN_CHANNEL, self.round_ts, message='we gone')
             self._display_picks(notifications=messages)
             # Handle auto randchoose players
-            for player in self.players.player_list:
-                if player.player_table.is_auto_randchoose:
-                    if player.player_id == self.judge.player_id:
-                        # Judge only
-                        self.choose_card(player.player_id, 'randchoose')
+            if self.judge.player_table.is_auto_randchoose:
+                # Judge only
+                self.choose_card(player.player_id, 'randchoose')
         else:
             # Make the remaining players more visible
             remaining_txt = ' '.join([f'`{x}`' for x in remaining])
             messages.append(f'*`{len(remaining)}`* players remaining to decide: {remaining_txt}')
-            msg_block = [bkb.make_context_section(messages)]
+            msg_block = [bkb.make_context_section([bkb.markdown_section(x) for x in messages])]
             if self.round_ts is None:
                 # Announcing the picks for the first time; capture the timestamp so
                 #   we can update that same message later
@@ -519,7 +536,7 @@ class Game:
         """Shows a random order of the picks"""
         if notifications is not None:
             public_response_block = [
-                bkb.make_context_section(notifications),
+                bkb.make_context_section([bkb.markdown_section(x) for x in notifications]),
                 bkb.make_block_divider()
             ]
         else:
@@ -615,11 +632,14 @@ class Game:
             pick, used_all = self._randchoose_handling(message)
             if pick is None:
                 # The randchoose method wasn't able to parse anything useful from the message
+                self.log.error('Pick returned None: randchoose seemed to fail to pick something.')
                 return None
         else:
+            self.log.debug('Extracting judge\'s pick from message')
             pick = self._get_pick(user, message, judge_decide=True)
 
         if pick > len(self.players.player_list) - 2 or pick < 0:
+            self.log.debug(f'Chosen pick ({pick}) was outside of spec.')
             # Pick is rendered as an array index here.
             # Pick can either be:
             #   -less than total players minus judge, minus 1 more to account for array
@@ -631,6 +651,7 @@ class Game:
             if user == self.judge.player_id:
                 # Record the judge's pick
                 if self.judge.pick_idx is None:
+                    self.log.debug(f'Setting judge\'s pick as {pick}:')
                     self.judge.pick_idx = pick
                 else:
                     self.st.message_test_channel('Judge\'s pick voided. You\'ve already picked this round.')

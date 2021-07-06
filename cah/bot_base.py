@@ -224,8 +224,8 @@ class CAHBot:
 
     def get_bootup_msg(self) -> List[Dict]:
         return [bkb.make_context_section([
-            f"*{self.bot_name}* *`{self.version}`* booted up at `{datetime.now():%F %T}`!",
-            f"(updated {self.update_date})"
+            bkb.markdown_section(f"*{self.bot_name}* *`{self.version}`* booted up at `{datetime.now():%F %T}`!"),
+            bkb.markdown_section(f"(updated {self.update_date})")
         ])]
 
     def generate_intro(self):
@@ -250,7 +250,7 @@ class CAHBot:
             # In case anything catastrophic happens with this process, just silently bypass
             pass
         notify_block = [
-            bkb.make_context_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')
+            bkb.make_context_section([bkb.markdown_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')])
         ]
         self.st.message_test_channel(blocks=notify_block)
         self.log.info('Bot shutting down...')
@@ -549,7 +549,7 @@ class CAHBot:
 
         if notifications is not None:
             # Process incoming notifications into the block
-            notification_block.append(bkb.make_context_section(notifications))
+            notification_block.append(bkb.make_context_section([bkb.markdown_section(x) for x in notifications]))
 
         if self.game.status == cah_game.GameStatuses.ended:
             # Game ended because we ran out of questions
@@ -557,11 +557,7 @@ class CAHBot:
             self.end_game()
             return None
 
-        self.game.new_round()
-        question_block = self.game.make_question_block()
-        notification_block += question_block
-        self.st.message_test_channel(blocks=notification_block)
-        self.game.handle_render_hands()
+        self.game.new_round(notification_block=notification_block)
 
     def process_picks(self, user: str, message: str) -> Optional:
         """Processes the card selection made by the user"""
@@ -591,16 +587,7 @@ class CAHBot:
 
         self.game.choose_card(user=user, message=message)
         if self.game.judge.pick_idx is not None:
-            self._round_wrap_up()
-
-    def _round_wrap_up(self):
-        """Coordinates end-of-round logic (tallying votes, picking winner, etc.)"""
-        # Make sure all users have votes and judge has made decision before wrapping up the round
-        # Handle the announcement of winner and distribution of points
-        self.st.message_test_channel(blocks=self.game.winner_selection())
-        self.game.status = cah_game.GameStatuses.end_round
-        # Start new round
-        self.new_round()
+            self.game.round_wrap_up()
 
     def end_game(self) -> Optional:
         """Ends the current game"""
@@ -679,7 +666,7 @@ class CAHBot:
                    f"{r['diddles']:<3} ({r['overall']:<4}overall)`"
             scores_list.append(line)
         return [
-            bkb.make_context_section('*Current Scores*'),
+            bkb.make_context_section([bkb.markdown_section('*Current Scores*')]),
             bkb.make_block_divider(),
             bkb.make_block_section(scores_list)
         ]
@@ -698,6 +685,14 @@ class CAHBot:
             return f'Hey {tagged} - get out there and make pickles!'
         return 'Looks like everyone\'s made picks?'
 
+    @staticmethod
+    def _generate_avi_context_section(players: List[Player], pretext: str, posttext: str):
+        """Generates a context section with players' avatars rendered"""
+        return [
+            bkb.markdown_section(pretext)
+        ] + [bkb.make_image_element(x.avi_url, x.display_name)
+             for x in players] + [bkb.markdown_section(posttext)]
+
     def display_status(self) -> Optional[List[dict]]:
         """Displays status of the game"""
 
@@ -712,34 +707,34 @@ class CAHBot:
         if self.game.status not in [cah_game.GameStatuses.ended, cah_game.GameStatuses.initiated]:
 
             # Players that have card DMing enabled
-            dm_players = self.game.players.get_players_with_dm_cards(name_only=True)
+            dm_players = self.game.players.get_players_with_dm_cards()
+            dm_players_sect = self._generate_avi_context_section(dm_players, f':orange_check: *DM Cards*: ', '\n')
             # Players that have auto randpick enabled
-            arp_players = self.game.players.get_players_with_arp(name_only=True)
-            arc_players = self.game.players.get_players_with_arc(name_only=True)
+            arp_players = self.game.players.get_players_with_arp()
+            arp_players_sect = self._generate_avi_context_section(arp_players, f':orange_check: *ARP*: ', '\n')
+            arc_players = self.game.players.get_players_with_arc()
+            arc_players_sect = self._generate_avi_context_section(arc_players, f':orange_check: *ARC*: ', '\n')
 
             status_block += [
                 bkb.make_context_section([
-                    f':gavel: *Judge*: *`{self.game.judge.display_name.title()}`*'
+                    bkb.markdown_section(f':gavel: *Judge*: *`{self.game.judge.display_name.title()}`*')
                 ]),
                 bkb.make_block_divider(),
                 bkb.make_context_section([
-                    f'*Status*: *`{self.game.status.name.replace("_", " ").title()}`*\n'
-                    f'*Judge Ping*: `{self.game.game_settings_tbl.is_ping_judge}`\t\t'
-                    f'*Weiner Ping*: `{self.game.game_settings_tbl.is_ping_winner}`\n'
-                    f':orange_check: *DM Cards*: {" ".join(dm_players)}\n'
-                    f':orange_check: *ARP*: {" ".join(arp_players)}\n'
-                    f':orange_check: *ARC*: {" ".join(arc_players)}\n'
-                ]),
+                    bkb.markdown_section(f'*Status*: *`{self.game.status.name.replace("_", " ").title()}`*\n'),
+                    bkb.markdown_section(f'*Judge Ping*: `{self.game.game_settings_tbl.is_ping_judge}`\t\t'),
+                    bkb.markdown_section(f'*Weiner Ping*: `{self.game.game_settings_tbl.is_ping_winner}`\n')] +
+                                         dm_players_sect + arp_players_sect + arc_players_sect),
                 bkb.make_block_divider(),
                 bkb.make_context_section([
-                    f':stopwatch: *Round `{len(self.game.game_tbl.rounds)}`*: '
-                    f'{self.st.get_time_elapsed(self.game.round_start_time)}\t\t'
-                    f'*Game*: {self.st.get_time_elapsed(self.game.game_start_time)}\n',
-                    f':stack-of-cards: *Deck*: `{self.game.deck.name}` - '
-                    f'`{len(self.game.deck.questions_card_list)}` question &'
-                    f' `{len(self.game.deck.answers_card_list)}` answer cards remain',
-                    f':conga_parrot: *Player Order*: '
-                    f'{" ".join([f"`{x.display_name}`" for x in self.game.players.player_list])}'
+                    bkb.markdown_section(f':stopwatch: *Round `{len(self.game.game_tbl.rounds)}`*: '),
+                    bkb.markdown_section(f'{self.st.get_time_elapsed(self.game.round_start_time)}\t\t'),
+                    bkb.markdown_section(f'*Game*: {self.st.get_time_elapsed(self.game.game_start_time)}\n'),
+                    bkb.markdown_section(f':stack-of-cards: *Deck*: `{self.game.deck.name}` - '),
+                    bkb.markdown_section(f'`{len(self.game.deck.questions_card_list)}` question &'),
+                    bkb.markdown_section(f' `{len(self.game.deck.answers_card_list)}` answer cards remain'),
+                    bkb.markdown_section(f':conga_parrot: *Player Order*: '),
+                    bkb.markdown_section(f'{" ".join([f"`{x.display_name}`" for x in self.game.players.player_list])}')
                 ])
             ]
 
@@ -751,7 +746,8 @@ class CAHBot:
             status_block = status_block[:1] + [
                 bkb.make_block_section(f':regional_indicator_q: `{self.game.current_question_card.txt}`'),
                 bkb.make_context_section([
-                    f':gavel: *Judge*: *`{self.game.judge.display_name.title()}`*{pickle_txt}'
+                    bkb.markdown_section(f':gavel: *Judge*: *`{self.game.judge.display_name.title()}`'
+                                         f'*{pickle_txt}')
                 ])
             ] + status_block[2:]  # Skip over the previous judge block
 
