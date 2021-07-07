@@ -100,6 +100,7 @@ class Players:
     def _check_player_existence_in_table(self, user_id: str, display_name: str):
         """Checks whether player exists in the player table and, if not, will add them to the table"""
         # Check if player table exists
+        self.log.debug('Checking for player\'s existence in table')
         player_table = self.session.query(TablePlayers).filter_by(slack_id=user_id).one_or_none()
 
         if player_table is None:
@@ -110,6 +111,7 @@ class Players:
 
     def _build_players(self, player_id_list: List[str]) -> List[Player]:
         """Builds out the list of players - Typically used when a new game is started"""
+        self.log.debug('Starting player building process.')
         players = []
         channel_members = self.st.get_channel_members(auto_config.MAIN_CHANNEL, humans_only=True)
         for user in channel_members:
@@ -194,6 +196,7 @@ class Players:
     def add_player_to_game(self, player_id: str, game_id: int, round_id: int) -> str:
         """Adds a player to an existing game"""
         # Get the player's info
+        self.log.debug('Beginning process to add player to game...')
         user_info = self.st.clean_user_info(self.st.get_user_info(player_id).get('user'))
         dis_name = self._extract_name(user_info_dict=user_info)
 
@@ -211,6 +214,7 @@ class Players:
 
     def remove_player_from_game(self, player_id: str) -> str:
         """Removes a player from the existing game"""
+        self.log.debug('Beginning process to remove player from game...')
         # Get player's index in list
         player = self.get_player(player_id)
         if player is None:
@@ -222,12 +226,14 @@ class Players:
 
     def new_round(self, game_id: int, round_id: int):
         """Players-level new round routines"""
+        self.log.debug('Handling player-level new round process')
         for player in self.player_list:
             player.start_round(game_id=game_id, round_id=round_id)
             self._update_player(player)
 
     def render_hands(self, judge_id: str, question_block: List[Dict], req_ans: int):
         """Renders each players' hands"""
+        self.log.debug('Rendering hands for players...')
         for player in self.player_list:
             if player.player_id == judge_id or player.player_table.is_auto_randpick:
                 continue
@@ -258,6 +264,7 @@ class Players:
 
     def process_player_decknuke(self, player_obj: Player):
         """Handles the player aspect of decknuking."""
+        self.log.debug('Processing player decknuke')
         player_obj.hand.burn_cards()
         player_obj.player_round_table.is_nuked_hand = True
         self.session.add(player_obj.player_round_table)

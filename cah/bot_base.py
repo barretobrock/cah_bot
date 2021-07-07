@@ -273,6 +273,7 @@ class CAHBot:
         self.session = session
         action_id = action_dict.get('action_id')
         action_value = action_dict.get('value')
+        self.log.debug(f'Receiving action_id: {action_id} and value: {action_value}')
 
         if action_id.startswith('game-'):
             # Special in-game commands like pick & choose
