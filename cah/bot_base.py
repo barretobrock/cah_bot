@@ -337,7 +337,8 @@ class CAHBot:
                                                    blocks=add_user)
         elif action_id == 'add-player-done':
             if self.game is not None:
-                self.game.players.add_player_to_game(action_value, game_id=self.game.game_tbl.id,
+                add_user = action_dict.get('selected_user')
+                self.game.players.add_player_to_game(add_user, game_id=self.game.game_tbl.id,
                                                      round_id=self.game.gameround.id)
         elif action_id == 'remove-player':
             rem_user = Forms.build_remove_user_form()
@@ -345,7 +346,8 @@ class CAHBot:
                                                    blocks=rem_user)
         elif action_id == 'remove-player-done':
             if self.game is not None:
-                self.game.players.remove_player_from_game(action_value)
+                rem_user = action_dict.get('selected_user')
+                self.game.players.remove_player_from_game(rem_user)
         elif action_id.startswith('toggle-'):
             if action_id == 'toggle-auto-randpick':
                 self.toggle_auto_pick_or_choose(user_id=user, channel=channel, message=action_id.replace('-', ' '),
