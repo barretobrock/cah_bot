@@ -24,6 +24,7 @@ logg.debug('Instantiating bot...')
 sesh = Session()
 Bot = cahapp.Bot
 # Patch outgoing messages while testing
+original_send = Bot.st.send_message
 Bot.st.send_message = collect_outgoing
 Bot.st.private_channel_message = collect_outgoing
 Bot.st.private_message = collect_outgoing
@@ -48,7 +49,16 @@ Bot.new_game(deck='standard', player_ids=[x.player_id for x in players[:-1]])
 for nth_round in range(40):
     # Judge has to make a pick, bc the sequence is built to take in at least one input from a user
     Bot.ping_players_left_to_pick()
-    if nth_round == 5:
+    if nth_round == 0:
+        # Test status output
+        # Bot.st.send_message = original_send
+        # blocks = Bot.display_status()
+        # Bot.st.send_message(channel=auto_config.MAIN_CHANNEL, message='this is a test',
+        #                     blocks=blocks)
+        #
+        # Bot.st.send_message = collect_outgoing
+        pass
+    elif nth_round == 5:
         # 5th round, someone decides to decknuke every round after that
         Bot.game.players.player_list[0].toggle_arp()
     elif nth_round == 10:

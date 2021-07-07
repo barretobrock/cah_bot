@@ -25,6 +25,9 @@ class Player:
         if self.player_table is None:
             # Add player to table
             self.player_table = self.session.add(TablePlayers(slack_id=self.player_id, name=self.display_name))
+        # Check if display name is the same as in the table. If not, change the name in the table
+        if self.display_name != self.player_table.name:
+            self.player_table.name = self.display_name
         self.session.commit()
 
         # For tracking rounds that the player plays. This will be None until the player is loaded into a game

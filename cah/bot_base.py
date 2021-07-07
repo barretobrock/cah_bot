@@ -686,12 +686,12 @@ class CAHBot:
         return 'Looks like everyone\'s made picks?'
 
     @staticmethod
-    def _generate_avi_context_section(players: List[Player], pretext: str, posttext: str):
+    def _generate_avi_context_section(players: List[Player], pretext: str):
         """Generates a context section with players' avatars rendered"""
-        return [
-            bkb.markdown_section(pretext)
-        ] + [bkb.make_image_element(x.avi_url, x.display_name)
-             for x in players] + [bkb.markdown_section(posttext)]
+        sect_list = [bkb.markdown_section(pretext)]
+        if len(players) == 0:
+            return sect_list
+        return sect_list + [bkb.make_image_element(x.avi_url, x.display_name) for x in players]
 
     def display_status(self) -> Optional[List[dict]]:
         """Displays status of the game"""
@@ -707,13 +707,27 @@ class CAHBot:
         if self.game.status not in [cah_game.GameStatuses.ended, cah_game.GameStatuses.initiated]:
 
             # Players that have card DMing enabled
-            dm_players = self.game.players.get_players_with_dm_cards()
-            dm_players_sect = self._generate_avi_context_section(dm_players, f':orange_check: *DM Cards*: ', '\n')
+            dm_section = self._generate_avi_context_section(
+                self.game.players.get_players_with_dm_cards(name_only=False), ':orange_check: *DM Cards*: ')
             # Players that have auto randpick enabled
-            arp_players = self.game.players.get_players_with_arp()
-            arp_players_sect = self._generate_avi_context_section(arp_players, f':orange_check: *ARP*: ', '\n')
-            arc_players = self.game.players.get_players_with_arc()
-            arc_players_sect = self._generate_avi_context_section(arc_players, f':orange_check: *ARC*: ', '\n')
+            arp_section = self._generate_avi_context_section(
+                self.game.players.get_players_with_arp(name_only=False), ':orange_check: *ARP*: ')
+            # Players that have auto randchoose enabled
+            arc_section = self._generate_avi_context_section(
+                self.game.players.get_players_with_arc(name_only=False), ':orange_check: *ARC*: ')
+
+            status_section = f'*Status*: *`{self.game.status.name.replace("_", " ").title()}`*\n' \
+                             f'*Judge Ping*: `{self.game.game_settings_tbl.is_ping_judge}`\t\t' \
+                             f'*Weiner Ping*: `{self.game.game_settings_tbl.is_ping_winner}`\n'
+            # player_section = f'\t:orange_check: *ARP*: {arp_players}' \
+            #                  f'\n\t:orange_check: *ARC*: {arc_players}'
+            game_section = f':stopwatch: *Round `{len(self.game.game_tbl.rounds)}`*: ' \
+                           f'{self.st.get_time_elapsed(self.game.round_start_time)}\t\t' \
+                           f'*Game*: {self.st.get_time_elapsed(self.game.game_start_time)}\n' \
+                           f':stack-of-cards: *Deck*: `{self.game.deck.name}` - ' \
+                           f'`{len(self.game.deck.questions_card_list)}` question & ' \
+                           f'`{len(self.game.deck.answers_card_list)}` answer cards remain\n:conga_parrot: ' \
+                           f'*Player Order*: {" ".join(self.game.players.get_player_names(monospace=True))}'
 
             status_block += [
                 bkb.make_context_section([
@@ -721,20 +735,14 @@ class CAHBot:
                 ]),
                 bkb.make_block_divider(),
                 bkb.make_context_section([
-                    bkb.markdown_section(f'*Status*: *`{self.game.status.name.replace("_", " ").title()}`*\n'),
-                    bkb.markdown_section(f'*Judge Ping*: `{self.game.game_settings_tbl.is_ping_judge}`\t\t'),
-                    bkb.markdown_section(f'*Weiner Ping*: `{self.game.game_settings_tbl.is_ping_winner}`\n')] +
-                                         dm_players_sect + arp_players_sect + arc_players_sect),
+                    bkb.markdown_section(status_section)
+                ]),
+                bkb.make_context_section(dm_section),
+                bkb.make_context_section(arp_section),
+                bkb.make_context_section(arc_section),
                 bkb.make_block_divider(),
                 bkb.make_context_section([
-                    bkb.markdown_section(f':stopwatch: *Round `{len(self.game.game_tbl.rounds)}`*: '),
-                    bkb.markdown_section(f'{self.st.get_time_elapsed(self.game.round_start_time)}\t\t'),
-                    bkb.markdown_section(f'*Game*: {self.st.get_time_elapsed(self.game.game_start_time)}\n'),
-                    bkb.markdown_section(f':stack-of-cards: *Deck*: `{self.game.deck.name}` - '),
-                    bkb.markdown_section(f'`{len(self.game.deck.questions_card_list)}` question &'),
-                    bkb.markdown_section(f' `{len(self.game.deck.answers_card_list)}` answer cards remain'),
-                    bkb.markdown_section(f':conga_parrot: *Player Order*: '),
-                    bkb.markdown_section(f'{" ".join([f"`{x.display_name}`" for x in self.game.players.player_list])}')
+                    bkb.markdown_section(game_section)
                 ])
             ]
 
