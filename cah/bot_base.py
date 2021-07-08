@@ -5,7 +5,6 @@ import pandas as pd
 from datetime import datetime
 from typing import List, Optional, Dict, Union
 from random import randrange
-from sqlalchemy.orm import Session
 from slacktools import SlackBotBase, BlockKitBuilder as bkb
 from easylogger import Log
 import cah.app as cah_app
@@ -20,7 +19,7 @@ from .forms import Forms
 class CAHBot:
     """Bot for playing Cards Against Humanity on Slack"""
 
-    def __init__(self, parent_log: Log, session: Session):
+    def __init__(self, parent_log: Log):
         """
         Args:
 
@@ -32,8 +31,6 @@ class CAHBot:
         self.admin_user = auto_config.ADMINS
         self.version = auto_config.VERSION
         self.update_date = auto_config.UPDATE_DATE
-        # create a session
-        self.session = session
 
         # Begin loading and organizing commands
         # Command categories
@@ -207,14 +204,13 @@ class CAHBot:
 
         # More game environment-specific initialization stuff
         # Read in decks
-        self.decks = cahds.Decks(session=self.session)       # type: Optional['Decks']
+        self.decks = cahds.Decks()       # type: Optional['Decks']
         # Build out all possible players (for possibly applying settings outside of a game)
-        all_player_ids = [x.slack_id for x in self.session.query(TablePlayers.slack_id).all()]
+        all_player_ids = [x.slack_id for x in cah_app.db.session.query(TablePlayers.slack_id).all()]
         self.potential_players = Players(player_id_list=all_player_ids, slack_api=self.st,
-                                         parent_log=self.log, session=self.session,
-                                         is_global=True)  # type: Optional[Players]
-        self.global_game_settings_tbl = self.session.query(TableGameSettings).one_or_none()
-        self.session.commit()
+                                         parent_log=self.log, is_global=True)  # type: Optional[Players]
+        self.global_game_settings_tbl = cah_app.db.session.query(TableGameSettings).one_or_none()
+        cah_app.db.session.commit()
         self.game = None        # type: Optional[cah_game.Game]
 
         self.st.message_test_channel(blocks=self.get_bootup_msg())
@@ -242,35 +238,30 @@ class CAHBot:
 
     def cleanup(self, *args):
         """Runs just before instance is destroyed"""
-        try:
-            self.session = auto_config.SESSION()
-            if self.game is not None:
-                self.game.end_game()
-        except:
-            # In case anything catastrophic happens with this process, just silently bypass
-            pass
+        if self.game is not None:
+            self.game.end_game()
         notify_block = [
-            bkb.make_context_section([bkb.markdown_section(f'{self.bot_name} died. :death-drops::party-dead::death-drops:')])
+            bkb.make_context_section([bkb.markdown_section(f'{self.bot_name} died. '
+                                                           f':death-drops::party-dead::death-drops:')])
         ]
         self.st.message_test_channel(blocks=notify_block)
         self.log.info('Bot shutting down...')
         self.log.close()
         sys.exit(0)
 
-    def process_slash_command(self, event_dict: Dict, session: Session):
+    def process_slash_command(self, event_dict: Dict):
         """Hands off the slash command processing while also refeshing the session"""
-        self.session = session
+
         self.st.parse_slash_command(event_dict)
 
-    def process_event(self, event_dict: Dict, session: Session):
+    def process_event(self, event_dict: Dict):
         """Hands off the event data while also refreshing the session"""
-        self.session = session
         self.st.parse_event(event_data=event_dict)
 
     def process_incoming_action(self, user: str, channel: str, action_dict: Dict, event_dict: Dict,
-                                session: Session) -> Optional:
+                                ) -> Optional:
         """Handles an incoming action (e.g., when a button is clicked)"""
-        self.session = session
+
         action_id = action_dict.get('action_id')
         action_value = action_dict.get('value')
         self.log.debug(f'Receiving action_id: {action_id} and value: {action_value}')
@@ -328,7 +319,7 @@ class CAHBot:
             if status_block is not None:
                 self.st.send_message(channel=channel, message='Game status', blocks=status_block)
         elif action_id == 'my-settings':
-            settings_form = Forms.build_my_settings_form(session_object=self.session, user_id=user)
+            settings_form = Forms.build_my_settings_form(session_object=cah_app.db.session, user_id=user)
             resp = self.st.private_channel_message(user_id=user, channel=channel, message='Settings form',
                                                    blocks=settings_form)
         elif action_id == 'add-player':
@@ -392,7 +383,7 @@ class CAHBot:
         deck = self._read_in_cards(deck)
 
         # Load the game, add players, shuffle the players
-        self.game = cah_game.Game(player_ids, deck, parent_log=self.log, session=self.session)
+        self.game = cah_game.Game(player_ids, deck, parent_log=self.log, session=cah_app.db.session)
         # Get order of judges
         response_list.append(self.game.judge_order)
         # Kick off the new round, message details to the group
@@ -414,18 +405,18 @@ class CAHBot:
 
     def _read_in_cards(self, card_set: str = 'standard') -> cahds.Deck:
         """Reads in the cards"""
-        deck = self.session.query(TableDecks).filter_by(name=card_set).one_or_none()
+        deck = cah_app.db.session.query(TableDecks).filter_by(name=card_set).one_or_none()
         if deck is None:
             raise ValueError(f'The card set `{card_set}` was not found. '
                              f'Possible sets: `{",".join(self.decks.deck_names)}`.')
-        return cahds.Deck(name=deck.name, session=self.session)
+        return cahds.Deck(name=deck.name)
 
     def toggle_judge_ping(self):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
         if self.game is None:
             # Apply changes to game settings through the global table
             self.global_game_settings_tbl.is_ping_judge = not self.global_game_settings_tbl.is_ping_judge
-            self.session.commit()
+            cah_app.db.session.commit()
             new_val = self.global_game_settings_tbl.is_ping_judge
         else:
             self.game.toggle_judge_ping()
@@ -437,7 +428,7 @@ class CAHBot:
         if self.game is None:
             # Apply changes to game settings through the global table
             self.global_game_settings_tbl.is_ping_winner = not self.global_game_settings_tbl.is_ping_winner
-            self.session.commit()
+            cah_app.db.session.commit()
             new_val = self.global_game_settings_tbl.is_ping_winner
         else:
             self.game.toggle_winner_ping()
@@ -608,7 +599,7 @@ class CAHBot:
     def get_score(self, in_game: bool = True) -> List[Dict[str, Union[str, int]]]:
         """Queries db for players' scores"""
         # Get overall score
-        overall = self.session.query(
+        overall = cah_app.db.session.query(
             TablePlayers.id,
             TablePlayers.name,
             TablePlayers.total_score
@@ -617,7 +608,7 @@ class CAHBot:
         if in_game and self.game is not None:
             # Calculate in-game score
             current = self.game.get_current_scores()
-        self.session.commit()
+        cah_app.db.session.commit()
         # Loop through results, build out a usable dictionary
         scores = []
         for player in overall:
@@ -661,7 +652,7 @@ class CAHBot:
 
         # Set order of the columns
         points_df = points_df[['rank', 'name', 'diddles', 'overall']]
-        points_df = points_df.sort_values('diddles', ascending=False)
+        points_df = points_df.sort_values(['diddles', 'overall'], ascending=False)
 
         scores_list = []
         for i, r in points_df.iterrows():
@@ -694,7 +685,11 @@ class CAHBot:
         sect_list = [bkb.markdown_section(pretext)]
         if len(players) == 0:
             return sect_list
-        return sect_list + [bkb.make_image_element(x.avi_url, x.display_name) for x in players]
+        player_list = [bkb.make_image_element(x.avi_url, x.display_name) for x in players]
+        if len(sect_list + player_list) > 10:
+            # Only 10 elements are allowed in a context block at a given time
+            player_list = player_list[:9]
+        return sect_list + player_list
 
     def display_status(self) -> Optional[List[dict]]:
         """Displays status of the game"""

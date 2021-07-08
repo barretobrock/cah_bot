@@ -2,7 +2,8 @@ from typing import List
 from random import choice
 from easylogger import Log
 from slacktools import SecretStore, GSheetReader, SlackTools
-import cah.cards as cahds
+import cah.app as cah_app
+import cah.cards as cahhds
 from cah.model import Base, TableDecks, TableQuestionCards, TableAnswerCards, TablePlayers, TableGameSettings,\
     TablePlayerRounds, TableGames, TableGameRounds
 from cah.etl.etl_decks import deck_tables
@@ -60,7 +61,7 @@ class ETL:
             for question in questions:
                 if question == '':
                     continue
-                question_card = cahds.QuestionCard(txt=question, card_id=000)
+                question_card = cahhds.QuestionCard(txt=question, card_id=000)
                 self.session.add(
                     TableQuestionCards(deck_id=deck_item.id, responses_required=question_card.required_answers,
                                        card_text=question_card.txt))

@@ -6,9 +6,6 @@ from cah.settings import auto_config
 
 bot_name = auto_config.BOT_NICKNAME
 logg = Log(bot_name, log_to_file=True)
-# This is basically a session maker. We'll use it to ensure that sessions stay independent and short-lived
-#   while also not having them become an encumbrance to the state of the code
-Session = auto_config.SESSION
 
 credstore = SecretStore('secretprops-bobdev.kdbx')
 cah_creds = credstore.get_key_and_make_ns(bot_name)
@@ -21,8 +18,8 @@ def collect_outgoing(*args, **kwargs):
 
 
 logg.debug('Instantiating bot...')
-sesh = Session()
 Bot = cahapp.Bot
+sesh = cahapp.db.session
 # Patch outgoing messages while testing
 original_send = Bot.st.send_message
 Bot.st.send_message = collect_outgoing

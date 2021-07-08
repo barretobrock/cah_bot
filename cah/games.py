@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 from typing import List, Optional, Tuple, Union, Dict
 from datetime import datetime
-from random import shuffle
+from random import shuffle, choice
 import numpy as np
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, and_
 from sqlalchemy.orm.session import Session
 from slacktools import BlockKitBuilder as bkb
 from slack.errors import SlackApiError
@@ -29,13 +29,12 @@ class Game:
         self.st = cah_app.Bot.st
         self.log = Log(parent_log, child_name=self.__class__.__name__)
         self.log.debug('Building out new game...')
-        self.session = session    # type: Session
 
         # Database table links
         # Create a new game
         self.status = GameStatuses.initiated
         self.game_tbl = TableGames()  # type: TableGames
-        self.session.add(self.game_tbl)
+        cah_app.db.session.add(self.game_tbl)
 
         # Bring in the settings
         self.game_settings_tbl = session.query(TableGameSettings).one_or_none()
@@ -43,16 +42,16 @@ class Game:
             # No table found... make a new one
             self.log.debug('Game settings table not found. Making a new one.')
             self.game_settings_tbl = TableGameSettings()
-            self.session.add(self.game_settings_tbl)
-        self.session.commit()
+            cah_app.db.session.add(self.game_settings_tbl)
+        cah_app.db.session.commit()
         # This one will be set when new_round() is called
         self.gameround = None   # type: Optional[TableGameRounds]
 
-        self.players = Players(players, slack_api=self.st, parent_log=self.log, session=self.session)
+        self.players = Players(players, slack_api=self.st, parent_log=self.log)
         shuffle(self.players.player_list)
         self.judge_order = self.get_judge_order()
         _judge = self.players.player_list[0]
-        self.judge = Judge(_judge, session=self.session)    # type: Judge
+        self.judge = Judge(_judge)    # type: Judge
         self.prev_judge = None
         self.game_start_time = self.round_start_time = datetime.now()
 
@@ -94,8 +93,8 @@ class Game:
 
         self.round_start_time = datetime.now()
         self.gameround = TableGameRounds(game_id=self.game_tbl.id)
-        self.session.add(self.gameround)
-        self.session.commit()
+        cah_app.db.session.add(self.gameround)
+        cah_app.db.session.commit()
         lines = '=' * 32
         self.log.debug(f'\n{lines}\n\t\t\tROUND {len(self.game_tbl.rounds)} STARTED\n{lines}')
 
@@ -117,8 +116,8 @@ class Game:
             num_cards = self.prev_question_card.required_answers
         self.deal_cards(num_cards)
 
-        self.game_tbl = self.session.query(TableGames).get(self.game_tbl.id)
-        self.session.commit()
+        self.game_tbl = cah_app.db.session.query(TableGames).get(self.game_tbl.id)
+        cah_app.db.session.commit()
 
         self.status = GameStatuses.players_decision
 
@@ -138,7 +137,7 @@ class Game:
         # Update the previous round with an end time
         self.gameround.end_time = datetime.utcnow()
         self.status = GameStatuses.end_round
-        self.session.commit()
+        cah_app.db.session.commit()
 
     def end_game(self):
         """Ends the game"""
@@ -149,7 +148,7 @@ class Game:
         self.end_round()
         self.game_tbl.end_time = datetime.utcnow()
         self.status = GameStatuses.ended
-        self.session.commit()
+        cah_app.db.session.commit()
 
     def handle_render_hands(self):
         # Get the required number of answers for the current question
@@ -178,14 +177,14 @@ class Game:
             self.players.player_list[cur_judge_pos].player_round_table.is_judge = False
             next_judge_pos = 0 if cur_judge_pos == len(self.players.player_list) - 1 else cur_judge_pos + 1
             _judge = self.players.player_list[next_judge_pos]
-            self.judge = Judge(_judge, session=self.session)
+            self.judge = Judge(_judge)
         if self.judge.player_round_table is None:
             self.judge.player_round_table = TablePlayerRounds(player_id=self.judge.player_table.id,
                                                               game_id=self.game_tbl.id, round_id=self.gameround.id)
-        self.session.add(self.judge.player_round_table)
-        self.session.commit()
+        cah_app.db.session.add(self.judge.player_round_table)
+        cah_app.db.session.commit()
         self.judge.player_round_table.is_judge = True
-        self.session.commit()
+        cah_app.db.session.commit()
 
     def _deal_card(self):
         if len(self.deck.answers_card_list) == 0:
@@ -220,7 +219,7 @@ class Game:
     def get_current_scores(self) -> List[TablePlayers]:
         """Gets the current scores of the ongoing game"""
         self.log.debug('Retrieving current player scores from database')
-        return self.session.query(
+        return cah_app.db.session.query(
             TablePlayers.id,
             TablePlayers.name,
             func.sum(TablePlayerRounds.score).label('diddles')
@@ -240,13 +239,34 @@ class Game:
     def winner_selection(self) -> List[dict]:
         """Contains the logic that determines point distributions upon selection of a winner"""
         # Get the list of cards picked by each player
-        self.log.debug('Selecting winner')
+        self.log.debug(f'Selecting winner at index: {self.judge.pick_idx}')
         rps = self.round_picks
         winning_pick = rps[self.judge.pick_idx]
 
         # Winner selection
         winner = self.players.get_player(winning_pick.id.slack_id)
-        self.log.debug(f'Winner selected as {winner}')
+        winner_was_none = winner is None
+        if winner is None:
+            # Likely the player who won left the game. Add to their overall points
+            self.log.debug(f'The winner selected seems to have left the game. Spinning their object up to '
+                           f'grant their points.')
+            # Get the winner from the master list of the players
+            winner_tbl = cah_app.db.session.query(TablePlayers)\
+                .filter(TablePlayers.slack_id == winning_pick.id.slack_id).one_or_none()
+            # Load the winner object
+            winner = Player(winner_tbl.slack_id, display_name=winner_tbl.name)
+            # Attach the current round to the winner
+            winner.player_round_table = cah_app.db.session.query(TablePlayerRounds)\
+                .join(TablePlayers, TablePlayerRounds.player_id == TablePlayers.id)\
+                .filter(and_(
+                    TablePlayers.slack_id == winner_tbl.slack_id,
+                    TablePlayerRounds.game_id == self.game_tbl.id,
+                    TablePlayerRounds.round_id == self.gameround.id
+                )).one_or_none()
+            # Attaching winning pick to winner's hand
+            winner.hand.pick = winning_pick
+
+        self.log.debug(f'Winner selected as {winner.display_name}')
         # If decknuke occurred, distribute the points to others randomly
         if winner.player_round_table.is_nuked_hand:
             penalty = self.game_settings_tbl.decknuke_penalty
@@ -255,20 +275,25 @@ class Game:
             decknuke_txt = f'\n:impact::impact::impact::impact:LOLOLOLOLOL HOW DAT DECKNUKE WORK FOR YA NOW??\n' \
                            f'Your points were redistributed such: {point_receivers_txt}'
             winner.player_round_table.is_nuked_hand_caught = True
-            self.session.commit()
+            cah_app.db.session.commit()
         else:
             points_won = 1
             decknuke_txt = ''
 
+        # Mark card as chosen in db
+        self.log.debug('Marking chosen card(s) in db.')
+        winner.hand.mark_chosen_pick()
+
         winner.add_points(points_won)
-        self.players._update_player(winner)
+        if not winner_was_none:
+            self.players._update_player(winner)
         winner_details = winner.player_tag if self.game_settings_tbl.is_ping_winner \
             else f'*`{winner.display_name.title()}`*'
         winner_txt_blob = [
             f":regional_indicator_q: *{self.current_question_card.txt}*",
             f":tada:Winning card: {winner.hand.pick.render_pick_list_as_str()}",
             f"*`{points_won:+}`* :diddlecoin: to {winner_details}! "
-            f"New score: *`{winner.get_current_score()}`* :diddlecoin: "
+            f"New score: *`{winner.get_current_score(game_id=self.game_tbl.id)}`* :diddlecoin: "
             f"({winner.player_table.total_score} total){decknuke_txt}\n"
         ]
         last_section = [
@@ -290,13 +315,14 @@ class Game:
         point_receivers = {}  # Store 'name' (of player) and 'points' (distributed)
         # Determine the eligible receivers of the extra points
         nonjudge_players = [x for x in self.players.player_list if x.player_id != self.judge.player_id]
-        player_points_list = [x.get_current_score() for x in nonjudge_players]
+        player_points_list = [x.get_current_score(game_id=self.game_tbl.id) for x in nonjudge_players]
         eligible_receivers = [x for x in nonjudge_players]
         # Some people have earned points already. Make sure those with the highest points aren't eligible
         max_points = max(player_points_list)
         min_points = min(player_points_list)
         if max_points - min_points > 3:
-            eligible_receivers = [x for x in nonjudge_players if x.get_current_score() < max_points]
+            eligible_receivers = [x for x in nonjudge_players
+                                  if x.get_current_score(game_id=self.game_tbl.id) < max_points]
         for pt in range(0, penalty * -1):
             if len(eligible_receivers) > 1:
                 player = list(np.random.choice(eligible_receivers, 1))[0]
@@ -372,13 +398,13 @@ class Game:
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
         self.log.debug('Toggling judge pinging')
         self.game_settings_tbl.is_ping_judge = not self.game_settings_tbl.is_ping_winner
-        self.session.commit()
+        cah_app.db.session.commit()
 
     def toggle_winner_ping(self):
         """Toggles whether or not to ping the winner when they've won a round"""
         self.log.debug('Toggling winner pinging')
         self.game_settings_tbl.is_ping_winner = not self.game_settings_tbl.is_ping_winner
-        self.session.commit()
+        cah_app.db.session.commit()
 
     def process_picks(self, user: str, message: str) -> Optional:
         """Processes the card selection made by the user"""
@@ -591,18 +617,38 @@ class Game:
         """Generates the question block for the current round"""
         # Determine honorific for judge
         self.log.debug('Determining honorific for judge...')
-        honorifics = [
-            'lackey', 'intern', 'young padawan', 'master apprentice', 'honorable', 'respected and just',
-            'cold and yet still fair', 'worthy inheriter of daddy\'s millions', 'mother of dragons', 'excellent',
-            'elder', 'ruler of the lower cards', 'most fair dictator of difficult choices',
-            'benevolent and omniscient chief of dutiful diddling', 'supreme high chancellor of card justice'
-        ]
-        judge_pts = self.judge.get_current_score()
+        # Honorifics will be chosen based on which range of points the judge falls into
+        honorifics = {
+            range(-200, -6): ['loser', 'toady', 'weak', 'despised', 'defeated', 'under-under-underdog'],
+            range(-6, -3): ['concerned', 'bestumbled', 'under-underdog'],
+            range(-3, 0): ['temporarily disposed', 'momentarily disheveled', 'underdog'],
+            range(0, 3): ['lackey', 'intern', 'doormat', 'underling', 'deputy', 'amateur', 'newcomer'],
+            range(3, 6): ['young padawan', 'master apprentice', 'rookie', 'greenhorn', 'fledgling', 'tenderfoot'],
+            range(6, 9): ['honorable', 'respected and just', 'cold and yet still fair'],
+            range(9, 12): ['worthy inheriter of (mo|da)ddy\'s millions', '(mo|fa)ther of dragons',
+                           'most excellent', 'knowledgeable', 'wise'],
+            range(12, 15): ['elder', 'ruler of the lower cards', 'most fair dictator of difficult choices'],
+            range(15, 18): ['benevolent and omniscient chief of dutiful diddling', 'supreme high chancellor of '],
+            range(18, 21): ['almighty veteran diddler', 'ancient diddle dealer from before time began',
+                            'sage of the diddles'],
+            range(21, 500): ['bediddled', 'grand bediddler', 'most wise in the ways of the diddling',
+                             'pansophical bediddled sage of the dark cards']
+        }
+
+        judge_pts = self.judge.get_current_score(game_id=self.game_tbl.id)
         judge_pts = judge_pts if judge_pts is not None else 0
-        honorific = f'the {honorifics[-1] if judge_pts > len(honorifics) - 1 else honorifics[judge_pts]}'
+        # Determine the subset of honorifics to use
+        honorific_list = honorifics[range(0, 3)]
+        for k, v in honorifics.items():
+            if judge_pts in k:
+                honorific_list = v
+                break
+
+        honorific = f'the {choice(honorific_list)}'
+
         # Assign this to the judge so we can refer to it in other areas.
         self.judge.player_table.honorific = honorific.title()
-        self.session.commit()
+        cah_app.db.session.commit()
         bot_moji = ':math:' if self.judge.player_table.is_auto_randchoose else ''
 
         return [

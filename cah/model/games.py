@@ -60,6 +60,8 @@ class TablePlayerRounds(Base):
     score = Column(Integer, default=0, nullable=False)
     is_picked = Column(Boolean, default=False, nullable=False)
     is_judge = Column(Boolean, default=False, nullable=False)
+    is_arp = Column(Boolean, default=False, nullable=False)
+    is_arc = Column(Boolean, default=False, nullable=False)
     is_nuked_hand = Column(Boolean, default=False, nullable=False)
     is_nuked_hand_caught = Column(Boolean, default=False, nullable=False)
 

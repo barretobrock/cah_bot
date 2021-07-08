@@ -1,5 +1,6 @@
 easylogger
 Flask>=1.1.2
+Flask-SQLAlchemy
 requests>=2.23.0
 numpy
 pandas

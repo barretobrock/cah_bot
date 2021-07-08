@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from typing import List, Optional, Union, Dict
-from sqlalchemy.orm import Session
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, and_
 from easylogger import Log
 from slacktools import SlackTools
+import cah.app as cah_app
 import cah.cards as cahds
 from .model import TablePlayers, TablePlayerRounds
 from .settings import auto_config
@@ -13,83 +13,87 @@ from .settings import auto_config
 class Player:
     """Player-specific things"""
 
-    def __init__(self, player_id: str, display_name: str, session: Session, avi_url: str = ''):
+    def __init__(self, player_id: str, display_name: str, avi_url: str = ''):
         self.player_id = player_id
         self.player_tag = f'<@{self.player_id}>'
         self.display_name = display_name
         self.avi_url = avi_url
-        self.session = session
 
-        self.player_table = self.session.query(TablePlayers)\
+        self.player_table = cah_app.db.session.query(TablePlayers)\
             .filter_by(slack_id=self.player_id).one_or_none()   # type: TablePlayers
         if self.player_table is None:
             # Add player to table
-            self.player_table = self.session.add(TablePlayers(slack_id=self.player_id, name=self.display_name))
+            self.player_table = cah_app.db.session.add(TablePlayers(slack_id=self.player_id, name=self.display_name))
         # Check if display name is the same as in the table. If not, change the name in the table
         if self.display_name != self.player_table.name:
             self.player_table.name = self.display_name
-        self.session.commit()
+        cah_app.db.session.commit()
 
         # For tracking rounds that the player plays. This will be None until the player is loaded into a game
         self.player_round_table = None  # type: Optional[TablePlayerRounds]
 
         self.pick_blocks = {}   # Provides a means for us to update a block kit ui upon a successful pick
-        self.hand = cahds.Hand(owner=self.player_table, session=self.session)
+        self.hand = cahds.Hand(owner=self.player_table)
 
     def start_round(self, game_id: int, round_id: int):
         """Begins a new round"""
         self.hand.pick.clear_picks()
         self.player_round_table = TablePlayerRounds(player_id=self.player_table.id, game_id=game_id,
                                                     round_id=round_id)
-        self.session.add(self.player_round_table)
-        self.session.commit()
+        self.player_round_table.is_arp = self.player_table.is_auto_randpick
+        self.player_round_table.is_arc = self.player_table.is_auto_randchoose
+        cah_app.db.session.add(self.player_round_table)
+        cah_app.db.session.commit()
 
     def toggle_cards_dm(self):
         """Toggles whether or not to DM cards to player"""
         self.player_table.is_dm_cards = not self.player_table.is_dm_cards
-        self.session.add(self.player_table)
-        self.session.commit()
+        cah_app.db.session.add(self.player_table)
+        cah_app.db.session.commit()
 
     def toggle_arp(self):
         """Toggles auto randpick"""
         self.player_table.is_auto_randpick = not self.player_table.is_auto_randpick
-        self.session.add(self.player_table)
-        self.session.commit()
+        if self.player_round_table is not None:
+            self.player_round_table.is_arp = self.player_table.is_auto_randpick
+        # cah_app.db.session.add_all([self.player_table, self.player_round_table])
+        cah_app.db.session.commit()
 
     def toggle_arc(self):
         """Toggles auto randpick"""
         self.player_table.is_auto_randchoose = not self.player_table.is_auto_randchoose
-        self.session.add(self.player_table)
-        self.session.commit()
+        if self.player_round_table is not None:
+            self.player_round_table.is_arc = self.player_table.is_auto_randchoose
+        # cah_app.db.session.add_all([self.player_table, self.player_round_table])
+        cah_app.db.session.commit()
 
     def add_points(self, points: int):
         """Adds points to the player's score"""
         self.player_round_table.score += points
-        self.session.add(self.player_table)
-        self.session.commit()
+        cah_app.db.session.commit()
 
-    def get_current_score(self):
+    def get_current_score(self, game_id: int):
         """Retrieves the players current score"""
-        return self.session.query(func.sum(TablePlayerRounds.score))\
-            .filter(TablePlayerRounds.player_id == self.player_table.id).scalar()
+        return cah_app.db.session.query(func.sum(TablePlayerRounds.score))\
+            .filter(and_(
+                TablePlayerRounds.player_id == self.player_table.id,
+                TablePlayerRounds.game_id == game_id
+            )).scalar()
 
 
 class Players:
     """Methods for handling all players"""
-    def __init__(self, player_id_list: List[str], slack_api: SlackTools, parent_log: Log, session: Session,
-                 is_global: bool = False):
+    def __init__(self, player_id_list: List[str], slack_api: SlackTools, parent_log: Log, is_global: bool = False):
         """
         Args:
             player_id_list: list of player slack ids
             slack_api: slack api to send messages to the channel
             parent_log: log object to record important details
-            session: sqlalchemy session to communicate with the database
             is_global: if True, players will be built according to active workspace members,
                 not necessarily only channel members
         """
         self.log = Log(parent_log, child_name=self.__class__.__name__)
         self.st = slack_api
-        self.session = session
         self.is_global = is_global
         self.player_list = self._build_players(player_id_list=player_id_list)
 
@@ -101,13 +105,13 @@ class Players:
         """Checks whether player exists in the player table and, if not, will add them to the table"""
         # Check if player table exists
         self.log.debug('Checking for player\'s existence in table')
-        player_table = self.session.query(TablePlayers).filter_by(slack_id=user_id).one_or_none()
+        player_table = cah_app.db.session.query(TablePlayers).filter_by(slack_id=user_id).one_or_none()
 
         if player_table is None:
             # Add missing player to
             self.log.debug(f'Player {display_name} was not found in the players table. Adding...')
-            self.session.add(TablePlayers(slack_id=user_id, name=display_name))
-        self.session.commit()
+            cah_app.db.session.add(TablePlayers(slack_id=user_id, name=display_name))
+        cah_app.db.session.commit()
 
     def _build_players(self, player_id_list: List[str]) -> List[Player]:
         """Builds out the list of players - Typically used when a new game is started"""
@@ -121,7 +125,7 @@ class Players:
                 dis_name = self._extract_name(user_info_dict=user)
                 # Make sure player is in table
                 self._check_player_existence_in_table(user_id=uid, display_name=dis_name)
-                players.append(Player(uid, display_name=dis_name, session=self.session, avi_url=user['avi32']))
+                players.append(Player(uid, display_name=dis_name, avi_url=user['avi32']))
         if not self.is_global:
             # Building players specifically for a game, so determine if we included people
             #   that aren't currently members
@@ -206,7 +210,7 @@ class Players:
         player = self.get_player(player_id)
         if player is not None:
             return f'*`{dis_name}`* already in game...'
-        player = Player(player_id, display_name=dis_name, session=self.session, avi_url=user_info['avi32'])
+        player = Player(player_id, display_name=dis_name, avi_url=user_info['avi32'])
         player.start_round(game_id=game_id, round_id=round_id)
         self.player_list.append(player)
         self.log.debug(f'Player with name "{dis_name}" added to game...')
@@ -267,14 +271,14 @@ class Players:
         self.log.debug('Processing player decknuke')
         player_obj.hand.burn_cards()
         player_obj.player_round_table.is_nuked_hand = True
-        self.session.add(player_obj.player_round_table)
-        self.session.commit()
+        cah_app.db.session.add(player_obj.player_round_table)
+        cah_app.db.session.commit()
         self._update_player(player_obj)
 
 
 class Judge(Player):
     """Player who chooses winning card"""
-    def __init__(self, player_obj: Player, session: Session):
-        super().__init__(player_obj.player_id, display_name=player_obj.display_name, session=session)
+    def __init__(self, player_obj: Player):
+        super().__init__(player_obj.player_id, display_name=player_obj.display_name)
         self.pick_idx = None    # type: Optional[int]
         self.player_round_table = player_obj.player_round_table

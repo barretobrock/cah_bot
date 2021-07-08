@@ -1,4 +1,3 @@
-from random import choice
 from typing import List, Dict
 from sqlalchemy.orm import Session
 from slacktools import BlockKitBuilder as bkb, SlackTools
@@ -12,17 +11,16 @@ class Forms:
     @classmethod
     def build_main_menu(cls, game_obj: Game, slack_api: SlackTools, user: str, channel: str):
         """Generates and sends a main menu"""
-        links = [
-            'https://picard.ytmnd.com/',
-            'https://darthno.ytmnd.com/',
-            'https://christmaschebacca.ytmnd.com/',
-            'https://leekspin.ytmnd.com/'
-        ]
-        button_list = [
+        button_list = []
+        if game_obj is None:
+            # No game started, put the new game button at the beginning.
+            button_list.append(
+                bkb.make_action_button('New Game', value='newgame', action_id='new-game-start', danger_style=False)
+            )
+        button_list += [
             bkb.make_action_button('Status', value='status', action_id='status'),
             bkb.make_action_button('Scores', value='score', action_id='score'),
             bkb.make_action_button('My Settings', value='my-settings', action_id='my-settings'),
-            bkb.make_action_button('New Game', value='newgame', action_id='new-game-start', danger_style=False),
             bkb.make_action_button('Add', value='add-player', action_id='add-player'),
             bkb.make_action_button('Kick', value='remove-player', action_id='remove-player'),
         ]
