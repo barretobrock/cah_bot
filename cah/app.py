@@ -41,8 +41,8 @@ signal.signal(signal.SIGTERM, Bot.cleanup)
 @app.teardown_request
 def teardown_request(exception=None):
     # Tell app to rollback automatically if a session exception is encountered
-    logg.error('Exception occurred. Rolling back session')
     if exception is not None:
+        logg.error(f'Exception occurred. Rolling back session: {exception}')
         db.session.rollback()
     db.session.remove()
 
