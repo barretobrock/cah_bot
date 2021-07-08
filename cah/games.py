@@ -5,7 +5,6 @@ from datetime import datetime
 from random import shuffle, choice
 import numpy as np
 from sqlalchemy.sql import func, and_
-from sqlalchemy.orm.session import Session
 from slacktools import BlockKitBuilder as bkb
 from slack.errors import SlackApiError
 from easylogger import Log
@@ -25,7 +24,7 @@ DECK_SIZE = 5
 
 class Game:
     """Holds data for current game"""
-    def __init__(self, players: List[str], deck: 'Deck', parent_log: Log, session: Session):
+    def __init__(self, players: List[str], deck: 'Deck', parent_log: Log):
         self.st = cah_app.Bot.st
         self.log = Log(parent_log, child_name=self.__class__.__name__)
         self.log.debug('Building out new game...')
@@ -37,7 +36,7 @@ class Game:
         cah_app.db.session.add(self.game_tbl)
 
         # Bring in the settings
-        self.game_settings_tbl = session.query(TableGameSettings).one_or_none()
+        self.game_settings_tbl = cah_app.db.session.query(TableGameSettings).one_or_none()
         if self.game_settings_tbl is None:
             # No table found... make a new one
             self.log.debug('Game settings table not found. Making a new one.')

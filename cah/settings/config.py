@@ -1,7 +1,7 @@
 """Configuration setup"""
 import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import sessionmaker
 from cah._version import get_versions
 from cah.model import Base
 

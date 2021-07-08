@@ -23,7 +23,8 @@ class Player:
             .filter_by(slack_id=self.player_id).one_or_none()   # type: TablePlayers
         if self.player_table is None:
             # Add player to table
-            self.player_table = cah_app.db.session.add(TablePlayers(slack_id=self.player_id, name=self.display_name))
+            self.player_table = cah_app.db.session.add(
+                TablePlayers(slack_id=self.player_id, name=self.display_name))
         # Check if display name is the same as in the table. If not, change the name in the table
         if self.display_name != self.player_table.name:
             self.player_table.name = self.display_name
@@ -56,7 +57,6 @@ class Player:
         self.player_table.is_auto_randpick = not self.player_table.is_auto_randpick
         if self.player_round_table is not None:
             self.player_round_table.is_arp = self.player_table.is_auto_randpick
-        # cah_app.db.session.add_all([self.player_table, self.player_round_table])
         cah_app.db.session.commit()
 
     def toggle_arc(self):
@@ -64,7 +64,6 @@ class Player:
         self.player_table.is_auto_randchoose = not self.player_table.is_auto_randchoose
         if self.player_round_table is not None:
             self.player_round_table.is_arc = self.player_table.is_auto_randchoose
-        # cah_app.db.session.add_all([self.player_table, self.player_round_table])
         cah_app.db.session.commit()
 
     def add_points(self, points: int):

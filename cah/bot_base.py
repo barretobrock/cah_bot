@@ -383,7 +383,7 @@ class CAHBot:
         deck = self._read_in_cards(deck)
 
         # Load the game, add players, shuffle the players
-        self.game = cah_game.Game(player_ids, deck, parent_log=self.log, session=cah_app.db.session)
+        self.game = cah_game.Game(player_ids, deck, parent_log=self.log)
         # Get order of judges
         response_list.append(self.game.judge_order)
         # Kick off the new round, message details to the group
@@ -717,8 +717,6 @@ class CAHBot:
             status_section = f'*Status*: *`{self.game.status.name.replace("_", " ").title()}`*\n' \
                              f'*Judge Ping*: `{self.game.game_settings_tbl.is_ping_judge}`\t\t' \
                              f'*Weiner Ping*: `{self.game.game_settings_tbl.is_ping_winner}`\n'
-            # player_section = f'\t:orange_check: *ARP*: {arp_players}' \
-            #                  f'\n\t:orange_check: *ARC*: {arc_players}'
             game_section = f':stopwatch: *Round `{len(self.game.game_tbl.rounds)}`*: ' \
                            f'{self.st.get_time_elapsed(self.game.round_start_time)}\t\t' \
                            f'*Game*: {self.st.get_time_elapsed(self.game.game_start_time)}\n' \
