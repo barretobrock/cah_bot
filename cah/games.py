@@ -41,7 +41,7 @@ class Game:
             # No table found... make a new one
             self.log.debug('Game settings table not found. Making a new one.')
             self.game_settings_tbl = TableGameSettings()
-            cah_app.db.session.add(self.game_settings_tbl)
+        cah_app.db.session.add(self.game_settings_tbl)
         cah_app.db.session.commit()
         # This one will be set when new_round() is called
         self.gameround = None   # type: Optional[TableGameRounds]

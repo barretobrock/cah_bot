@@ -213,7 +213,8 @@ class CAHBot:
         cah_app.db.session.commit()
         self.game = None        # type: Optional[cah_game.Game]
 
-        self.st.message_test_channel(blocks=self.get_bootup_msg())
+        if not auto_config.DEBUG:
+            self.st.message_test_channel(blocks=self.get_bootup_msg())
 
         # Store for state across UI responses (thanks Slack for not supporting multi-user selects!)
         self.state_store = {}
