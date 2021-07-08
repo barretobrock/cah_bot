@@ -14,7 +14,6 @@ from .settings import auto_config
 #  - split out the main menu into general and in-game commands
 #       - in-game commands given priority when a game is active, otherwise general commands are priority.
 #           (this will require adding an overflow element to the menu)
-#  - add in-game button to ping all players who haven't yet picked
 
 
 bot_name = auto_config.BOT_NICKNAME

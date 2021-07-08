@@ -20,6 +20,7 @@ class Forms:
         button_list += [
             bkb.make_action_button('Status', value='status', action_id='status'),
             bkb.make_action_button('Scores', value='score', action_id='score'),
+            bkb.make_action_button('Ping', value='ping', action_id='ping'),
             bkb.make_action_button('My Settings', value='my-settings', action_id='my-settings'),
             bkb.make_action_button('Add', value='add-player', action_id='add-player'),
             bkb.make_action_button('Kick', value='remove-player', action_id='remove-player'),

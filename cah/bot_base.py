@@ -355,6 +355,14 @@ class CAHBot:
             score_block = self.display_points()
             if score_block is not None:
                 self.st.send_message(channel=channel, message='Scores', blocks=score_block)
+        elif action_id == 'ping':
+            if self.game is not None:
+                if self.game.status == cah_game.GameStatuses.players_decision:
+                    return self.ping_players_left_to_pick()
+                elif self.game.status == cah_game.GameStatuses.judge_decision:
+                    return f'Hey <@{self.game.judge.player_id}> time to do your doodie'
+                else:
+                    return 'Wrong status for a ping, bucko.'
         elif action_id == 'end-game':
             self.end_game()
         else:
@@ -665,7 +673,7 @@ class CAHBot:
             bkb.make_block_section(scores_list)
         ]
 
-    def ping_players_left_to_pick(self):
+    def ping_players_left_to_pick(self) -> str:
         """Generates a string to tag any players that have yet to pick"""
         if self.game is None:
             return 'I can\'t really do this outside of a game WHAT DO YOU WANT FROM ME?!?!?!?!??!'
