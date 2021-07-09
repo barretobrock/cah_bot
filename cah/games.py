@@ -32,15 +32,17 @@ class Game:
         # Database table links
         # Create a new game
         self.status = GameStatuses.initiated
-        self.game_tbl = TableGames()  # type: TableGames
-        cah_app.db.session.add(self.game_tbl)
+        game_tbl = TableGames()  # type: TableGames
+        cah_app.db.session.add(game_tbl)
+        cah_app.db.session.commit()
+        self.game_id = game_tbl.id
 
         game_settings_tbl = self._get_game_settings_tbl()
         self._is_ping_judge = game_settings_tbl.is_ping_judge
         self._is_ping_winner = game_settings_tbl.is_ping_winner
         self._decknuke_penalty = game_settings_tbl.decknuke_penalty
         # This one will be set when new_round() is called
-        self.gameround = None   # type: Optional[TableGameRounds]
+        self.gameround_id = None
 
         self.players = Players(players, slack_api=self.st, parent_log=self.log)
         shuffle(self.players.player_list)
@@ -92,6 +94,12 @@ class Game:
         tbl.is_ping_winner = self._is_ping_winner
         cah_app.db.session.commit()
 
+    @property
+    def round_number(self) -> int:
+        """Retrieves the round number from the db"""
+        game_tbl = self._get_game_tbl()
+        return len(game_tbl.rounds)
+
     def _get_game_settings_tbl(self) -> TableGameSettings:
         """Attempts to retrieve the gamesettings tbl. If it doesn't exist, will make a new one and commit it"""
         # Bring in the settings
@@ -101,6 +109,19 @@ class Game:
             self.log.debug('Game settings table not found. Making a new one.')
             game_settings_tbl = TableGameSettings()
         return game_settings_tbl
+
+    def _get_game_tbl(self) -> TableGames:
+        """Attempts to retrieve the game tbl."""
+        game_tbl = cah_app.db.session.query(TableGames).filter(TableGames.id == self.game_id).one_or_none()
+        return game_tbl
+
+    def _get_gameround_tbl(self) -> TableGameRounds:
+        """Attempts to retrieve the game tbl."""
+        gameround_tbl = cah_app.db.session.query(TableGames).filter(and_(
+            TableGames.id == self.game_id,
+            TableGameRounds.id == self.gameround_id
+        )).one_or_none()
+        return gameround_tbl
 
     def get_judge_order(self) -> str:
         """Determines order of judges """
@@ -117,7 +138,7 @@ class Game:
             raise ValueError(f'Cannot transition to new round due to current status '
                              f'(`{self.status.name}`)')
 
-        if self.gameround is not None:
+        if self.round_number > 0:
             # Not the first round...
             self.end_round()
 
@@ -131,31 +152,32 @@ class Game:
             notification_block = []
 
         self.round_start_time = datetime.now()
-        self.gameround = TableGameRounds(game_id=self.game_tbl.id)
-        cah_app.db.session.add(self.gameround)
+        gameround = TableGameRounds(game_id=self.game_id)
+        cah_app.db.session.add(gameround)
         cah_app.db.session.commit()
+        self.gameround_id = gameround.id
+        round_number = self.round_number
+
         lines = '=' * 32
-        self.log.debug(f'\n{lines}\n\t\t\tROUND {len(self.game_tbl.rounds)} STARTED\n{lines}')
+        self.log.debug(f'\n{lines}\n\t\t\tROUND {round_number} STARTED\n{lines}')
 
         # Reset the round timestamp (used to keep track of the main round message in channel)
         self.round_ts = None
 
         # Prep player list for new round
-        self.players.new_round(game_id=self.game_tbl.id, round_id=self.gameround.id)
+        self.players.new_round(game_id=self.game_id, round_id=self.gameround_id)
 
         # Get new judge if not the first round. Mark judge as such in the db
-        self.get_next_judge(n_round=len(self.game_tbl.rounds))
+        self.get_next_judge(n_round=round_number)
 
         # Determine number of cards to deal to each player & deal
         # either full deck or replacement cards for previous question
-        if len(self.game_tbl.rounds) == 1:
+        if self.round_number == 1:
             num_cards = DECK_SIZE
         else:
             self.prev_question_card = self.current_question_card
             num_cards = self.prev_question_card.required_answers
         self.deal_cards(num_cards)
-
-        self.game_tbl = cah_app.db.session.query(TableGames).get(self.game_tbl.id)
         cah_app.db.session.commit()
 
         self.status = GameStatuses.players_decision
@@ -174,7 +196,8 @@ class Game:
         """Procedures for ending the round"""
         self.log.debug('Ending round.')
         # Update the previous round with an end time
-        self.gameround.end_time = datetime.utcnow()
+        gameround = self._get_gameround_tbl()
+        gameround.end_time = datetime.utcnow()
         self.status = GameStatuses.end_round
         cah_app.db.session.commit()
 
@@ -185,7 +208,8 @@ class Game:
             # Avoid starting a new round when one has already been started
             raise ValueError(f'No active game to end - status: (`{self.status.name}`)')
         self.end_round()
-        self.game_tbl.end_time = datetime.utcnow()
+        game_tbl = self._get_game_tbl()
+        game_tbl.end_time = datetime.utcnow()
         self.status = GameStatuses.ended
         cah_app.db.session.commit()
 
@@ -219,7 +243,7 @@ class Game:
             self.judge = Judge(_judge)
         if self.judge.player_round_table is None:
             self.judge.player_round_table = TablePlayerRounds(player_id=self.judge.player_table.id,
-                                                              game_id=self.game_tbl.id, round_id=self.gameround.id)
+                                                              game_id=self.game_id, round_id=self.gameround_id)
         cah_app.db.session.add(self.judge.player_round_table)
         cah_app.db.session.commit()
         self.judge.player_round_table.is_judge = True
@@ -233,7 +257,7 @@ class Game:
     def deal_cards(self, num_cards: int):
         """Deals cards out to players by indicating the number of cards to give out"""
         for player in self.players.player_list:
-            if len(self.game_tbl.rounds) > 1 and self.judge.player_id == player.player_id:
+            if self.round_number > 1 and self.judge.player_id == player.player_id:
                 # Skip judge if dealing after first round
                 continue
             card_list = [self._deal_card() for i in range(num_cards)]
@@ -263,7 +287,7 @@ class Game:
             TablePlayers.name,
             func.sum(TablePlayerRounds.score).label('diddles')
         ).join(TablePlayers, TablePlayerRounds.player_id == TablePlayers.id) \
-            .filter(TablePlayerRounds.game_id == self.game_tbl.id) \
+            .filter(TablePlayerRounds.game_id == self.game_id) \
             .group_by(TablePlayers.id).all()
 
     def round_wrap_up(self):
@@ -299,8 +323,8 @@ class Game:
                 .join(TablePlayers, TablePlayerRounds.player_id == TablePlayers.id)\
                 .filter(and_(
                     TablePlayers.slack_id == winner_tbl.slack_id,
-                    TablePlayerRounds.game_id == self.game_tbl.id,
-                    TablePlayerRounds.round_id == self.gameround.id
+                    TablePlayerRounds.game_id == self.game_id,
+                    TablePlayerRounds.round_id == self.gameround_id
                 )).one_or_none()
             # Attaching winning pick to winner's hand
             winner.hand.pick = winning_pick
@@ -331,7 +355,7 @@ class Game:
             f":regional_indicator_q: *{self.current_question_card.txt}*",
             f":tada:Winning card: {winner.hand.pick.render_pick_list_as_str()}",
             f"*`{points_won:+}`* :diddlecoin: to {winner_details}! "
-            f"New score: *`{winner.get_current_score(game_id=self.game_tbl.id)}`* :diddlecoin: "
+            f"New score: *`{winner.get_current_score(game_id=self.game_id)}`* :diddlecoin: "
             f"({winner.player_table.total_score} total){decknuke_txt}\n"
         ]
         last_section = [
@@ -353,14 +377,14 @@ class Game:
         point_receivers = {}  # Store 'name' (of player) and 'points' (distributed)
         # Determine the eligible receivers of the extra points
         nonjudge_players = [x for x in self.players.player_list if x.player_id != self.judge.player_id]
-        player_points_list = [x.get_current_score(game_id=self.game_tbl.id) for x in nonjudge_players]
+        player_points_list = [x.get_current_score(game_id=self.game_id) for x in nonjudge_players]
         eligible_receivers = [x for x in nonjudge_players]
         # Some people have earned points already. Make sure those with the highest points aren't eligible
         max_points = max(player_points_list)
         min_points = min(player_points_list)
         if max_points - min_points > 3:
             eligible_receivers = [x for x in nonjudge_players
-                                  if x.get_current_score(game_id=self.game_tbl.id) < max_points]
+                                  if x.get_current_score(game_id=self.game_id) < max_points]
         for pt in range(0, penalty * -1):
             if len(eligible_receivers) > 1:
                 player = list(np.random.choice(eligible_receivers, 1))[0]
@@ -671,7 +695,7 @@ class Game:
                              'pansophical bediddled sage of the dark cards']
         }
 
-        judge_pts = self.judge.get_current_score(game_id=self.game_tbl.id)
+        judge_pts = self.judge.get_current_score(game_id=self.game_id)
         judge_pts = judge_pts if judge_pts is not None else 0
         # Determine the subset of honorifics to use
         honorific_list = honorifics[range(0, 3)]
@@ -689,7 +713,7 @@ class Game:
 
         return [
             bkb.make_block_section(
-                f'Round *`{len(self.game_tbl.rounds)}`* - *{self.judge.player_table.honorific} '
+                f'Round *`{self.round_number}`* - *{self.judge.player_table.honorific} '
                 f'Judge {self.judge.display_name.title()}* {bot_moji} presiding.'
             ),
             bkb.make_block_section(
