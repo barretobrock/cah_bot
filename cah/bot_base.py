@@ -429,7 +429,7 @@ class CAHBot:
             new_val = self.global_game_settings_tbl.is_ping_judge
         else:
             self.game.toggle_judge_ping()
-            new_val = self.game.game_settings_tbl.is_ping_judge
+            new_val = self.game.is_ping_judge
         self.st.message_test_channel(f'Judge pinging set to: `{new_val}`')
 
     def toggle_winner_ping(self):
@@ -441,7 +441,7 @@ class CAHBot:
             new_val = self.global_game_settings_tbl.is_ping_winner
         else:
             self.game.toggle_winner_ping()
-            new_val = self.game.game_settings_tbl.is_ping_winner
+            new_val = self.game.is_ping_winner
         self.st.message_test_channel(f'Weiner pinging set to: `{new_val}`')
 
     def toggle_auto_pick_or_choose(self, user_id: str, channel: str, message: str, pick_or_choose: str) -> str:
@@ -724,8 +724,8 @@ class CAHBot:
                 self.game.players.get_players_with_arc(name_only=False), ':orange_check: *ARC*: ')
 
             status_section = f'*Status*: *`{self.game.status.name.replace("_", " ").title()}`*\n' \
-                             f'*Judge Ping*: `{self.game.game_settings_tbl.is_ping_judge}`\t\t' \
-                             f'*Weiner Ping*: `{self.game.game_settings_tbl.is_ping_winner}`\n'
+                             f'*Judge Ping*: `{self.game.is_ping_judge}`\t\t' \
+                             f'*Weiner Ping*: `{self.game.is_ping_winner}`\n'
             game_section = f':stopwatch: *Round `{len(self.game.game_tbl.rounds)}`*: ' \
                            f'{self.st.get_time_elapsed(self.game.round_start_time)}\t\t' \
                            f'*Game*: {self.st.get_time_elapsed(self.game.game_start_time)}\n' \

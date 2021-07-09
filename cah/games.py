@@ -35,14 +35,10 @@ class Game:
         self.game_tbl = TableGames()  # type: TableGames
         cah_app.db.session.add(self.game_tbl)
 
-        # Bring in the settings
-        self.game_settings_tbl = cah_app.db.session.query(TableGameSettings).one_or_none()
-        if self.game_settings_tbl is None:
-            # No table found... make a new one
-            self.log.debug('Game settings table not found. Making a new one.')
-            self.game_settings_tbl = TableGameSettings()
-        cah_app.db.session.add(self.game_settings_tbl)
-        cah_app.db.session.commit()
+        game_settings_tbl = self._get_game_settings_tbl()
+        self._is_ping_judge = game_settings_tbl.is_ping_judge
+        self._is_ping_winner = game_settings_tbl.is_ping_winner
+        self._decknuke_penalty = game_settings_tbl.decknuke_penalty
         # This one will be set when new_round() is called
         self.gameround = None   # type: Optional[TableGameRounds]
 
@@ -63,9 +59,53 @@ class Game:
 
         self.deck.shuffle_deck()
 
+    @property
+    def is_ping_judge(self):
+        return self._is_ping_judge
+
+    @is_ping_judge.setter
+    def is_ping_judge(self, value):
+        self._is_ping_judge = value
+        tbl = self._get_game_settings_tbl()
+        tbl.is_ping_judge = self._is_ping_judge
+        cah_app.db.session.commit()
+
+    @property
+    def decknuke_penalty(self):
+        return self._decknuke_penalty
+
+    @decknuke_penalty.setter
+    def decknuke_penalty(self, value):
+        self._decknuke_penalty = value
+        tbl = self._get_game_settings_tbl()
+        tbl.decknuke_penalty = self._decknuke_penalty
+        cah_app.db.session.commit()
+
+    @property
+    def is_ping_winner(self):
+        return self._is_ping_winner
+
+    @is_ping_winner.setter
+    def is_ping_winner(self, value):
+        self._is_ping_winner = value
+        tbl = self._get_game_settings_tbl()
+        tbl.is_ping_winner = self._is_ping_winner
+        cah_app.db.session.commit()
+
+    def _get_game_settings_tbl(self) -> TableGameSettings:
+        """Attempts to retrieve the gamesettings tbl. If it doesn't exist, will make a new one and commit it"""
+        # Bring in the settings
+        game_settings_tbl = cah_app.db.session.query(TableGameSettings).one_or_none()
+        if game_settings_tbl is None:
+            # No table found... make a new one
+            self.log.debug('Game settings table not found. Making a new one.')
+            game_settings_tbl = TableGameSettings()
+        return game_settings_tbl
+
     def get_judge_order(self) -> str:
         """Determines order of judges """
-        order_divider = self.game_settings_tbl.judge_order_divider
+        game_settings_tbl = self._get_game_settings_tbl()
+        order_divider = game_settings_tbl.judge_order_divider
         order = f' {order_divider} '.join(self.players.get_player_names(monospace=True))
         return f'Judge order: {order}'
 
@@ -268,7 +308,7 @@ class Game:
         self.log.debug(f'Winner selected as {winner.display_name}')
         # If decknuke occurred, distribute the points to others randomly
         if winner.player_round_table.is_nuked_hand:
-            penalty = self.game_settings_tbl.decknuke_penalty
+            penalty = self.decknuke_penalty
             point_receivers_txt = self._points_redistributer(penalty)
             points_won = penalty
             decknuke_txt = f'\n:impact::impact::impact::impact:LOLOLOLOLOL HOW DAT DECKNUKE WORK FOR YA NOW??\n' \
@@ -286,8 +326,7 @@ class Game:
         winner.add_points(points_won)
         if not winner_was_none:
             self.players._update_player(winner)
-        winner_details = winner.player_tag if self.game_settings_tbl.is_ping_winner \
-            else f'*`{winner.display_name.title()}`*'
+        winner_details = winner.player_tag if self.is_ping_winner else f'*`{winner.display_name.title()}`*'
         winner_txt_blob = [
             f":regional_indicator_q: *{self.current_question_card.txt}*",
             f":tada:Winning card: {winner.hand.pick.render_pick_list_as_str()}",
@@ -396,14 +435,12 @@ class Game:
     def toggle_judge_ping(self):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
         self.log.debug('Toggling judge pinging')
-        self.game_settings_tbl.is_ping_judge = not self.game_settings_tbl.is_ping_winner
-        cah_app.db.session.commit()
+        self.is_ping_judge = not self.is_ping_judge
 
     def toggle_winner_ping(self):
         """Toggles whether or not to ping the winner when they've won a round"""
         self.log.debug('Toggling winner pinging')
-        self.game_settings_tbl.is_ping_winner = not self.game_settings_tbl.is_ping_winner
-        cah_app.db.session.commit()
+        self.is_ping_winner = not self.is_ping_winner
 
     def process_picks(self, user: str, message: str) -> Optional:
         """Processes the card selection made by the user"""
@@ -486,7 +523,7 @@ class Game:
         remaining = self.players_left_to_pick()
         if len(remaining) == 0:
             messages.append('All players have made their picks.')
-            if self.game_settings_tbl.is_ping_judge:
+            if self.is_ping_judge:
                 judge_msg = f'{self.judge.player_tag} to judge.'
             else:
                 judge_msg = f'`{self.judge.display_name.title()}` to judge.'
