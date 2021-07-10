@@ -31,11 +31,11 @@ Bot.st.delete_message = collect_outgoing
 players = Bot.potential_players.player_list
 # Switch channel back to standard game channel
 for player in players:
-    if player.player_table.is_dm_cards:
+    if player.is_dm_cards:
         player.toggle_cards_dm()
-    if not player.player_table.is_auto_randpick:
+    if not player.is_arp:
         player.toggle_arp()
-    if not player.player_table.is_auto_randchoose:
+    if not player.is_arc:
         player.toggle_arc()
 if Bot.global_game_settings_tbl.is_ping_winner:
     Bot.toggle_winner_ping()
@@ -45,7 +45,13 @@ Bot.new_game(deck='standard', player_ids=[x.player_id for x in players[:-1]])
 
 for nth_round in range(40):
     # Judge has to make a pick, bc the sequence is built to take in at least one input from a user
+    if Bot.game.status.name == 'ended':
+        break
     Bot.ping_players_left_to_pick()
+    if nth_round % 2 == 0:
+        Bot.game.toggle_judge_ping()
+    if nth_round % 2 != 0:
+        Bot.game.toggle_winner_ping()
     if nth_round == 0:
         # Test status output
         # Bot.st.send_message = original_send
@@ -60,15 +66,15 @@ for nth_round in range(40):
         Bot.game.players.player_list[0].toggle_arp()
     elif nth_round == 10:
         # add player to game
-        Bot.game.players.add_player_to_game(players[-1].player_id, game_id=Bot.game.game_tbl.id,
-                                            round_id=Bot.game.gameround.id)
+        Bot.game.players.add_player_to_game(players[-1].player_id, game_id=Bot.game.game_id,
+                                            round_id=Bot.game.gameround_id)
     elif nth_round == 20:
         # add player to game
         Bot.game.players.remove_player_from_game(players[-1].player_id)
     if 10 < nth_round < 30:
         Bot.choose_card(Bot.game.judge.player_id, 'randchoose 234')
     else:
-        Bot.choose_card(Bot.game.judge.player_id, 'choose 1')
+        Bot.choose_card(Bot.game.judge.player_id, f'choose 1')
     if Bot.game.status.name == 'players_decision':
         Bot.decknuke(Bot.game.players.player_list[0].player_id)
 Bot.display_status()

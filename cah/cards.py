@@ -8,6 +8,10 @@ import cah.app as cah_app
 from .model import TableDecks, TableQuestionCards, TableAnswerCards
 
 
+class OutOfCardsException(Exception):
+    pass
+
+
 class Card:
     """A Card"""
     def __init__(self, txt: str, card_id: int):
@@ -175,6 +179,9 @@ class Hand:
         cah_app.db.session.commit()
         self.cards = list()
 
+    def get_num_cards(self):
+        return len(self.cards)
+
 
 class Deck:
     """Deck of question and answer cards for a game"""
@@ -189,6 +196,14 @@ class Deck:
 
         self.questions_card_list = [QuestionCard(q.card_text, q.id) for q in qcards]
         self.answers_card_list = [AnswerCard(a.card_text, a.id) for a in acards]
+
+    @property
+    def num_answer_cards(self):
+        return len(self.answers_card_list)
+
+    @property
+    def num_question_cards(self):
+        return len(self.questions_card_list)
 
     def shuffle_deck(self):
         """Shuffles the deck"""

@@ -11,7 +11,8 @@ import cah.app as cah_app
 import cah.cards as cahds
 import cah.games as cah_game
 from .players import Players, Player
-from .model import TablePlayers, TableDecks, TableGameSettings
+from .model import TablePlayers, TableDecks, TableGameSettings, TableGames, TableGameRounds, TableAnswerCards,\
+    TableQuestionCards, TablePlayerRounds
 from .settings import auto_config
 from .forms import Forms
 
@@ -330,8 +331,8 @@ class CAHBot:
         elif action_id == 'add-player-done':
             if self.game is not None:
                 add_user = action_dict.get('selected_user')
-                self.game.players.add_player_to_game(add_user, game_id=self.game.game_tbl.id,
-                                                     round_id=self.game.gameround.id)
+                self.game.players.add_player_to_game(add_user, game_id=self.game.game_id,
+                                                     round_id=self.game.gameround_id)
         elif action_id == 'remove-player':
             rem_user = Forms.build_remove_user_form()
             resp = self.st.private_channel_message(user_id=user, channel=channel, message='Remove player form',
@@ -359,11 +360,12 @@ class CAHBot:
         elif action_id == 'ping':
             if self.game is not None:
                 if self.game.status == cah_game.GameStatuses.players_decision:
-                    return self.ping_players_left_to_pick()
+                    ping_txt = self.ping_players_left_to_pick()
                 elif self.game.status == cah_game.GameStatuses.judge_decision:
-                    return f'Hey <@{self.game.judge.player_id}> time to do your doodie'
+                    ping_txt = f'Hey <@{self.game.judge.player_id}> time to do your doodie'
                 else:
-                    return 'Wrong status for a ping, bucko.'
+                    ping_txt = 'Wrong status for a ping, bucko.'
+                self.st.send_message(channel=channel, message=ping_txt)
         elif action_id == 'end-game':
             self.end_game()
         else:
@@ -407,6 +409,56 @@ class CAHBot:
     def show_decks(self) -> str:
         """Returns the deck names currently available"""
         return f'`{",".join(self.decks.deck_list)}`'
+
+    def game_stats(self):
+        return
+        # General game stats
+        #   - Number of games
+        #   - median duration
+        #   - longest game
+        #   - shortest game - decknukes per game
+        games_result = cah_app.db.session.query(TableGames.start_time, TableGames.end_time)
+        games_df = pd.DataFrame(games_result.all(), columns=[column['name']
+                                                             for column in games_result.column_descriptions])
+        n_games = games_df.shape[0]
+        # Filter out games that don't have an end date
+        games_df = games_df[~games_df['end_time'].isnull()]
+        games_df['duration'] = games_df['end_time'] - games_df['start_time']
+        median_duration = games_df['duration'].median()
+        max_duration = games_df['duration'].max()
+
+        # Round statsfra
+        #   - Median number of rounds per game
+        #   - most rounds per game
+        #   - longest shortest median round
+        rounds_result = cah_app.db.session.query(
+            TableGameRounds.start_time, TableGameRounds.end_time, TableGameRounds.game_id)
+        gamerounds_df = pd.DataFrame(rounds_result.all(), columns=[column['name']
+                                                                   for column in rounds_result.column_descriptions])
+        n_rounds = gamerounds_df.shape[0]
+        # Filter out gamerounds that don't have an end date
+        gamerounds_df = gamerounds_df[~gamerounds_df['end_time'].isnull()]
+        gamerounds_df['duration'] = gamerounds_df['end_time'] - gamerounds_df['start_time']
+        median_round = gamerounds_df['duration'].median()
+        max_round = gamerounds_df['duration'].max()
+        min_round = gamerounds_df['duration'].min()
+
+        # Card stats
+        #   - most chosen
+        a_cards_result = cah_app.db.session.query(
+            TableAnswerCards.card_text,
+            TableAnswerCards.times_chosen,
+            TableAnswerCards.times_burned,
+            TableAnswerCards.times_picked,
+        )
+        a_cards_df = pd.DataFrame(a_cards_result.all(),
+                                  columns=[column['name'] for column in a_cards_result.column_descriptions])
+        n_cards = a_cards_df.shape[0]
+        most_chosen = a_cards_df.loc[a_cards_df['times_chosen'].idxmax()]
+        most_chosen_text = most_chosen.card_text
+        most_chosen_val = most_chosen.times_chosen
+        # Player stats
+        #   - least/most likely to have caught a decknuke
 
     @staticmethod
     def show_gsheets_link():
@@ -465,11 +517,11 @@ class CAHBot:
         if is_randpick or is_both:
             player.toggle_arp()
             resp_msg.append(f'Auto randpick for player `{player.display_name}` set to '
-                            f'`{player.player_table.is_auto_randpick}`')
+                            f'`{player.is_arp}`')
             if self.game is not None:
                 if all([self.game.status == cah_game.GameStatuses.players_decision,
                         player.player_id != self.game.judge.player_id,
-                        player.player_table.is_auto_randpick,
+                        player.is_arp,
                         player.hand.pick.is_empty()]):
                     # randpick for the player immediately if:
                     #   - game active
@@ -483,11 +535,11 @@ class CAHBot:
             # Auto randchoose
             player.toggle_arc()
             resp_msg.append(f'Auto randchoose for player `{player.display_name}` set to '
-                            f'`{player.player_table.is_auto_randchoose}`')
+                            f'`{player.is_arc}`')
             if self.game is not None:
                 if all([self.game.status == cah_game.GameStatuses.judge_decision,
                         player.player_id == self.game.judge.player_id,
-                        player.player_table.is_auto_randchoose,
+                        player.is_arc,
                         self.game.judge.pick_idx is None]):
                     # randchoose for the player immediately if:
                     #   - game active
@@ -503,12 +555,12 @@ class CAHBot:
         """Toggles card dming"""
         player = self._get_player_in_or_out_of_game(user_id=user_id)
         player.toggle_cards_dm()
-        msg = f'Card DMing for player `{player.display_name}` set to `{player.player_table.is_dm_cards}`'
+        msg = f'Card DMing for player `{player.display_name}` set to `{player.is_dm_cards}`'
         self.st.send_message(channel, msg)
         if self.game is not None:
             # Send cards to user if the status shows we're currently in a game
             if self.game.status == cah_game.GameStatuses.players_decision and \
-                    player.player_table.is_dm_cards:
+                    player.is_dm_cards:
                 self.dm_cards_now(user_id)
 
     def _get_player_in_or_out_of_game(self, user_id: str) -> Player:
@@ -726,7 +778,7 @@ class CAHBot:
             status_section = f'*Status*: *`{self.game.status.name.replace("_", " ").title()}`*\n' \
                              f'*Judge Ping*: `{self.game.is_ping_judge}`\t\t' \
                              f'*Weiner Ping*: `{self.game.is_ping_winner}`\n'
-            game_section = f':stopwatch: *Round `{len(self.game.game_tbl.rounds)}`*: ' \
+            game_section = f':stopwatch: *Round `{self.game.round_number}`*: ' \
                            f'{self.st.get_time_elapsed(self.game.round_start_time)}\t\t' \
                            f'*Game*: {self.st.get_time_elapsed(self.game.game_start_time)}\n' \
                            f':stack-of-cards: *Deck*: `{self.game.deck.name}` - ' \
@@ -736,7 +788,7 @@ class CAHBot:
 
             status_block += [
                 bkb.make_context_section([
-                    bkb.markdown_section(f':gavel: *Judge*: *`{self.game.judge.display_name.title()}`*')
+                    bkb.markdown_section(f':gavel: *Judge*: *`{self.game.judge.get_full_name()}`*')
                 ]),
                 bkb.make_block_divider(),
                 bkb.make_context_section([
@@ -759,7 +811,7 @@ class CAHBot:
             status_block = status_block[:1] + [
                 bkb.make_block_section(f':regional_indicator_q: `{self.game.current_question_card.txt}`'),
                 bkb.make_context_section([
-                    bkb.markdown_section(f':gavel: *Judge*: *`{self.game.judge.display_name.title()}`'
+                    bkb.markdown_section(f':gavel: *Judge*: *`{self.game.judge.get_full_name()}`'
                                          f'*{pickle_txt}')
                 ])
             ] + status_block[2:]  # Skip over the previous judge block

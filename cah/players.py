@@ -19,65 +19,180 @@ class Player:
         self.display_name = display_name
         self.avi_url = avi_url
 
-        self.player_table = cah_app.db.session.query(TablePlayers)\
-            .filter_by(slack_id=self.player_id).one_or_none()   # type: TablePlayers
-        if self.player_table is None:
-            # Add player to table
-            self.player_table = cah_app.db.session.add(
-                TablePlayers(slack_id=self.player_id, name=self.display_name))
-        # Check if display name is the same as in the table. If not, change the name in the table
-        if self.display_name != self.player_table.name:
-            self.player_table.name = self.display_name
-        cah_app.db.session.commit()
+        player_table = self._get_player_tbl()
+        self.player_table_id = player_table.id
 
-        # For tracking rounds that the player plays. This will be None until the player is loaded into a game
-        self.player_round_table = None  # type: Optional[TablePlayerRounds]
+        self._is_arp = player_table.is_auto_randpick
+        self._is_arc = player_table.is_auto_randchoose
+        self._is_dm_cards = player_table.is_dm_cards
+        self._honorific = player_table.honorific
+        # These are determined from each round, which might not be readily available upon player instantiation.
+        #   Defaults are therefore used here.
+        self._is_judge = False
+        self._is_nuked_hand = False
+        self._is_nuked_hand_caught = False
+
+        self.game_id = None
+        self.round_id = None
+
+        # Check if display name is the same as in the table. If not, change the name in the table
+        if self.display_name != player_table.name:
+            player_table.name = self.display_name
+            cah_app.db.session.commit()
 
         self.pick_blocks = {}   # Provides a means for us to update a block kit ui upon a successful pick
-        self.hand = cahds.Hand(owner=self.player_table)
+        self.hand = cahds.Hand(owner=player_table)
+
+    @property
+    def is_arp(self):
+        return self._is_arp
+
+    @is_arp.setter
+    def is_arp(self, value):
+        self._is_arp = value
+        tbl = self._get_player_tbl()
+        round_tbl = self._get_playerround_tbl()
+        tbl.is_auto_randpick = self._is_arp
+        if round_tbl is not None:
+            round_tbl.is_arp = self._is_arp
+        cah_app.db.session.commit()
+
+    @property
+    def is_arc(self):
+        return self._is_arc
+
+    @is_arc.setter
+    def is_arc(self, value):
+        self._is_arc = value
+        tbl = self._get_player_tbl()
+        round_tbl = self._get_playerround_tbl()
+        tbl.is_auto_randchoose = self._is_arc
+        if round_tbl is not None:
+            round_tbl.is_arc = self._is_arc
+        cah_app.db.session.commit()
+
+    @property
+    def is_dm_cards(self):
+        return self._is_dm_cards
+
+    @is_dm_cards.setter
+    def is_dm_cards(self, value):
+        self._is_dm_cards = value
+        tbl = self._get_player_tbl()
+        tbl.is_dm_cards = self._is_dm_cards
+        cah_app.db.session.commit()
+
+    @property
+    def honorific(self):
+        return self._honorific
+
+    @honorific.setter
+    def honorific(self, value):
+        self._honorific = value
+        tbl = self._get_player_tbl()
+        tbl.honorific = self._honorific
+        cah_app.db.session.commit()
+
+    @property
+    def is_judge(self):
+        return self._is_judge
+
+    @is_judge.setter
+    def is_judge(self, value):
+        self._is_judge = value
+        round_tbl = self._get_playerround_tbl()
+        round_tbl.is_judge = self._is_judge
+        cah_app.db.session.commit()
+
+    @property
+    def is_nuked_hand(self):
+        return self._is_nuked_hand
+
+    @is_nuked_hand.setter
+    def is_nuked_hand(self, value):
+        self._is_nuked_hand = value
+        round_tbl = self._get_playerround_tbl()
+        round_tbl.is_nuked_hand = self._is_nuked_hand
+        cah_app.db.session.commit()
+
+    @property
+    def is_nuked_hand_caught(self):
+        return self._is_nuked_hand_caught
+
+    @is_nuked_hand_caught.setter
+    def is_nuked_hand_caught(self, value):
+        self._is_nuked_hand_caught = value
+        round_tbl = self._get_playerround_tbl()
+        round_tbl.is_nuked_hand_caught = self._is_nuked_hand_caught
+        cah_app.db.session.commit()
+
+    def _get_player_tbl(self) -> TablePlayers:
+        """Attempts to retrieve the player's info from the players table.
+        if it doesnt exist, it creates a new row for the player."""
+        tbl = cah_app.db.session.query(TablePlayers).filter(TablePlayers.slack_id == self.player_id).one_or_none()
+        if tbl is None:
+            # Add player to table
+            tbl = cah_app.db.session.add(TablePlayers(slack_id=self.player_id, name=self.display_name))
+        cah_app.db.session.commit()
+        return tbl
+
+    def _get_playerround_tbl(self) -> TablePlayerRounds:
+        """Attempts to retrieve the player's info from the playerrounds table."""
+        tbl = cah_app.db.session.query(TablePlayerRounds)\
+            .filter(and_(
+                TablePlayerRounds.player_id == self.player_table_id,
+                TablePlayerRounds.game_id == self.game_id,
+                TablePlayerRounds.round_id == self.round_id
+            )).one_or_none()
+        cah_app.db.session.commit()
+        return tbl
 
     def start_round(self, game_id: int, round_id: int):
         """Begins a new round"""
+        self.game_id = game_id
+        self.round_id = round_id
         self.hand.pick.clear_picks()
-        self.player_round_table = TablePlayerRounds(player_id=self.player_table.id, game_id=game_id,
-                                                    round_id=round_id)
-        self.player_round_table.is_arp = self.player_table.is_auto_randpick
-        self.player_round_table.is_arc = self.player_table.is_auto_randchoose
-        cah_app.db.session.add(self.player_round_table)
+        self._is_nuked_hand = False
+        self._is_nuked_hand_caught = False
+        player_round_table = TablePlayerRounds(player_id=self.player_table_id, game_id=game_id, round_id=round_id,
+                                               is_arp=self.is_arp, is_arc=self.is_arc)
+        cah_app.db.session.add(player_round_table)
         cah_app.db.session.commit()
 
     def toggle_cards_dm(self):
         """Toggles whether or not to DM cards to player"""
-        self.player_table.is_dm_cards = not self.player_table.is_dm_cards
-        cah_app.db.session.add(self.player_table)
-        cah_app.db.session.commit()
+        self.is_dm_cards = not self.is_dm_cards
 
     def toggle_arp(self):
         """Toggles auto randpick"""
-        self.player_table.is_auto_randpick = not self.player_table.is_auto_randpick
-        if self.player_round_table is not None:
-            self.player_round_table.is_arp = self.player_table.is_auto_randpick
-        cah_app.db.session.commit()
+        self.is_arp = not self.is_arp
 
     def toggle_arc(self):
         """Toggles auto randpick"""
-        self.player_table.is_auto_randchoose = not self.player_table.is_auto_randchoose
-        if self.player_round_table is not None:
-            self.player_round_table.is_arc = self.player_table.is_auto_randchoose
-        cah_app.db.session.commit()
+        self.is_arc = not self.is_arc
 
     def add_points(self, points: int):
         """Adds points to the player's score"""
-        self.player_round_table.score += points
+        tbl = self._get_playerround_tbl()
+        tbl.score += points
         cah_app.db.session.commit()
+
+    def get_full_name(self) -> str:
+        """Combines the player's name with their honorific"""
+        return f'{self.display_name.title()} {self.honorific.title()}'
 
     def get_current_score(self, game_id: int):
         """Retrieves the players current score"""
         return cah_app.db.session.query(func.sum(TablePlayerRounds.score))\
             .filter(and_(
-                TablePlayerRounds.player_id == self.player_table.id,
+                TablePlayerRounds.player_id == self.player_table_id,
                 TablePlayerRounds.game_id == game_id
             )).scalar()
+
+    def get_overall_score(self) -> int:
+        """Retrieves the players current score"""
+        tbl = self._get_player_tbl()
+        return tbl.total_score
 
 
 class Players:
@@ -144,8 +259,8 @@ class Players:
     def get_player_names(self, monospace: bool = False) -> List[str]:
         """Returns player display names"""
         if monospace:
-            return [f'`{x.player_table.name}`' for x in self.player_list]
-        return [x.player_table.name for x in self.player_list]
+            return [f'`{x.display_name}`' for x in self.player_list]
+        return [x.display_name for x in self.player_list]
 
     def get_player_index(self, player_attr: str, attr_name: str = 'player_id') -> Optional[int]:
         """Returns the index of a player in a list of players based on a given attribute"""
@@ -169,29 +284,29 @@ class Players:
 
     def get_players_that_havent_picked(self, name_only: bool = True) -> List[Union[str, Player]]:
         """Returns a list of players that have yet to pick for the round"""
-        players = [x for x in self.player_list if x.hand.pick.is_empty() and not x.player_round_table.is_judge]
+        players = [x for x in self.player_list if x.hand.pick.is_empty() and not x.is_judge]
         if name_only:
-            return [x.player_table.display_name for x in players]
+            return [x.display_name for x in players]
         else:
             return players
 
     def get_players_with_dm_cards(self, name_only: bool = True) -> List[Union[str, Player]]:
         """Returns a list of names (monospaced) or players that have is_dm_cards turned on"""
-        players = [x for x in self.player_list if x.player_table.is_dm_cards]
+        players = [x for x in self.player_list if x.is_dm_cards]
         if name_only:
             return [f'`{x.display_name}`' for x in players]
         return players
 
     def get_players_with_arp(self, name_only: bool = True) -> List[Union[str, Player]]:
         """Returns a list of names (monospaced) or players that have is_auto_randpick turned on"""
-        players = [x for x in self.player_list if x.player_table.is_auto_randpick]
+        players = [x for x in self.player_list if x.is_arp]
         if name_only:
             return [f'`{x.display_name}`' for x in players]
         return players
 
     def get_players_with_arc(self, name_only: bool = True) -> List[Union[str, Player]]:
         """Returns a list of names (monospaced) or players that have is_auto_randchoose turned on"""
-        players = [x for x in self.player_list if x.player_table.is_auto_randchoose]
+        players = [x for x in self.player_list if x.is_arc]
         if name_only:
             return [f'`{x.display_name}`' for x in players]
         return players
@@ -238,10 +353,10 @@ class Players:
         """Renders each players' hands"""
         self.log.debug('Rendering hands for players...')
         for player in self.player_list:
-            if player.player_id == judge_id or player.player_table.is_auto_randpick:
+            if player.player_id == judge_id or player.is_arp:
                 continue
-            cards_block = player.hand.render_hand(max_selected=req_ans)  # Returns list of blocks
-            if player.player_table.is_dm_cards:
+            cards_block = player.hand.render_hand(max_selected=req_ans)  # type: List[Dict]
+            if player.is_dm_cards:
                 msg_block = question_block + cards_block
                 dm_chan, ts = self.st.private_message(player.player_id, message='', ret_ts=True,
                                                       blocks=msg_block)
@@ -255,6 +370,8 @@ class Players:
     def take_dealt_cards(self, player_obj: Player, card_list: List[cahds.AnswerCard]):
         """Deals out cards to players"""
         for card in card_list:
+            if card is None:
+                continue
             player_obj.hand.take_card(card)
         self._update_player(player_obj)
 
@@ -269,9 +386,7 @@ class Players:
         """Handles the player aspect of decknuking."""
         self.log.debug('Processing player decknuke')
         player_obj.hand.burn_cards()
-        player_obj.player_round_table.is_nuked_hand = True
-        cah_app.db.session.add(player_obj.player_round_table)
-        cah_app.db.session.commit()
+        player_obj.is_nuked_hand = True
         self._update_player(player_obj)
 
 
@@ -280,4 +395,3 @@ class Judge(Player):
     def __init__(self, player_obj: Player):
         super().__init__(player_obj.player_id, display_name=player_obj.display_name)
         self.pick_idx = None    # type: Optional[int]
-        self.player_round_table = player_obj.player_round_table
