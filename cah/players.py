@@ -41,7 +41,7 @@ class Player:
             cah_app.db.session.commit()
 
         self.pick_blocks = {}   # Provides a means for us to update a block kit ui upon a successful pick
-        self.hand = cahds.Hand(owner=player_table)
+        self.hand = cahds.Hand(owner=player_id)
 
     @property
     def is_arp(self):

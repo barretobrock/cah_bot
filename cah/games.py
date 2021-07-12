@@ -325,10 +325,10 @@ class Game:
         # Get the list of cards picked by each player
         self.log.debug(f'Selecting winner at index: {self.judge.pick_idx}')
         rps = self.round_picks
-        winning_pick = rps[self.judge.pick_idx]
+        winning_pick = rps[self.judge.pick_idx]     # type: cards.Pick
 
         # Winner selection
-        winner = self.players.get_player(winning_pick.id.slack_id)
+        winner = self.players.get_player(winning_pick.owner_id)
         winner_was_none = winner is None
         if winner is None:
             # Likely the player who won left the game. Add to their overall points
@@ -336,7 +336,7 @@ class Game:
                            f'grant their points.')
             # Get the winner from the master list of the players
             winner_tbl = cah_app.db.session.query(TablePlayers)\
-                .filter(TablePlayers.slack_id == winning_pick.id.slack_id).one_or_none()
+                .filter(TablePlayers.slack_id == winning_pick.owner_id).one_or_none()
             # Load the winner object
             winner = Player(winner_tbl.slack_id, display_name=winner_tbl.name)
             # Attach the current round to the winner
