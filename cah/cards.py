@@ -156,7 +156,7 @@ class Hand:
             desc = f'{max_selected} picks required for this question'
             definite_selection_area += [
                 bkb.make_block_multiselect(desc, f'Select {max_selected} picks', btn_list,
-                                           max_selected_items=max_selected),
+                                           max_selected_items=max_selected, action_id='game-multipick'),
                 bkb.make_block_divider()
             ]
 
