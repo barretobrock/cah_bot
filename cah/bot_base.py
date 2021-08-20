@@ -3,8 +3,9 @@
 import sys
 import pandas as pd
 from datetime import datetime
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict, Union, Type
 from random import randrange
+from flask_sqlalchemy import BaseQuery
 from slacktools import SlackBotBase, BlockKitBuilder as bkb
 from easylogger import Log
 import cah.app as cah_app
@@ -320,6 +321,14 @@ class CAHBot:
             status_block = self.display_status()
             if status_block is not None:
                 self.st.send_message(channel=channel, message='Game status', blocks=status_block)
+        elif action_id == 'modify-question-form':
+            qmod_form = Forms.modify_question_form(original_value=self.game.current_question_card.txt)
+            resp = self.st.private_channel_message(user_id=user, channel=channel, message='Modify question form',
+                                                   blocks=qmod_form)
+        elif action_id == 'modify-question':
+            # Response from modify question form
+            self.game.current_question_card.modify_text(action_value)
+            self.st.message_test_channel(f'Question updated: *{self.game.current_question_card.txt}* by <@{user}>')
         elif action_id == 'my-settings':
             settings_form = Forms.build_my_settings_form(session_object=cah_app.db.session, user_id=user)
             resp = self.st.private_channel_message(user_id=user, channel=channel, message='Settings form',
@@ -411,37 +420,40 @@ class CAHBot:
         return f'`{",".join(self.decks.deck_list)}`'
 
     def game_stats(self):
-        return
+        def tbl_to_df(result: BaseQuery) -> pd.DataFrame:
+            """Takes in unprocessed query results and converts to dataframe"""
+            return pd.DataFrame(result.all(), columns=[column['name'] for column in result.column_descriptions])
+
+        def get_duration_stats(tbl: Type[Union[TableGames, TableGameRounds]]) -> Dict[str, float]:
+            """Retrieves min max median duration stats from a table with start and end times"""
+            result = None
+            if tbl.__tablename__ == 'games':
+                result = cah_app.db.session.query(tbl.start_time, tbl.end_time)
+            elif tbl.__tablename__ == 'gamerounds':
+                result = cah_app.db.session.query(tbl.start_time, tbl.end_time, tbl.game_id)
+            df = tbl_to_df(result)
+            total = df.shape[0]
+            # Filter out unfinished before calculating duration
+            df = df[~df['end_time'].isnull()]
+            df['duration'] = df['end_time'] - df['start_time']
+            dur = df['duration']
+            return {
+                'total': total,
+                'min': dur.min(),
+                'median': dur.median(),
+                'max': dur.max()
+            }
         # General game stats
         #   - Number of games
         #   - median duration
         #   - longest game
         #   - shortest game - decknukes per game
-        games_result = cah_app.db.session.query(TableGames.start_time, TableGames.end_time)
-        games_df = pd.DataFrame(games_result.all(), columns=[column['name']
-                                                             for column in games_result.column_descriptions])
-        n_games = games_df.shape[0]
-        # Filter out games that don't have an end date
-        games_df = games_df[~games_df['end_time'].isnull()]
-        games_df['duration'] = games_df['end_time'] - games_df['start_time']
-        median_duration = games_df['duration'].median()
-        max_duration = games_df['duration'].max()
+        games_dur_stats = get_duration_stats(TableGames)
 
-        # Round statsfra
+        # Round stats
         #   - Median number of rounds per game
-        #   - most rounds per game
         #   - longest shortest median round
-        rounds_result = cah_app.db.session.query(
-            TableGameRounds.start_time, TableGameRounds.end_time, TableGameRounds.game_id)
-        gamerounds_df = pd.DataFrame(rounds_result.all(), columns=[column['name']
-                                                                   for column in rounds_result.column_descriptions])
-        n_rounds = gamerounds_df.shape[0]
-        # Filter out gamerounds that don't have an end date
-        gamerounds_df = gamerounds_df[~gamerounds_df['end_time'].isnull()]
-        gamerounds_df['duration'] = gamerounds_df['end_time'] - gamerounds_df['start_time']
-        median_round = gamerounds_df['duration'].median()
-        max_round = gamerounds_df['duration'].max()
-        min_round = gamerounds_df['duration'].min()
+        rounds_dur_stats = get_duration_stats(TableGameRounds)
 
         # Card stats
         #   - most chosen
@@ -451,14 +463,27 @@ class CAHBot:
             TableAnswerCards.times_burned,
             TableAnswerCards.times_picked,
         )
-        a_cards_df = pd.DataFrame(a_cards_result.all(),
-                                  columns=[column['name'] for column in a_cards_result.column_descriptions])
+        a_cards_df = tbl_to_df(a_cards_result)
         n_cards = a_cards_df.shape[0]
         most_chosen = a_cards_df.loc[a_cards_df['times_chosen'].idxmax()]
         most_chosen_text = most_chosen.card_text
         most_chosen_val = most_chosen.times_chosen
+
         # Player stats
         #   - least/most likely to have caught a decknuke
+        #   - longest non-judge streak
+        playerround_result = cah_app.db.session.query(
+            TablePlayerRounds.player_id, TablePlayerRounds.game_id, TablePlayerRounds.round_id,
+            TablePlayerRounds.is_judge, TablePlayerRounds.score
+        )
+        pr_df = tbl_to_df(playerround_result)
+        streak_df = pr_df.loc[~pr_df.is_judge, :]
+        streak_df = streak_df.pivot_table(index='round_id', columns='player_id', values='score').fillna(0)
+        streaks = pd.DataFrame()
+        for col in streak_df.columns:
+            group = (streak_df.loc[:, col] != streak_df.loc[:, col].shift()).cumsum()
+            streaks[col] = streak_df.loc[:, col].groupby(group).cumsum()
+        longest_streak = streaks.idxmax()
 
     @staticmethod
     def show_gsheets_link():

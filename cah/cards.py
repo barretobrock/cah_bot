@@ -44,6 +44,13 @@ class QuestionCard(Card):
         else:
             return len(match)
 
+    def modify_text(self, new_text: str):
+        """Modifies the question text"""
+        self.txt = new_text
+        cah_app.db.session.query(TableQuestionCards).filter_by(id=self.id).update({
+                'txt': new_text})
+        cah_app.db.session.commit()
+
 
 class AnswerCard(Card):
     """Answer Card"""

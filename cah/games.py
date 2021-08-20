@@ -239,6 +239,43 @@ class Game:
                     self.st.private_message(player.player_id, 'Your pick was handled automatically, '
                                                               'as you have `auto randpick` enabled.')
 
+    def determine_honorific(self):
+        """Determines the honorific for the judge"""
+        # Determine honorific for judge
+        self.log.debug('Determining honorific for judge...')
+        # Honorifics will be chosen based on which range of points the judge falls into
+        honorifics = {
+            range(-200, -6): ['loser', 'toady', 'weak', 'despised', 'defeated', 'under-under-underdog'],
+            range(-6, -3): ['concerned', 'bestumbled', 'under-underdog'],
+            range(-3, 0): ['temporarily disposed', 'momentarily disheveled', 'underdog'],
+            range(0, 3): ['lackey', 'intern', 'doormat', 'underling', 'deputy', 'amateur', 'newcomer'],
+            range(3, 6): ['young padawan', 'master apprentice', 'rookie', 'greenhorn', 'fledgling', 'tenderfoot'],
+            range(6, 9): ['honorable', 'respected and just', 'cold and yet still fair'],
+            range(9, 12): ['worthy inheriter of (mo|da)ddy\'s millions', '(mo|fa)ther of dragons',
+                           'most excellent', 'knowledgeable', 'wise'],
+            range(12, 15): ['elder', 'ruler of the lower cards', 'most fair dictator of difficult choices'],
+            range(15, 18): ['benevolent and omniscient chief of dutiful diddling', 'supreme high chancellor of '],
+            range(18, 21): ['almighty veteran diddler', 'ancient diddle dealer from before time began',
+                            'sage of the diddles'],
+            range(21, 500): ['bediddled', 'grand bediddler', 'most wise in the ways of the diddling',
+                             'pansophical bediddled sage of the dark cards']
+        }
+
+        judge_pts = self.judge.get_current_score(game_id=self.game_id)
+        judge_pts = judge_pts if judge_pts is not None else 0
+        # Determine the subset of honorifics to use
+        honorific_list = honorifics[range(0, 3)]
+        for k, v in honorifics.items():
+            if judge_pts in k:
+                honorific_list = v
+                break
+
+        honorific = f'the {choice(honorific_list)}'
+
+        # Assign this to the judge so we can refer to it in other areas.
+        self.judge.honorific = honorific.title()
+        cah_app.db.session.commit()
+
     def get_next_judge(self, n_round: int, game_id: int, round_id: int):
         """Gets the following judge by the order set"""
         self.log.debug('Determining judge.')
@@ -253,6 +290,8 @@ class Game:
         self.judge.game_id = game_id
         self.judge.round_id = round_id
         self.judge.is_judge = True
+        # Regenerate the honorific for the new judge
+        self.determine_honorific()
 
     def _deal_card(self):
         if len(self.deck.answers_card_list) == 0:
@@ -573,9 +612,10 @@ class Game:
             self.st.update_message(auto_config.MAIN_CHANNEL, self.round_ts, message='we gone')
             self._display_picks(notifications=messages)
             # Handle auto randchoose players
+            self.log.debug(f'All players made their picks. Checking if judge is arc: {self.judge.is_arc}')
             if self.judge.is_arc:
                 # Judge only
-                self.choose_card(player.player_id, 'randchoose')
+                self.choose_card(self.judge.player_id, 'randchoose')
         else:
             # Make the remaining players more visible
             remaining_txt = ' '.join([f'`{x}`' for x in remaining])
@@ -692,40 +732,6 @@ class Game:
 
     def make_question_block(self) -> List[dict]:
         """Generates the question block for the current round"""
-        # Determine honorific for judge
-        self.log.debug('Determining honorific for judge...')
-        # Honorifics will be chosen based on which range of points the judge falls into
-        honorifics = {
-            range(-200, -6): ['loser', 'toady', 'weak', 'despised', 'defeated', 'under-under-underdog'],
-            range(-6, -3): ['concerned', 'bestumbled', 'under-underdog'],
-            range(-3, 0): ['temporarily disposed', 'momentarily disheveled', 'underdog'],
-            range(0, 3): ['lackey', 'intern', 'doormat', 'underling', 'deputy', 'amateur', 'newcomer'],
-            range(3, 6): ['young padawan', 'master apprentice', 'rookie', 'greenhorn', 'fledgling', 'tenderfoot'],
-            range(6, 9): ['honorable', 'respected and just', 'cold and yet still fair'],
-            range(9, 12): ['worthy inheriter of (mo|da)ddy\'s millions', '(mo|fa)ther of dragons',
-                           'most excellent', 'knowledgeable', 'wise'],
-            range(12, 15): ['elder', 'ruler of the lower cards', 'most fair dictator of difficult choices'],
-            range(15, 18): ['benevolent and omniscient chief of dutiful diddling', 'supreme high chancellor of '],
-            range(18, 21): ['almighty veteran diddler', 'ancient diddle dealer from before time began',
-                            'sage of the diddles'],
-            range(21, 500): ['bediddled', 'grand bediddler', 'most wise in the ways of the diddling',
-                             'pansophical bediddled sage of the dark cards']
-        }
-
-        judge_pts = self.judge.get_current_score(game_id=self.game_id)
-        judge_pts = judge_pts if judge_pts is not None else 0
-        # Determine the subset of honorifics to use
-        honorific_list = honorifics[range(0, 3)]
-        for k, v in honorifics.items():
-            if judge_pts in k:
-                honorific_list = v
-                break
-
-        honorific = f'the {choice(honorific_list)}'
-
-        # Assign this to the judge so we can refer to it in other areas.
-        self.judge.honorific = honorific.title()
-        cah_app.db.session.commit()
         bot_moji = ':math:' if self.judge.is_arc else ''
 
         return [
@@ -778,6 +784,9 @@ class Game:
                     self.judge.pick_idx = pick
                 else:
                     self.st.message_test_channel('Judge\'s pick voided. You\'ve already picked this round.')
+            else:
+                self.log.debug(f'Nonjudge user tried to choose: {user}')
+                self.st.message_test_channel(f'<@{user}>, you\'re not the judge!')
 
     def _randchoose_handling(self, message: str) -> Optional[Tuple[int, bool]]:
         """Contains all the logic for handling a randchoose command"""

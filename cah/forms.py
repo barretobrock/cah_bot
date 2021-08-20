@@ -22,6 +22,7 @@ class Forms:
             bkb.make_action_button('Scores', value='score', action_id='score'),
             bkb.make_action_button('Ping', value='ping', action_id='ping'),
             bkb.make_action_button('My Settings', value='my-settings', action_id='my-settings'),
+            bkb.make_action_button('Modify Question', value='mod-question', action_id='modify-question-form'),
             bkb.make_action_button('Add', value='add-player', action_id='add-player'),
             bkb.make_action_button('Kick', value='remove-player', action_id='remove-player'),
         ]
@@ -57,6 +58,15 @@ class Forms:
     def build_add_user_form() -> List[Dict]:
         """Builds the second part to the new game form with Block Kit"""
         return [bkb.make_user_select('Select the player to add', action_id='add-player-done')]
+
+    @staticmethod
+    def modify_question_form(original_value: str) -> List[Dict]:
+        """Builds the second part to the new game form with Block Kit"""
+        return [
+            bkb.make_plaintext_input('Make your change to the question below', action_id='modify-question',
+                                     initial_value=original_value),
+            bkb.make_action_button_group([bkb.make_action_button('Cancel', 'cancel', 'cancel', danger_style=True)])
+        ]
 
     @staticmethod
     def build_remove_user_form() -> List[Dict]:
