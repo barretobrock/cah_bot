@@ -48,7 +48,7 @@ class QuestionCard(Card):
         """Modifies the question text"""
         self.txt = new_text
         cah_app.db.session.query(TableQuestionCards).filter_by(id=self.id).update({
-                'txt': new_text})
+                'card_text': new_text})
         cah_app.db.session.commit()
 
 
