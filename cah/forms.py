@@ -20,21 +20,21 @@ class Forms:
         button_list += [
             bkb.make_action_button('Status', value='status', action_id='status'),
             bkb.make_action_button('Scores', value='score', action_id='score'),
-            bkb.make_action_button('Ping', value='ping', action_id='ping'),
             bkb.make_action_button('My Settings', value='my-settings', action_id='my-settings'),
-            bkb.make_action_button('Modify Question', value='mod-question', action_id='modify-question-form'),
-            bkb.make_action_button('Add', value='add-player', action_id='add-player'),
-            bkb.make_action_button('Kick', value='remove-player', action_id='remove-player'),
         ]
         if game_obj is not None and game_obj.status not in [GameStatuses.ended]:
-            button_list.append(
+            button_list += [
+                bkb.make_action_button('Ping', value='ping', action_id='ping'),
+                bkb.make_action_button('Add', value='add-player', action_id='add-player'),
+                bkb.make_action_button('Kick', value='remove-player', action_id='remove-player'),
+                bkb.make_action_button('Modify Question', value='mod-question', action_id='modify-question-form'),
                 bkb.make_action_button('End Game', value='end-game', action_id='end-game', danger_style=True,
                                        incl_confirm=True, confirm_title='Really end game?',
                                        confirm_text='Are you sure you want to end the game?', ok_text='Ya',
                                        deny_text='Na')
-            )
+            ]
         blocks = [
-            bkb.make_header('CAH International Main Menu'),
+            bkb.make_header('CAH Main Menu'),
             bkb.make_action_button_group(button_list)
         ]
         slack_api.private_channel_message(user_id=user, channel=channel,

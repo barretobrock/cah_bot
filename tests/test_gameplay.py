@@ -42,6 +42,7 @@ if Bot.global_game_settings_tbl.is_ping_winner:
 if Bot.global_game_settings_tbl.is_ping_judge:
     Bot.toggle_judge_ping()
 Bot.new_game(deck='standard', player_ids=[x.player_id for x in players[:-1]])
+# Bot.game_stats()
 
 for nth_round in range(40):
     # Judge has to make a pick, bc the sequence is built to take in at least one input from a user
