@@ -1,6 +1,7 @@
 import traceback
 from typing import (
     Dict,
+    List,
     Optional,
     Union
 )
@@ -73,6 +74,35 @@ class WizzyPSQLClient:
             if user is not None:
                 session.expunge(user)
         return user
+
+    def get_active_players(self) -> List[TablePlayer]:
+        """Retrieves a list of active players"""
+        with self.session_mgr() as session:
+            players = session.query(TablePlayer).filter(TablePlayer.is_active).all()
+            session.expunge_all()
+        return players
+
+    def set_active_players(self, player_hashes: List[str]):
+        """Retrieves a list of active players, sets them as active and anyone not in that list as inactive"""
+        with self.session_mgr() as session:
+            players = session.query(TablePlayer).all()
+            player: TablePlayer
+            for player in players:
+                player.is_active = player.slack_user_hash in player_hashes
+            session.add_all(players)
+
+    def refresh_table_object(self, tbl_obj):
+        """Refreshes a table object by adding it to the session and """
+        with self.session_mgr() as session:
+            # Bind to session
+            session.add(tbl_obj)
+            # Prime, pull down changes
+            session.commit()
+            # Populate changes to obj
+            session.refresh()
+            # Remove obj from session
+            session.expunge(tbl_obj)
+        return tbl_obj
 
     def log_error_to_db(self, e: Exception, error_type: CahErrorType, player_key: int = None,
                         player_round_key: int = None, game_round_key: int = None, game_key: int = None):
