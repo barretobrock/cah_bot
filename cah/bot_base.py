@@ -100,6 +100,12 @@ class CAHBot:
                 'desc': 'Get current status of the game and other metadata',
                 'response': [self.display_status]
             },
+            r'^refresh players': {
+                'pattern': 'refresh players',
+                'cat': cat_basic,
+                'desc': 'Refresh the current players in the channel',
+                'response': [self.refresh_players_in_channel]
+            },
             r'^toggle (judge\s?|j)ping': {
                 'pattern': 'toggle (judge|j)ping',
                 'cat': cat_settings,
@@ -107,37 +113,37 @@ class CAHBot:
                         'default: `True`',
                 'response': [self.toggle_judge_ping]
             },
-            r'^toggle (winner\s?|w)ping': {
-                'pattern': 'toggle (winner|w)ping',
+            r'^toggle (w[ine]+r\s?|w)ping': {
+                'pattern': 'toggle (w[ien]er|w)ping',
                 'cat': cat_settings,
                 'desc': 'Toggles whether or not the winner is pinged when they win a round. default: `True`',
                 'response': [self.toggle_winner_ping]
             },
-            r'^toggle (auto\s?randpick|arp\s)': {
+            r'^toggle (auto\s?randpick|arp[^\w])': {
                 'pattern': 'toggle (auto randpick|arp) [-u <user>]',
                 'cat': cat_settings,
                 'desc': 'Toggles automated randpicking. default: `False`',
                 'response': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'randpick']
             },
-            r'^toggle (auto\s?randchoose|arc)': {
+            r'^toggle (auto\s?randchoose|arc[^\w])': {
                 'pattern': 'toggle (auto randchoose|arc) [-u <user>]',
                 'cat': cat_settings,
                 'desc': 'Toggles automated randchoose (i.e., arp for judges). default: `False`',
                 'response': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'randchoose']
             },
-            r'^toggle arparca': {
+            r'^toggle ar[pc]ar[pc]a': {
                 'pattern': 'toggle arparca [-u <user>]',
                 'cat': cat_settings,
                 'desc': 'Toggles both automated randpicking and automated randchoose (i.e., arp for judges).',
                 'response': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'both']
             },
-            r'^toggle (cards?\s?)?dm': {
+            r'^toggle (c[har]+ds?\s?)?dm': {
                 'pattern': 'toggle (dm|card dm)',
                 'cat': cat_settings,
                 'desc': 'Toggles whether or not you receive cards as a DM from Wizzy. default: `True`',
                 'response': [self.toggle_card_dm, 'user', 'channel']
             },
-            r'^cahds now': {
+            r'^c[har]+ds now': {
                 'pattern': 'cahds now',
                 'cat': cat_player,
                 'desc': 'Toggles whether or not you receive cards as a DM from Wizzy. default: `True`',
@@ -414,10 +420,6 @@ class CAHBot:
 
         response_list = [f'Using `{deck}` deck']
 
-        # Refresh all channel members' details, including the players' names.
-        #  While doing so, make sure they're members of the channel.
-        refresh_players_in_channel(channel=auto_config.MAIN_CHANNEL, eng=self.eng, st=self.st, log=self.log)
-
         # Read in card deck to use with this game
         deck = self._read_in_cards(deck)
 
@@ -428,6 +430,11 @@ class CAHBot:
         response_list.append(self.current_game.get_judge_order())
         # Kick off the new round, message details to the group
         self.new_round(notifications=response_list)
+
+    def refresh_players_in_channel(self):
+        """Refresh all channel members' details, including the players' names.
+        While doing so, make sure they're members of the channel."""
+        refresh_players_in_channel(channel=auto_config.MAIN_CHANNEL, eng=self.eng, st=self.st, log=self.log)
 
     def decknuke(self, user: str):
         """Deals the user a new hand while randpicking one of the cards from their current deck.
