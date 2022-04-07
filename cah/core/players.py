@@ -7,6 +7,7 @@ from typing import (
     Dict,
     TYPE_CHECKING
 )
+from random import shuffle
 from sqlalchemy.sql import (
     func,
     and_
@@ -18,24 +19,29 @@ from cah.model import (
     TablePlayer,
     TablePlayerRound
 )
+from cah.db_eng import WizzyPSQLClient
 from cah.settings import auto_config
+from cah.core.cards import (
+    AnswerCard,
+    Hand
+)
+from cah.core.common_methods import refresh_players_in_channel
 if TYPE_CHECKING:
-    from cah.cards import AnswerCard
+    pass
 
 
 class Player:
     """Player-specific things"""
 
-    def __init__(self, player_hash: str, display_name: str, avi_url: str, log: Log):
+    def __init__(self, player_hash: str, log: Log, eng: WizzyPSQLClient = None, is_judge: bool = False):
         self.player_hash = player_hash
         self.player_tag = f'<@{self.player_hash}>'
-        self.display_name = display_name
         self.log = log
-        self.avi_url = avi_url
 
         player_table = self._get_player_tbl()
         self.player_table_id = player_table.id
-
+        self.display_name = player_table.display_name
+        self.honorific = player_table.honorific
         self._is_arp = player_table.is_auto_randpick
         self._is_arc = player_table.is_auto_randchoose
         self._is_dm_cards = player_table.is_dm_cards
@@ -50,7 +56,8 @@ class Player:
         self.game_round_id = None
 
         self.pick_blocks = {}   # Provides a means for us to update a block kit ui upon a successful pick
-        self.hand = cahds.Hand(owner=player_hash)
+        if not is_judge:
+            self.hand = Hand(owner=player_hash, eng=eng)
 
     @property
     def is_arp(self):
@@ -168,7 +175,7 @@ class Player:
         self._is_nuked_hand_caught = False
         with cah_app.eng.session_mgr() as session:
             session.add(TablePlayerRound(player_key=self.player_table_id, game_key=game_id,
-                                         game_round_key=game_round_id, is_arp=self.is_arp,is_arc=self.is_arc))
+                                         game_round_key=game_round_id, is_arp=self.is_arp, is_arc=self.is_arc))
 
     def toggle_cards_dm(self):
         """Toggles whether or not to DM cards to player"""
@@ -185,10 +192,6 @@ class Player:
     def add_points(self, points: int):
         """Adds points to the player's score"""
         self._set_player_round_tbl(TablePlayerRound.score, TablePlayerRound.score + points)
-
-    def get_full_name(self) -> str:
-        """Combines the player's name with their honorific"""
-        return f'{self.display_name.title()} {self.honorific.title()}'
 
     def get_current_score(self, game_id: int) -> int:
         """Retrieves the players current score"""
@@ -208,94 +211,36 @@ class Player:
 
 class Players:
     """Methods for handling all players"""
-    def __init__(self, player_id_list: List[str], slack_api: SlackTools, parent_log: Log, is_global: bool = False):
+    def __init__(self, player_hash_list: List[str], slack_api: SlackTools, eng: WizzyPSQLClient, parent_log: Log):
         """
         Args:
-            player_id_list: list of player slack ids
+            player_hash_list: list of player slack hashes
             slack_api: slack api to send messages to the channel
             parent_log: log object to record important details
-            is_global: if True, players will be built according to active workspace members,
-                not necessarily only channel members
         """
         self.log = Log(parent_log, child_name=self.__class__.__name__)
         self.st = slack_api
-        self.is_global = is_global
-        self.player_list = self._build_players(player_id_list=player_id_list)
+        self.eng = eng
+        self.player_dict = {
+            k: Player(k, eng=eng, log=self.log) for k in player_hash_list
+        }  # type: Dict[str, Player]
+        self.log.debug('Shuffling players and setting judge order')
+        self.judge_order = player_hash_list
+        shuffle(self.judge_order)
 
-    @staticmethod
-    def _extract_name(user_info_dict: Dict[str, str]) -> str:
-        return user_info_dict['display_name'] if user_info_dict['display_name'] != '' else user_info_dict['name']
-
-    def _check_player_existence_in_table(self, user_id: str, display_name: str):
-        """Checks whether player exists in the player table and, if not, will add them to the table"""
-        # Check if player table exists
-        self.log.debug('Checking for player\'s existence in table')
-        player_table = cah_app.db.session.query(TablePlayer).filter_by(slack_id=user_id).one_or_none()
-
-        if player_table is None:
-            # Add missing player to
-            self.log.debug(f'Player {display_name} was not found in the players table. Adding...')
-            cah_app.db.session.add(TablePlayer(slack_id=user_id, name=display_name))
-        cah_app.db.session.commit()
-
-    def _build_players(self, player_id_list: List[str]) -> List[Player]:
-        """Builds out the list of players - Typically used when a new game is started"""
-        self.log.debug('Starting player building process.')
-        players = []
-        channel_members = self.st.get_channel_members(auto_config.MAIN_CHANNEL, humans_only=True)
-        for user in channel_members:
-            uid = user['id']
-            if uid in player_id_list:
-                # Make sure display name is not empty
-                dis_name = self._extract_name(user_info_dict=user)
-                # Make sure player is in table
-                self._check_player_existence_in_table(user_id=uid, display_name=dis_name)
-                players.append(Player(uid, display_name=dis_name, avi_url=user['avi32']))
-        if not self.is_global:
-            # Building players specifically for a game, so determine if we included people
-            #   that aren't currently members
-            # Determine missed users
-            missed_users = [x for x in player_id_list if x not in [y.player_id for y in players]]
-            if len(missed_users) > 0:
-                # Message channel about missing users
-                usr_tags = ', '.join([f'<@{x.upper()}>' for x in missed_users])
-                msg = f'These users aren\'t in the channel and therefore were skipped: {usr_tags}'
-                self.st.send_message(auto_config.MAIN_CHANNEL, msg)
-        return players
-
-    def get_player_ids(self) -> List[str]:
+    def get_player_hashes(self) -> List[str]:
         """Collect user ids from a list of players"""
-        return [x.player_id for x in self.player_list]
+        return [k for k, v in self.player_dict]
 
     def get_player_names(self, monospace: bool = False) -> List[str]:
         """Returns player display names"""
         if monospace:
-            return [f'`{x.display_name}`' for x in self.player_list]
-        return [x.display_name for x in self.player_list]
-
-    def get_player_index(self, player_attr: str, attr_name: str = 'player_id') -> Optional[int]:
-        """Returns the index of a player in a list of players based on a given attribute"""
-        player = self.get_player(player_attr=player_attr, attr_name=attr_name)
-
-        if player is not None:
-            return self.player_list.index(player)
-        return None
-
-    def get_player(self, player_attr: str, attr_name: str = 'player_id') -> Optional[Player]:
-        """Returns a Player object that has a matching attribute value from a list of players"""
-        matches = [x for x in self.player_list if x.__getattribute__(attr_name) == player_attr]
-        if len(matches) > 0:
-            return matches[0]
-        return None
-
-    def _update_player(self, player_obj: Player):
-        """Updates the player's object by finding its position in the player list and replacing it"""
-        player_idx = self.get_player_index(player_obj.player_id, attr_name='player_id')
-        self.player_list[player_idx] = player_obj
+            return [f'`{v.display_name}`' for k, v in self.player_dict]
+        return [v.display_name for k, v in self.player_dict]
 
     def get_players_that_havent_picked(self, name_only: bool = True) -> List[Union[str, Player]]:
         """Returns a list of players that have yet to pick for the round"""
-        players = [x for x in self.player_list if x.hand.pick.is_empty() and not x.is_judge]
+        players = [v for k, v in self.player_dict if v.hand.pick.is_empty() and not v.is_judge]
         if name_only:
             return [x.display_name for x in players]
         else:
@@ -303,106 +248,97 @@ class Players:
 
     def get_players_with_dm_cards(self, name_only: bool = True) -> List[Union[str, Player]]:
         """Returns a list of names (monospaced) or players that have is_dm_cards turned on"""
-        players = [x for x in self.player_list if x.is_dm_cards]
+        players = [v for k, v in self.player_dict if v.is_dm_cards]
         if name_only:
             return [f'`{x.display_name}`' for x in players]
         return players
 
     def get_players_with_arp(self, name_only: bool = True) -> List[Union[str, Player]]:
         """Returns a list of names (monospaced) or players that have is_auto_randpick turned on"""
-        players = [x for x in self.player_list if x.is_arp]
+        players = [v for k, v in self.player_dict if v.is_arp]
         if name_only:
             return [f'`{x.display_name}`' for x in players]
         return players
 
     def get_players_with_arc(self, name_only: bool = True) -> List[Union[str, Player]]:
         """Returns a list of names (monospaced) or players that have is_auto_randchoose turned on"""
-        players = [x for x in self.player_list if x.is_arc]
+        players = [v for k, v in self.player_dict if v.is_arc]
         if name_only:
             return [f'`{x.display_name}`' for x in players]
         return players
 
-    def add_player_to_game(self, player_id: str, game_id: int, round_id: int) -> str:
+    def add_player_to_game(self, player_hash: str, game_id: int, game_round_id: int) -> str:
         """Adds a player to an existing game"""
         # Get the player's info
         self.log.debug('Beginning process to add player to game...')
-        user_info = self.st.clean_user_info(self.st.get_user_info(player_id).get('user'))
-        dis_name = self._extract_name(user_info_dict=user_info)
+        self.log.debug('Refreshing players in channel to scan for potential new players')
+        refresh_players_in_channel(eng=self.eng, st=self.st, log=self.log)
 
-        # Make sure player is in table
-        self._check_player_existence_in_table(user_id=player_id, display_name=dis_name)
-        # Make sure player is not already in game
-        player = self.get_player(player_id)
-        if player is not None:
-            return f'*`{dis_name}`* already in game...'
-        player = Player(player_id, display_name=dis_name, avi_url=user_info['avi32'])
-        player.start_round(game_id=game_id, round_id=round_id)
-        self.player_list.append(player)
-        self.log.debug(f'Player with name "{dis_name}" added to game...')
-        return f'*`{dis_name}`* successfully added to game...'
+        if self.player_dict.get(player_hash) is not None:
+            return f'*`{self.player_dict[player_hash].display_name}`* already in game...'
+        player = Player(player_hash=player_hash, log=self.log, eng=self.eng)
+        player.start_round(game_id=game_id, game_round_id=game_round_id)
+        self.player_dict[player_hash] = player
+        self.judge_order.append(player_hash)
+        self.log.debug(f'Player with name "{player.display_name}" added to game...')
+        return f'*`{player.display_name}`* successfully added to game...'
 
-    def remove_player_from_game(self, player_id: str) -> str:
+    def remove_player_from_game(self, player_hash: str) -> str:
         """Removes a player from the existing game"""
         self.log.debug('Beginning process to remove player from game...')
-        # Get player's index in list
-        player = self.get_player(player_id)
-        if player is None:
+        if self.player_dict.get(player_hash) is None:
             return f'That player is not in the current game...'
-        pidx = self.get_player_index(player_attr=player_id, attr_name='player_id')
-        _ = self.player_list.pop(pidx)
-        self.log.debug(f'Player with name "{player.display_name}" removed from game...')
+        self.log.debug(f'Removing player {player_hash} from game and judge order...')
+        player = self.player_dict.pop(player_hash)
+        # Remove from judge order
+        _ = self.judge_order.pop(self.judge_order.index(player_hash))
+
         return f'*`{player.display_name}`* successfully removed from game...'
 
-    def new_round(self, game_id: int, round_id: int):
+    def new_round(self, game_id: int, game_round_id: int):
         """Players-level new round routines"""
         self.log.debug('Handling player-level new round process')
-        for player in self.player_list:
-            player.start_round(game_id=game_id, round_id=round_id)
-            self._update_player(player)
+        for p_hash, _ in self.player_dict:
+            self.player_dict[p_hash].start_round(game_id=game_id, game_round_id=game_round_id)
 
-    def render_hands(self, judge_id: str, question_block: List[Dict], req_ans: int):
+    def render_hands(self, judge_hash: str, question_block: List[Dict], req_ans: int):
         """Renders each players' hands"""
         self.log.debug('Rendering hands for players...')
-        for player in self.player_list:
-            if player.player_id == judge_id or player.is_arp:
+        for p_hash, p_obj in self.player_dict:
+            if p_hash == judge_hash or p_obj.is_arp:
                 continue
-            cards_block = player.hand.render_hand(max_selected=req_ans)  # type: List[Dict]
-            if player.is_dm_cards:
+            cards_block = p_obj.hand.render_hand(max_selected=req_ans)  # type: List[Dict]
+            if p_obj.is_dm_cards:
                 msg_block = question_block + cards_block
-                dm_chan, ts = self.st.private_message(player.player_id, message='', ret_ts=True,
+                dm_chan, ts = self.st.private_message(p_hash, message='Here are your cards!', ret_ts=True,
                                                       blocks=msg_block)
-                player.pick_blocks[dm_chan] = ts
-            pchan_ts = self.st.private_channel_message(player.player_id, auto_config.MAIN_CHANNEL, ret_ts=True,
-                                                       message='', blocks=cards_block)
-            player.pick_blocks[auto_config.MAIN_CHANNEL] = pchan_ts
+                self.player_dict[p_hash].pick_blocks[dm_chan] = ts
+            pchan_ts = self.st.private_channel_message(p_hash, auto_config.MAIN_CHANNEL, ret_ts=True,
+                                                       message='Here are your cards!', blocks=cards_block)
+            self.player_dict[p_hash].pick_blocks[auto_config.MAIN_CHANNEL] = pchan_ts
 
-            self._update_player(player)
-
-    def take_dealt_cards(self, player_obj: Player, card_list: List['AnswerCard']):
+    def take_dealt_cards(self, player_hash: str, card_list: List['AnswerCard']):
         """Deals out cards to players"""
         for card in card_list:
             if card is None:
                 continue
-            player_obj.hand.take_card(card)
-        self._update_player(player_obj)
+            self.player_dict[player_hash].hand.take_card(card)
 
-    def reset_player_pick_block(self, player_obj: Player):
+    def reset_player_pick_block(self, player_hash: str):
         """Resets the dictionary containing info about the messsage containing pick info.
         This is run after updating the original message in order to ensure the no longer needed info is removed.
         """
-        player_obj.pick_blocks = {}
-        self._update_player(player_obj=player_obj)
+        self.player_dict[player_hash].pick_blocks = {}
 
-    def process_player_decknuke(self, player_obj: Player):
+    def process_player_decknuke(self, player_hash: str):
         """Handles the player aspect of decknuking."""
         self.log.debug('Processing player decknuke')
-        player_obj.hand.burn_cards()
-        player_obj.is_nuked_hand = True
-        self._update_player(player_obj)
+        self.player_dict[player_hash].hand.burn_cards()
+        self.player_dict[player_hash].is_nuked_hand = True
 
 
 class Judge(Player):
     """Player who chooses winning card"""
-    def __init__(self, player_obj: Player):
-        super().__init__(player_obj.player_id, display_name=player_obj.display_name)
+    def __init__(self, player_hash: str, log: Log):
+        super().__init__(player_hash=player_hash, log=log, is_judge=True)
         self.pick_idx = None    # type: Optional[int]
