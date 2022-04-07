@@ -1,4 +1,8 @@
 from random import shuffle
+from sqlalchemy.sql import (
+    and_,
+    not_
+)
 from cah.db_eng import WizzyPSQLClient
 from cah.model import (
     TableAnswerCard,
@@ -16,18 +20,21 @@ class Deck:
     def __init__(self, name: str, eng: WizzyPSQLClient):
         self.name = name
         self.eng = eng
-        self.questions_card_list = list()
-        # Read in cards to deck
         # Read in questions and answers
         with self.eng.session_mgr() as session:
-            qcards, acards = session.query(TableQuestionCard, TableAnswerCard).\
-                join(TableDeck, TableDeck.deck_id == TableQuestionCard.deck_key).\
-                join(TableDeck, TableDeck.deck_id == TableAnswerCard.deck_key).filter(
-                    TableDeck.name == name
-                ).all()
+            qcards = session.query(TableQuestionCard).\
+                join(TableDeck, TableQuestionCard.deck_key == TableDeck.deck_id).filter(and_(
+                    TableDeck.name == name,
+                    not_(TableQuestionCard.is_deleted)
+                )).all()
+            acards = session.query(TableAnswerCard). \
+                join(TableDeck, TableAnswerCard.deck_key == TableDeck.deck_id).filter(and_(
+                    TableDeck.name == name,
+                    not_(TableAnswerCard.is_deleted)
+                )).all()
 
-            self.questions_card_list = [QuestionCard(q.card_text, q.question_card_id) for q in qcards]
-            self.answers_card_list = [AnswerCard(a.card_text, a.answer_card_id,) for a in acards]
+            self.questions_card_list = [QuestionCard(txt=q.card_text, card_id=q.question_card_id) for q in qcards]
+            self.answers_card_list = [AnswerCard(txt=a.card_text, card_id=a.answer_card_id) for a in acards]
 
     @property
     def num_answer_cards(self):
