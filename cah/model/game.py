@@ -58,7 +58,7 @@ class TableGameRound(Base):
     def duration(self):
         return self.end_time - self.start_time if self.end_time is not None else self.last_update - self.start_time
 
-    def __init__(self, game_key: int, question_card_key: int):
+    def __init__(self, game_key: int, question_card_key: int = None):
         self.game_key = game_key
         self.question_card_key = question_card_key
 
