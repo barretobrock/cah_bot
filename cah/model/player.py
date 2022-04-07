@@ -16,8 +16,6 @@ from sqlalchemy.orm import (
     column_property,
     mapper
 )
-from sqlalchemy.dialects.postgresql import INT4RANGE
-from psycopg2.extras import NumericRange
 # local imports
 from cah.model.base import Base
 from cah.model.game import TablePlayerRound
@@ -33,19 +31,18 @@ class TablePlayer(Base):
     is_dm_cards = Column(Boolean, default=True, nullable=False)
     is_auto_randpick = Column(Boolean, default=False, nullable=False)
     is_auto_randchoose = Column(Boolean, default=False, nullable=False)
-    is_skip = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     rounds = relationship('TablePlayerRound', back_populates='player')
 
-    def __init__(self, slack_user_hash: str, display_name: str, honorific: str, is_dm_cards: bool = True,
-                 is_auto_randpick: bool = False, is_auto_randchoose: bool = False, is_skip: bool = False):
+    def __init__(self, slack_user_hash: str, display_name: str, honorific: str = '', is_dm_cards: bool = True,
+                 is_auto_randpick: bool = False, is_auto_randchoose: bool = False, is_active: bool = True):
         self.slack_user_hash = slack_user_hash,
         self.display_name = display_name
         self.honorific = honorific
         self.is_dm_cards = is_dm_cards
         self.is_auto_randpick = is_auto_randpick
         self.is_auto_randchoose = is_auto_randchoose
-        self.is_skip = is_skip
+        self.is_active = is_active
 
     def __repr__(self) -> str:
         return f'<TablePlayer(id={self.player_id}, slack_hash={self.slack_user_hash}, ' \
@@ -57,14 +54,16 @@ class TableHonorific(Base):
 
     honorific_id = Column(Integer, primary_key=True, autoincrement=True)
     text = Column(VARCHAR(200), nullable=False)
-    score_range = Column(INT4RANGE, nullable=False)
+    score_lower_lim = Column(Integer, nullable=False)
+    score_upper_lim = Column(Integer, nullable=False)
 
     def __init__(self, text: str, score_range: Tuple[int, int]):
         self.text = text
-        self.score_range = NumericRange(*score_range)
+        self.score_lower_lim, self.score_upper_lim = score_range
 
     def __repr__(self) -> str:
-        return f'<TableHonorific(id={self.honorific_id}, score_range={self.score_range}, text={self.text})>'
+        return f'<TableHonorific(id={self.honorific_id}, ' \
+               f'score_range=({self.score_lower_lim},{self.score_upper_lim}), text={self.text})>'
 
 
 @event.listens_for(mapper, 'mapper_configured')

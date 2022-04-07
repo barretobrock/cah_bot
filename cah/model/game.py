@@ -48,7 +48,7 @@ class TableGameRound(Base):
 
     game_round_id = Column(Integer, primary_key=True, autoincrement=True)
     game_key = Column(Integer, ForeignKey('cah.game.game_id'), nullable=False)
-    game = relationship('TableGame', back_populates='rounds', foreign_key=[game_key])
+    game = relationship('TableGame', back_populates='rounds', foreign_keys=[game_key])
     question_card_key = Column(Integer, ForeignKey('cah.question_card.question_card_id'), nullable=False)
     start_time = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     last_update = Column(TIMESTAMP, onupdate=func.now(), server_default=func.now())
@@ -58,12 +58,13 @@ class TableGameRound(Base):
     def duration(self):
         return self.end_time - self.start_time if self.end_time is not None else self.last_update - self.start_time
 
-    def __init__(self):
-        pass
+    def __init__(self, game_key: int, question_card_key: int):
+        self.game_key = game_key
+        self.question_card_key = question_card_key
 
     def __repr__(self) -> str:
-        return f'<TableGameRound(id={self.game_round_id}, start_time={self.start_time:%F %T}, ' \
-               f'duration={self.duration})>'
+        return f'<TableGameRound(id={self.game_round_id}, game_key={self.game_key}, ' \
+               f'start_time={self.start_time:%F %T}, duration={self.duration})>'
 
 
 class TablePlayerRound(Base):
@@ -82,8 +83,12 @@ class TablePlayerRound(Base):
     is_nuked_hand = Column(Boolean, default=False, nullable=False)
     is_nuked_hand_caught = Column(Boolean, default=False, nullable=False)
 
-    def __init__(self):
-        pass
+    def __init__(self, player_key: int, game_key: int, game_round_key: int, is_arp: bool, is_arc: bool):
+        self.player_key = player_key
+        self.game_key = game_key
+        self.game_round_key = game_round_key
+        self.is_arp = is_arp
+        self.is_arc = is_arc
 
     def __repr__(self) -> str:
         return f'<TablePlayerRound(id={self.player_round_id}, game_key={self.game_key}, ' \

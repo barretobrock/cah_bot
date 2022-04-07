@@ -11,7 +11,7 @@ from sqlalchemy import (
 from cah.model.base import Base
 
 
-class ErrorType(enum.Enum):
+class CahErrorType(enum.Enum):
     INPUT_ERROR = enum.auto()           # Err from input processing
     GAME_ERROR = enum.auto()            # Err from game mechanics
     GAME_ROUND_ERROR = enum.auto()      # Err from game round mechanics
@@ -19,11 +19,11 @@ class ErrorType(enum.Enum):
     PLAYER_ROUND_ERROR = enum.auto()    # Err from player round mechanics
 
 
-class TableError(Base):
+class TableCahError(Base):
     """error table"""
 
     error_id = Column(Integer, primary_key=True, autoincrement=True)
-    error_type = Column(Enum(ErrorType), nullable=False)
+    error_type = Column(Enum(CahErrorType), nullable=False)
     error_class = Column(VARCHAR(150), nullable=False)
     error_text = Column(VARCHAR(255), nullable=False)
     error_traceback = Column(TEXT)
@@ -33,7 +33,7 @@ class TableError(Base):
     game_round_key = Column(ForeignKey('cah.game_round.game_round_id'))
     game_key = Column(ForeignKey('cah.game.game_id'))
 
-    def __init__(self, error_type: ErrorType, error_class: str, error_text: str, error_traceback: str = None,
+    def __init__(self, error_type: CahErrorType, error_class: str, error_text: str, error_traceback: str = None,
                  player_key: int = None, player_round_key: int = None, game_round_key: int = None,
                  game_key: int = None):
         self.error_type = error_type
@@ -46,4 +46,4 @@ class TableError(Base):
         self.game_key = game_key
 
     def __repr__(self) -> str:
-        return f'<TableError(type={self.error_type.name} class={self.error_class}, text={self.error_text[:20]})>'
+        return f'<TableCahError(type={self.error_type.name} class={self.error_class}, text={self.error_text[:20]})>'

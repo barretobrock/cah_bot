@@ -5,8 +5,8 @@ from .card import (
 )
 from .deck import TableDeck
 from .error import (
-    ErrorType,
-    TableError
+    CahErrorType,
+    TableCahError
 )
 from .game import (
     GameStatus,
