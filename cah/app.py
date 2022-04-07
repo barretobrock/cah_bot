@@ -35,7 +35,7 @@ app = Flask(__name__)
 eng = WizzyPSQLClient(props=conn_dict, parent_log=logg)
 
 logg.debug('Instantiating bot...')
-Bot = botbase.CAHBot(parent_log=logg)
+Bot = botbase.CAHBot(eng=eng, creds=credstore, parent_log=logg)
 
 # Register the cleanup function as a signal handler
 signal.signal(signal.SIGINT, Bot.cleanup)
@@ -71,9 +71,13 @@ def handle_action():
     # Respond to the initial message and update it
     responses = [
         'Thanks, shithead!',
-        'Good job, you did a thing!',
-        'Look at you, doing things and shit!',
-        'Hey, you\'re a real pal!',
+        'Great job everyone! I\'m so proud of you and your accomplishments! :hugging_face:',
+        'Just like this api call I handled, you are worthy of what you desire :hugging_face:',
+        'Wow, you\'re quite the overachiever!',
+        'Good job, you did a thing and you excelled at it!',
+        'Look at you, doing things _well_ and shit!',
+        'Hey, just wanted to say you\'re a real pal for doing that thing for me!',
+        'Omnomnomnomnom Wizzy likey handling API calls! _dont make this weird_',
         'Thanks, I guess...'
     ]
     update_dict = {
