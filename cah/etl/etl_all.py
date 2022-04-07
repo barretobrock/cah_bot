@@ -6,7 +6,6 @@ from slacktools import (
     GSheetReader,
     SlackTools
 )
-import cah.cards as cahds
 from cah.model import (
     Base,
     SettingType,
@@ -22,8 +21,9 @@ from cah.model import (
     TableSetting
 )
 from cah.db_eng import WizzyPSQLClient
-from cah.common_methods import refresh_players_in_channel
 from cah.settings import auto_config
+from cah.core.cards import QuestionCard
+from cah.core.common_methods import refresh_players_in_channel
 
 
 class ETL:
@@ -114,12 +114,12 @@ class ETL:
             df = self.gsr.get_sheet(deck.name)
             for col in ['questions', 'answers']:
                 txt_list = df.loc[
-                    (~df[col].isnull()) &
-                    (df[col].str.strip() != '')
-                    , col].str.strip().unique().tolist()
+                    (~df[col].isnull()) & (df[col].str.strip() != ''), col
+                ].str.strip().unique().tolist()
                 for txt in txt_list:
                     if col == 'questions':
-                        card = cahds.QuestionCard(txt=txt, card_id=0)
+                        # Generate a question card to leverage the response number prediction
+                        card = QuestionCard(txt=txt, card_id=0)
                         card_objs.append(TableQuestionCard(card_text=card.txt, deck_key=deck.deck_id,
                                                            responses_required=card.required_answers))
                     else:
@@ -131,7 +131,8 @@ class ETL:
 
     def etl_players(self):
         """ETL for possible players"""
-        refresh_players_in_channel(eng=self.psql_client, st=self.st, log=self.log)
+        # For ETL we'll use #general (CMEND3W3H)
+        refresh_players_in_channel(channel='CMEND3W3H', eng=self.psql_client, st=self.st, log=self.log)
         with self.psql_client.session_mgr() as session:
             uids = [x.slack_user_hash for x in session.query(TablePlayer).all()]
 
@@ -154,14 +155,14 @@ class ETL:
             (-2, 0): ['temporarily disposed', 'momentarily disheveled', 'underdog'],
             (1, 3): ['lackey', 'intern', 'doormat', 'underling', 'deputy', 'amateur', 'newcomer'],
             (4, 6): ['young padawan', 'master apprentice', 'rookie', 'greenhorn', 'fledgling', 'tenderfoot'],
-            (6, 9): ['honorable', 'respected and just', 'cold and yet still fair'],
-            (9, 12): ['worthy inheriter of (mo|da)ddy\'s millions', '(mo|fa)ther of dragons',
-                      'most excellent', 'knowledgeable', 'wise'],
-            (12, 15): ['elder', 'ruler of the lower cards', 'most fair dictator of difficult choices'],
-            (15, 18): ['benevolent and omniscient chief of dutiful diddling', 'supreme high chancellor of '],
-            (18, 21): ['almighty veteran diddler', 'ancient diddle dealer from before time began',
+            (7, 9): ['honorable', 'respected and just', 'cold and yet still fair'],
+            (10, 12): ['worthy inheriter of (mo|da)ddy\'s millions', '(mo|fa)ther of dragons',
+                       'most excellent', 'knowledgeable', 'wise'],
+            (13, 15): ['elder', 'ruler of the lower cards', 'most fair dictator of difficult choices'],
+            (16, 18): ['benevolent and omniscient chief of dutiful diddling', 'supreme high chancellor of '],
+            (19, 21): ['almighty veteran diddler', 'ancient diddle dealer from before time began',
                        'sage of the diddles'],
-            (21, 500): ['bediddled', 'grand bediddler', 'most wise in the ways of the diddling',
+            (22, 500): ['bediddled', 'grand bediddler', 'most wise in the ways of the diddling',
                         'pansophical bediddled sage of the dark cards']
         }
         tbl_objs = []

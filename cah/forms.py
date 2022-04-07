@@ -1,4 +1,9 @@
-from typing import List, Dict
+from typing import (
+    List,
+    Dict,
+    TYPE_CHECKING
+)
+from easylogger import Log
 from slacktools import (
     BlockKitBuilder as bkb,
     SlackTools
@@ -7,16 +12,22 @@ from cah.model import (
     GameStatus,
     TablePlayer
 )
-from cah.games import Game
 from cah.db_eng import WizzyPSQLClient
+if TYPE_CHECKING:
+    from cah.core.deck import Deck
+    from cah.core.games import Game
 
 
 class Forms:
     """Stores various Block Kit forms"""
+    def __init__(self, st: SlackTools, eng: WizzyPSQLClient, parent_log: Log):
+        self.log = Log(parent_log, child_name=self.__class__.__name__)
+        self.st = st
+        self.eng = eng
 
-    @classmethod
-    def build_main_menu(cls, game_obj: Game, slack_api: SlackTools, user: str, channel: str):
+    def build_main_menu(self, game_obj: 'Game', user: str, channel: str):
         """Generates and sends a main menu"""
+        self.log.debug(f'Received menu command from {user} in {channel}. Building menu.')
         button_list = []
         if game_obj is None:
             # No game started, put the new game button at the beginning.
@@ -29,6 +40,7 @@ class Forms:
             bkb.make_action_button('My Settings', value='my-settings', action_id='my-settings'),
         ]
         if game_obj is not None and game_obj.status not in [GameStatus.ENDED]:
+            self.log.debug(f'Game is ongoing. status: {game_obj.status} - adding game elements.')
             button_list += [
                 bkb.make_action_button('Ping', value='ping', action_id='ping'),
                 bkb.make_action_button('Add', value='add-player', action_id='add-player'),
@@ -43,21 +55,26 @@ class Forms:
             bkb.make_header('CAH Main Menu'),
             bkb.make_action_button_group(button_list)
         ]
-        slack_api.private_channel_message(user_id=user, channel=channel,
-                                          message='Welcome to the CAH Global Incorporated main menu!',
-                                          blocks=blocks)
+        self.log.debug('Sending menu form as private channel message.')
+        self.st.private_channel_message(user_id=user, channel=channel,
+                                        message='Welcome to the CAH Global Incorporated main menu!',
+                                        blocks=blocks)
 
     @staticmethod
     def build_new_game_form_p1(decks: List['Deck']) -> List[Dict]:
         """Builds a new game form with Block Kit"""
-        decks_list = [{'txt': x, 'value': f'deck_{x}'} for x in decks]
+        decks_list = [{'txt': x.name, 'value': f'deck_{x}'} for x in decks]
 
         return [bkb.make_static_select('Select a deck', option_list=decks_list, action_id='new-game-deck')]
 
-    @staticmethod
-    def build_new_game_form_p2(user_id: str) -> List[Dict]:
+    def build_new_game_form_p2(self) -> List[Dict]:
         """Builds the second part to the new game form with Block Kit"""
-        return [bkb.make_multi_user_select('Select the players', initial_users=[user_id],
+        # Grab a query of 'active' players to serve as the initial users populated in the menu
+        with self.eng.session_mgr() as session:
+            active_players = [x.slack_user_hash for x in
+                              session.query(TablePlayer).filter(TablePlayer.is_active).all()]
+
+        return [bkb.make_multi_user_select('Select the players', initial_users=active_players,
                                            action_id='new-game-users')]
 
     @staticmethod
@@ -83,8 +100,7 @@ class Forms:
     def build_my_settings_form(eng: WizzyPSQLClient, user_id: str) -> List[Dict]:
         """Builds a my details form"""
         # Lookup user
-        player = session_object.query(TablePlayers)\
-            .filter(TablePlayers.slack_id == user_id).one_or_none()  # type: TablePlayers
+        player = eng.get_player_from_hash(user_hash=user_id)  # type: TablePlayer
         status_dict = {
             'arp': {
                 'bool': player.is_auto_randpick,
