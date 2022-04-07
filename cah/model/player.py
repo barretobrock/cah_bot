@@ -28,13 +28,13 @@ class TablePlayer(Base):
     player_id = Column(Integer, primary_key=True, autoincrement=True)
     slack_user_hash = Column(VARCHAR(50), nullable=False, unique=True)
     display_name = Column(VARCHAR(120), nullable=False)
-    avi_url = Column(VARCHAR(255), nullable=False)
     honorific = Column(VARCHAR(255), default='')
     is_dm_cards = Column(Boolean, default=True, nullable=False)
     is_auto_randpick = Column(Boolean, default=False, nullable=False)
     is_auto_randchoose = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     rounds = relationship('TablePlayerRound', back_populates='player')
+    avi_url = Column(VARCHAR(255), nullable=False)
 
     def __init__(self, slack_user_hash: str, display_name: str, avi_url: str, honorific: str = '',
                  is_dm_cards: bool = True, is_auto_randpick: bool = False, is_auto_randchoose: bool = False,
