@@ -4,8 +4,7 @@ from typing import (
     List,
     Optional,
     Union,
-    Dict,
-    TYPE_CHECKING
+    Dict
 )
 from random import shuffle
 from sqlalchemy.sql import (
@@ -16,6 +15,7 @@ from easylogger import Log
 from slacktools import SlackTools
 import cah.app as cah_app
 from cah.model import (
+    TableHonorific,
     TablePlayer,
     TablePlayerRound
 )
@@ -26,17 +26,16 @@ from cah.core.cards import (
     Hand
 )
 from cah.core.common_methods import refresh_players_in_channel
-if TYPE_CHECKING:
-    pass
 
 
 class Player:
     """Player-specific things"""
 
-    def __init__(self, player_hash: str, log: Log, eng: WizzyPSQLClient = None, is_judge: bool = False):
+    def __init__(self, player_hash: str, eng: WizzyPSQLClient, log: Log):
         self.player_hash = player_hash
         self.player_tag = f'<@{self.player_hash}>'
         self.log = log
+        self.eng = eng
 
         player_table = self._get_player_tbl()
         self.player_table_id = player_table.id
@@ -56,8 +55,7 @@ class Player:
         self.game_round_id = None
 
         self.pick_blocks = {}   # Provides a means for us to update a block kit ui upon a successful pick
-        if not is_judge:
-            self.hand = Hand(owner=player_hash, eng=eng)
+        self.hand = Hand(owner=player_hash, eng=self.eng)
 
     @property
     def is_arp(self):
@@ -203,6 +201,19 @@ class Player:
                     TablePlayerRound.game_key == game_id
                 )).scalar()
 
+    def get_honorific(self) -> str:
+        pts = self.get_current_score(game_id=self.game_id)
+
+        with self.eng.session_mgr() as session:
+            honorific = session.query(TableHonorific).filter(and_(
+                    pts >= TableHonorific.score_lower_lim,
+                    pts <= TableHonorific.score_upper_lim
+                )).order_by(func.random()).limit(1).one_or_none()
+            session.expunge(honorific)
+        if self.honorific != honorific.text:
+            self.honorific = honorific.text
+        return self.honorific
+
     def get_overall_score(self) -> int:
         """Retrieves the players current score"""
         tbl = self._get_player_tbl()
@@ -230,17 +241,17 @@ class Players:
 
     def get_player_hashes(self) -> List[str]:
         """Collect user ids from a list of players"""
-        return [k for k, v in self.player_dict]
+        return [k for k, v in self.player_dict.items()]
 
     def get_player_names(self, monospace: bool = False) -> List[str]:
         """Returns player display names"""
         if monospace:
-            return [f'`{v.display_name}`' for k, v in self.player_dict]
-        return [v.display_name for k, v in self.player_dict]
+            return [f'`{v.display_name}`' for k, v in self.player_dict.items()]
+        return [v.display_name for k, v in self.player_dict.items()]
 
     def get_players_that_havent_picked(self, name_only: bool = True) -> List[Union[str, Player]]:
         """Returns a list of players that have yet to pick for the round"""
-        players = [v for k, v in self.player_dict if v.hand.pick.is_empty() and not v.is_judge]
+        players = [v for k, v in self.player_dict.items() if v.hand.pick.is_empty() and not v.is_judge]
         if name_only:
             return [x.display_name for x in players]
         else:
@@ -248,21 +259,21 @@ class Players:
 
     def get_players_with_dm_cards(self, name_only: bool = True) -> List[Union[str, Player]]:
         """Returns a list of names (monospaced) or players that have is_dm_cards turned on"""
-        players = [v for k, v in self.player_dict if v.is_dm_cards]
+        players = [v for k, v in self.player_dict.items() if v.is_dm_cards]
         if name_only:
             return [f'`{x.display_name}`' for x in players]
         return players
 
     def get_players_with_arp(self, name_only: bool = True) -> List[Union[str, Player]]:
         """Returns a list of names (monospaced) or players that have is_auto_randpick turned on"""
-        players = [v for k, v in self.player_dict if v.is_arp]
+        players = [v for k, v in self.player_dict.items() if v.is_arp]
         if name_only:
             return [f'`{x.display_name}`' for x in players]
         return players
 
     def get_players_with_arc(self, name_only: bool = True) -> List[Union[str, Player]]:
         """Returns a list of names (monospaced) or players that have is_auto_randchoose turned on"""
-        players = [v for k, v in self.player_dict if v.is_arc]
+        players = [v for k, v in self.player_dict.items() if v.is_arc]
         if name_only:
             return [f'`{x.display_name}`' for x in players]
         return players
@@ -298,13 +309,13 @@ class Players:
     def new_round(self, game_id: int, game_round_id: int):
         """Players-level new round routines"""
         self.log.debug('Handling player-level new round process')
-        for p_hash, _ in self.player_dict:
+        for p_hash, _ in self.player_dict.items():
             self.player_dict[p_hash].start_round(game_id=game_id, game_round_id=game_round_id)
 
     def render_hands(self, judge_hash: str, question_block: List[Dict], req_ans: int):
         """Renders each players' hands"""
         self.log.debug('Rendering hands for players...')
-        for p_hash, p_obj in self.player_dict:
+        for p_hash, p_obj in self.player_dict.items():
             if p_hash == judge_hash or p_obj.is_arp:
                 continue
             cards_block = p_obj.hand.render_hand(max_selected=req_ans)  # type: List[Dict]
@@ -339,6 +350,6 @@ class Players:
 
 class Judge(Player):
     """Player who chooses winning card"""
-    def __init__(self, player_hash: str, log: Log):
-        super().__init__(player_hash=player_hash, log=log, is_judge=True)
+    def __init__(self, player_hash: str, eng: WizzyPSQLClient, log: Log):
+        super().__init__(player_hash=player_hash, eng=eng, log=log)
         self.pick_idx = None    # type: Optional[int]
