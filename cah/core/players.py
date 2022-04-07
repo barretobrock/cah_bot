@@ -40,7 +40,7 @@ class Player:
         player_table = self._get_player_tbl()
         self.player_table_id = player_table.id
         self.display_name = player_table.display_name
-        self.honorific = player_table.honorific
+        self.avi_url = player_table.avi_url
         self._is_arp = player_table.is_auto_randpick
         self._is_arc = player_table.is_auto_randchoose
         self._is_dm_cards = player_table.is_dm_cards
@@ -164,6 +164,9 @@ class Player:
             session.expunge(tbl)
         return tbl
 
+    def get_full_name(self) -> str:
+        return self._get_player_tbl().full_name
+
     def start_round(self, game_id: int, game_round_id: int):
         """Begins a new round"""
         self.game_id = game_id
@@ -283,7 +286,7 @@ class Players:
         # Get the player's info
         self.log.debug('Beginning process to add player to game...')
         self.log.debug('Refreshing players in channel to scan for potential new players')
-        refresh_players_in_channel(eng=self.eng, st=self.st, log=self.log)
+        refresh_players_in_channel(channel=auto_config.MAIN_CHANNEL, eng=self.eng, st=self.st, log=self.log)
 
         if self.player_dict.get(player_hash) is not None:
             return f'*`{self.player_dict[player_hash].display_name}`* already in game...'
