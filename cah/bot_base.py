@@ -457,13 +457,17 @@ class CAHBot:
 
     def _read_in_cards(self, card_set: str = 'standard') -> 'Deck':
         """Reads in the cards"""
+        self.log.debug(f'Reading in deck with name: {card_set}')
         with self.eng.session_mgr() as session:
+            deck: TableDeck
             deck = session.query(TableDeck).filter(TableDeck.name == card_set).one_or_none()
             if deck is None:
                 possible_decks = [x.name for x in session.query(TableDeck).all()]
                 raise ValueError(f'The card set `{card_set}` was not found. '
                                  f'Possible sets: `{",".join(possible_decks)}`.')
-            session.expunge(deck)
+            deck.times_used += 1
+            deck = self.eng.refresh_table_object(tbl_obj=deck, session=session)
+        self.log.debug(f'Returned: {deck}. Building card lists from this...')
         return Deck(name=deck.name, eng=self.eng)
 
     def _toggle_bool_setting(self, setting: SettingType):
