@@ -143,8 +143,8 @@ class CAHBot:
                 'desc': 'Toggles whether or not you receive cards as a DM from Wizzy. default: `True`',
                 'response': [self.toggle_card_dm, 'user', 'channel']
             },
-            r'^c[har]+ds now': {
-                'pattern': 'cahds now',
+            r'^c[har]+ds (now|dm)': {
+                'pattern': 'cahds (now|dm)',
                 'cat': cat_player,
                 'desc': 'Toggles whether or not you receive cards as a DM from Wizzy. default: `True`',
                 'response': [self.dm_cards_now, 'user']
@@ -421,20 +421,25 @@ class CAHBot:
         response_list = [f'Using `{deck}` deck']
 
         # Read in card deck to use with this game
+        self.log.debug('Reading in deck...')
         deck = self._read_in_cards(deck)
 
         # Load the game, add players, shuffle the players
+        self.log.debug('Instantiating game object')
         self.current_game = Game(player_hashes=player_hashes, deck=deck, st=self.st, eng=self.eng,
                                  parent_log=self.log)
         # Get order of judges
+        self.log.debug('Getting judge order')
         response_list.append(self.current_game.get_judge_order())
         # Kick off the new round, message details to the group
+        self.log.debug('Beginning new round')
         self.new_round(notifications=response_list)
 
     def refresh_players_in_channel(self):
         """Refresh all channel members' details, including the players' names.
         While doing so, make sure they're members of the channel."""
         refresh_players_in_channel(channel=auto_config.MAIN_CHANNEL, eng=self.eng, st=self.st, log=self.log)
+        return 'Players refreshed o7'
 
     def decknuke(self, user: str):
         """Deals the user a new hand while randpicking one of the cards from their current deck.
@@ -447,8 +452,8 @@ class CAHBot:
     def show_decks(self) -> str:
         """Returns the deck names currently available"""
         with self.eng.session_mgr() as session:
-            deck_names = [x.name for x in session.query(TableDeck).all()]
-        return f'`{",".join(deck_names)}`'
+            deck_names = [f'`{x.name}`' for x in session.query(TableDeck).all()]
+        return ",".join(deck_names)
 
     def _read_in_cards(self, card_set: str = 'standard') -> 'Deck':
         """Reads in the cards"""
@@ -559,6 +564,7 @@ class CAHBot:
         else:
             player = self.eng.get_player_from_hash(user_hash=user_hash)
             player.is_dm_cards = not player.is_dm_cards
+            self.eng.refresh_table_object(tbl_obj=player)
 
         msg = f'Card DMing for player `{player.display_name}` set to `{player.is_dm_cards}`'
         self.st.send_message(channel, msg)

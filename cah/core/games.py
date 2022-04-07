@@ -161,18 +161,21 @@ class Game:
 
     def new_round(self, notification_block: List[Dict] = None) -> Optional[List[dict]]:
         """Starts a new round"""
-
+        self.log.debug('Working on new round...')
         if self.status not in new_round_ready:
+            self.log.error(f'Status wasn\'t right for a new round: {self.status.name}')
             # Avoid starting a new round when one has already been started
             raise ValueError(f'Cannot transition to new round due to current status '
                              f'(`{self.status.name}`)')
 
         if self.round_number > 0:
+            self.log.debug('Ending previous round first...')
             # Not the first round...
             self.end_round()
 
         # Determine if the game should be ended before proceeding
         if len(self.deck.questions_card_list) == 0:
+            self.log.debug('No more questions available. Ending game')
             # No more questions, game hath ended
             self.end_game()
             return [bkb.make_block_section(f'No more question cards! Game over! {":party-dead:" * 3}')]
