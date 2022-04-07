@@ -47,4 +47,40 @@ ngrok http 5004
 ```
 Then in another window, run the script to get the bot/app running. Don't forget to change the URL in Slack's preferences.
 
+## App Info
 
+### Permissions
+#### Events
+ - Bot
+   - emoji_changed
+   - message.channels
+   - message.groups
+   - message.im
+   - pin_added
+   - pin_removed
+   - reaction_added
+   - user_change
+ - User
+   - None, ATM
+#### OAuth Scopes
+ - Bot
+   - channels.history
+   - *channels.join
+   - channels.read
+   - chat.write
+   - commands (slash)
+   - emoji.read
+   - files.write
+   - groups.history
+   - groups.read
+   - im.history
+   - im.read
+   - im.write
+   - *incoming-webhook (CURL-based notifications)
+   - mpim.read
+   - pins.read
+   - reactions.read
+   - reactions.write
+   - users.read
+ - User
+   - search.read

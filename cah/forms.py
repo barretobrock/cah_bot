@@ -1,8 +1,14 @@
 from typing import List, Dict
-from sqlalchemy.orm import Session
-from slacktools import BlockKitBuilder as bkb, SlackTools
-from .model import GameStatuses, TablePlayers
-from .games import Game
+from slacktools import (
+    BlockKitBuilder as bkb,
+    SlackTools
+)
+from cah.model import (
+    GameStatus,
+    TablePlayer
+)
+from cah.games import Game
+from cah.db_eng import WizzyPSQLClient
 
 
 class Forms:
@@ -22,7 +28,7 @@ class Forms:
             bkb.make_action_button('Scores', value='score', action_id='score'),
             bkb.make_action_button('My Settings', value='my-settings', action_id='my-settings'),
         ]
-        if game_obj is not None and game_obj.status not in [GameStatuses.ended]:
+        if game_obj is not None and game_obj.status not in [GameStatus.ENDED]:
             button_list += [
                 bkb.make_action_button('Ping', value='ping', action_id='ping'),
                 bkb.make_action_button('Add', value='add-player', action_id='add-player'),
@@ -74,7 +80,7 @@ class Forms:
         return [bkb.make_user_select('Select the player to remove', action_id='remove-player-done')]
 
     @staticmethod
-    def build_my_settings_form(session_object: Session, user_id: str) -> List[Dict]:
+    def build_my_settings_form(eng: WizzyPSQLClient, user_id: str) -> List[Dict]:
         """Builds a my details form"""
         # Lookup user
         player = session_object.query(TablePlayers)\

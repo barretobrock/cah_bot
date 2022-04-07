@@ -1,13 +1,19 @@
 import json
-import requests
 import signal
+import requests
 from random import choice
-from flask import Flask, request, make_response
-from flask_sqlalchemy import SQLAlchemy
-from slacktools import SlackEventAdapter, SecretStore
+from flask import (
+    Flask,
+    request,
+    make_response
+)
+from slackeventsapi import SlackEventAdapter
+from slacktools import SecretStore
 from easylogger import Log
 import cah.bot_base as botbase
-from .settings import auto_config
+from cah.model import TablePlayer
+from cah.db_eng import WizzyPSQLClient
+from cah.settings import auto_config
 
 # TODO:
 #  - add menu to control other users that are unresponsive (e.g., arparca)
@@ -19,15 +25,14 @@ from .settings import auto_config
 bot_name = auto_config.BOT_NICKNAME
 logg = Log(bot_name, log_to_file=True)
 
-credstore = SecretStore('secretprops-bobdev.kdbx')
+credstore = SecretStore('secretprops-davaiops.kdbx')
+# Set up database connection
+conn_dict = credstore.get_entry(f'davaidb-{auto_config.ENV.lower()}').custom_properties
 cah_creds = credstore.get_key_and_make_ns(bot_name)
 
 logg.debug('Starting up app...')
-message_events = []
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = auto_config.DB_URI
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+eng = WizzyPSQLClient(props=conn_dict, parent_log=logg)
 
 logg.debug('Instantiating bot...')
 Bot = botbase.CAHBot(parent_log=logg)
@@ -35,16 +40,6 @@ Bot = botbase.CAHBot(parent_log=logg)
 # Register the cleanup function as a signal handler
 signal.signal(signal.SIGINT, Bot.cleanup)
 signal.signal(signal.SIGTERM, Bot.cleanup)
-
-
-@app.teardown_request
-def teardown_request(exception=None):
-    # Tell app to rollback automatically if a session exception is encountered
-    if exception is not None:
-        logg.error(f'Exception occurred. Rolling back session: {exception}')
-        db.session.rollback()
-    db.session.remove()
-
 
 # Events API listener
 bot_events = SlackEventAdapter(cah_creds.signing_secret, "/api/events", app)
@@ -90,8 +85,8 @@ def handle_action():
     response_url = event_data.get('response_url')
     if response_url is not None:
         # Update original message
-        resp = requests.post(event_data['response_url'], json=update_dict,
-                             headers={'Content-Type': 'application/json'})
+        _ = requests.post(event_data['response_url'], json=update_dict,
+                          headers={'Content-Type': 'application/json'})
 
     # Send HTTP 200 response with an empty body so Slack knows we're done
     return make_response('', 200)
@@ -111,3 +106,31 @@ def handle_slash():
 
     # Send HTTP 200 response with an empty body so Slack knows we're done
     return make_response('', 200)
+
+
+@bot_events.on('user_change')
+def notify_new_statuses(event_data):
+    """Triggered when a user updates their profile info. Gets saved to global dict
+    where we then report it in #general"""
+    event = event_data['event']
+    user_info = event['user']
+    uid = user_info['id']
+    # Look up user in db
+    user_obj = eng.get_player_from_hash(user_hash=uid)  # type: TablePlayer
+    logg.debug(f'User change detected for {uid}')
+    if user_obj is None:
+        logg.warning(f'Couldn\'t find user: {uid} \n {user_info}')
+        return
+
+    # get display name
+    profile = user_info.get('profile')
+    display_name = profile.get('display_name')
+    if any([
+        # Maybe some other attributes?
+        user_obj.display_name != display_name,
+    ]):
+        # Update the user
+        with eng.session_mgr() as session:
+            session.add(user_obj)
+            user_obj.display_name = display_name
+        logg.debug(f'User {display_name} updated in db.')

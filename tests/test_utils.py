@@ -2,7 +2,7 @@
 import os
 import unittest
 import numpy as np
-from cah.utils import CAHBot
+from cah.common_methods import CAHBot
 
 
 bot_name = 'cah'

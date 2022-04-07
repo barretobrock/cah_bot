@@ -1,124 +1,181 @@
 from typing import List
-from random import choice
+from sqlalchemy.sql import not_
 from easylogger import Log
-from slacktools import SecretStore, GSheetReader, SlackTools
-import cah.app as cah_app
-import cah.cards as cahhds
-from cah.model import Base, TableDecks, TableQuestionCards, TableAnswerCards, TablePlayers, TableGameSettings,\
-    TablePlayerRounds, TableGames, TableGameRounds
-from cah.etl.etl_decks import deck_tables
-from cah.etl.etl_games import game_tables
-from cah.etl.etl_players import player_tables
+from slacktools import (
+    SecretStore,
+    GSheetReader,
+    SlackTools
+)
+import cah.cards as cahds
+from cah.model import (
+    Base,
+    SettingType,
+    TableAnswerCard,
+    TableDeck,
+    TableCahError,
+    TableGame,
+    TableGameRound,
+    TableHonorific,
+    TablePlayer,
+    TablePlayerRound,
+    TableQuestionCard,
+    TableSetting
+)
+from cah.db_eng import WizzyPSQLClient
+from cah.common_methods import refresh_players_in_channel
 from cah.settings import auto_config
 
 
 class ETL:
     """For holding all the various ETL processes, delimited by table name or function of data stored"""
 
-    def __init__(self, tables: List[str]):
+    ALL_TABLES = [
+        TableAnswerCard,
+        TableDeck,
+        TableCahError,
+        TableGame,
+        TableGameRound,
+        TableHonorific,
+        TablePlayer,
+        TablePlayerRound,
+        TableQuestionCard,
+        TableSetting
+    ]
+
+    def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True):
         self.log = Log('cah-etl', log_level_str='DEBUG', log_to_file=True)
+        self.log.debug('Obtaining credential file...')
+        credstore = SecretStore('secretprops-davaiops.kdbx')
+
         self.log.debug('Opening up the database...')
-        self.session, self.eng = auto_config.SESSION(), auto_config.engine
+        db_props = credstore.get_entry(f'davaidb-{env}').custom_properties
+        self.psql_client = WizzyPSQLClient(props=db_props, parent_log=self.log)
 
         # Determine tables to drop
-        self.log.debug(f'Dropping tables: {tables} from db...')
+        self.log.debug(f'Working on tables: {tables} from db...')
         tbl_objs = []
         for table in tables:
-            tbl_objs.append(Base.metadata.tables.get(table))
-        Base.metadata.drop_all(self.eng, tables=tbl_objs)
-        self.log.debug('Establishing database...')
-        Base.metadata.create_all(self.eng)
+            tbl_objs.append(
+                Base.metadata.tables.get(f'{table.__table_args__.get("schema")}.{table.__tablename__}'))
+        if drop_all:
+            # We're likely doing a refresh - drop/create operations will be for all object
+            self.log.debug(f'Dropping {len(tbl_objs)} listed tables...')
+            Base.metadata.drop_all(self.psql_client.engine, tables=tbl_objs)
+        self.log.debug(f'Creating {len(tbl_objs)} listed tables...')
+        Base.metadata.create_all(self.psql_client.engine, tables=tbl_objs)
 
         self.log.debug('Authenticating credentials for services...')
-        credstore = SecretStore('secretprops-bobdev.kdbx')
-        cah_creds = credstore.get_key_and_make_ns('wizzy')
+        cah_creds = credstore.get_key_and_make_ns(auto_config.BOT_NICKNAME)
         self.gsr = GSheetReader(sec_store=credstore, sheet_key=cah_creds.spreadsheet_key)
-        self.st = SlackTools(credstore, 'wizzy', self.log)
+        self.st = SlackTools(credstore, auto_config.BOT_NICKNAME, self.log)
+        self.log.debug('Completed loading services')
+
+    def etl_bot_settings(self):
+        self.log.debug('Working on settings...')
+        bot_settings = []
+        for bot_setting in list(SettingType):
+            if bot_setting.name.startswith('IS_'):
+                # All current booleans will be True
+                value = 1
+            else:
+                # Int
+                if 'DECKNUKE' in bot_setting.name:
+                    value = 3
+                else:
+                    value = 0
+            bot_settings.append(TableSetting(setting_type=bot_setting, setting_int=value))
+
+        with self.psql_client.session_mgr() as session:
+            self.log.debug(f'Adding {len(bot_settings)} bot settings.')
+            session.add_all(bot_settings)
 
     def etl_decks(self):
         """ETL for decks and card tables"""
-        decks = []
+        decks = []  # type: List[TableDeck]
         for sht in self.gsr.sheets:
             if not sht.title.startswith('x_'):
                 # Likely a deck
-                decks.append(sht.title)
+                decks.append(TableDeck(name=sht.title))
+        with self.psql_client.session_mgr() as session:
+            session.add_all(decks)
+            # Add decks to db with commit
+            session.commit()
+            for deck in decks:
+                # Refresh each item now to pull in their id
+                session.refresh(deck)
+            # Remove these items from the session so they'll still be accessible after session closes
+            session.expunge_all()
 
         self.log.debug('Processing deck info...')
         #  Read in deck info
         for deck in decks:
+            card_objs = []
             self.log.debug(f'Working on deck {deck}')
-            deck_df = self.gsr.get_sheet(deck)
-            questions = deck_df['questions'].unique().tolist()
-            answers = deck_df['answers'].unique().tolist()
-            # Create the deck in the deck table, get the id
-            self.log.debug('Loading deck into deck table')
-            deck_item = TableDecks(name=deck)
-            self.session.add(deck_item)
-            self.session.commit()
-            self.log.debug(f'Retrieved deck id of {deck_item.id}')
-
+            df = self.gsr.get_sheet(deck.name)
+            for col in ['questions', 'answers']:
+                txt_list = df.loc[
+                    (~df[col].isnull()) &
+                    (df[col].str.strip() != '')
+                    , col].str.strip().unique().tolist()
+                for txt in txt_list:
+                    if col == 'questions':
+                        card = cahds.QuestionCard(txt=txt, card_id=0)
+                        card_objs.append(TableQuestionCard(card_text=card.txt, deck_key=deck.deck_id,
+                                                           responses_required=card.required_answers))
+                    else:
+                        card_objs.append(TableAnswerCard(card_text=txt, deck_key=deck.deck_id))
             # Now load questions and answers into the tables
-            for question in questions:
-                if question == '':
-                    continue
-                question_card = cahhds.QuestionCard(txt=question, card_id=000)
-                self.session.add(
-                    TableQuestionCards(deck_id=deck_item.id, responses_required=question_card.required_answers,
-                                       card_text=question_card.txt))
-            self.session.add_all([TableAnswerCards(deck_id=deck_item.id, card_text=x) for x in answers if x != ''])
-            added_questions = self.session.query(TableQuestionCards).join(TableDecks).filter(
-                TableDecks.name == deck).all()
-            added_answers = self.session.query(TableAnswerCards).join(TableDecks)\
-                .filter(TableDecks.name == deck).all()
-            self.log.debug(f'For deck {deck}, questions {len(questions)}:{len(added_questions)},'
-                           f' answers: {len(answers)}:{len(added_answers)}')
-        self.session.commit()
+            with self.psql_client.session_mgr() as session:
+                session.add_all(card_objs)
+            self.log.debug(f'For deck: {deck}, loaded {len(card_objs)} cards.')
 
     def etl_players(self):
-        """ETL for decks and card tables"""
+        """ETL for possible players"""
+        refresh_players_in_channel(eng=self.psql_client, st=self.st, log=self.log)
+        with self.psql_client.session_mgr() as session:
+            uids = [x.slack_user_hash for x in session.query(TablePlayer).all()]
 
-        # Read in user info
-        self.log.debug('Loading players into player table')
-        users = self.st.get_channel_members('CMEND3W3H')
-        self.session.add_all([TablePlayers(slack_id=x['id'], name=x['display_name']) for x in users
-                              if not x['is_bot']])
-        self.session.commit()
+        # Iterate through players in channel, set active if they're in the channel
+        active_users = []
+        for user in self.st.get_channel_members('CMPV3K8AE'):
+            if user['id'] in uids:
+                active_users.append(user['id'])
+        self.log.debug(f'Found {len(active_users)} in #cah. Setting others to inactive...')
+        with self.psql_client.session_mgr() as session:
+            session.query(TablePlayer).filter(not_(TablePlayer.slack_user_hash.in_(active_users))).update({
+                TablePlayer.is_active: False
+            })
 
-        self.log.debug(f'Loaded {len(self.session.query(TablePlayers).all())} players into table.')
+    def etl_honorific(self):
 
-    def game_sim(self):
-        """Simulate db functions over a game"""
-        players = self.session.query(TablePlayers).all()[:4]
-        game = TableGames()
-        self.session.add(game)
-        self.session.commit()
-
-        for i in range(10):
-            self.log.debug(f'Beginning round {i}...')
-            gameround = TableGameRounds(game_id=game.id)
-            self.session.add(gameround)
-            self.session.commit()
-            player_rounds = []
-            for p in players:
-                player_round = TablePlayerRounds(player_id=p.id, game_id=game.id, round_id=gameround.id)
-                self.session.add(player_round)
-                player_rounds.append(player_round)
-            self.session.commit()
-            for p_round in player_rounds:
-                p_round.score += choice(range(-3, 5))
-            self.session.commit()
-
-        ps = self.session.query(TablePlayers.total_score).all()
-
-    def etl_games(self):
-        # Add in the only row used in gamesettings
-        self.session.add(TableGameSettings())
-        self.session.commit()
-        self.log.debug('Game settings refreshed.')
+        honorifics = {
+            (-200, -7): ['loser', 'toady', 'weak', 'despised', 'defeated', 'under-under-underdog'],
+            (-6, -3): ['concerned', 'bestumbled', 'under-underdog'],
+            (-2, 0): ['temporarily disposed', 'momentarily disheveled', 'underdog'],
+            (1, 3): ['lackey', 'intern', 'doormat', 'underling', 'deputy', 'amateur', 'newcomer'],
+            (4, 6): ['young padawan', 'master apprentice', 'rookie', 'greenhorn', 'fledgling', 'tenderfoot'],
+            (6, 9): ['honorable', 'respected and just', 'cold and yet still fair'],
+            (9, 12): ['worthy inheriter of (mo|da)ddy\'s millions', '(mo|fa)ther of dragons',
+                      'most excellent', 'knowledgeable', 'wise'],
+            (12, 15): ['elder', 'ruler of the lower cards', 'most fair dictator of difficult choices'],
+            (15, 18): ['benevolent and omniscient chief of dutiful diddling', 'supreme high chancellor of '],
+            (18, 21): ['almighty veteran diddler', 'ancient diddle dealer from before time began',
+                       'sage of the diddles'],
+            (21, 500): ['bediddled', 'grand bediddler', 'most wise in the ways of the diddling',
+                        'pansophical bediddled sage of the dark cards']
+        }
+        tbl_objs = []
+        for rng, name_list in honorifics.items():
+            for name in name_list:
+                tbl_objs.append(TableHonorific(text=f'the {name}'.title(), score_range=rng))
+        self.log.debug(f'Loading {len(tbl_objs)} honorifics to the table...')
+        with self.psql_client.session_mgr() as session:
+            session.add_all(tbl_objs)
 
 
 if __name__ == '__main__':
-    etl = ETL(tables=deck_tables + game_tables + player_tables)
+    etl = ETL(tables=ETL.ALL_TABLES, env='dev', drop_all=True)
+    etl.etl_bot_settings()
     etl.etl_decks()
     etl.etl_players()
-    etl.etl_games()
+    etl.etl_honorific()

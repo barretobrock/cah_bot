@@ -1,22 +1,36 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from typing import List, Optional, Union, Dict
-from sqlalchemy.sql import func, and_
+from typing import (
+    List,
+    Optional,
+    Union,
+    Dict,
+    TYPE_CHECKING
+)
+from sqlalchemy.sql import (
+    func,
+    and_
+)
 from easylogger import Log
 from slacktools import SlackTools
 import cah.app as cah_app
-import cah.cards as cahds
-from .model import TablePlayers, TablePlayerRounds
-from .settings import auto_config
+from cah.model import (
+    TablePlayer,
+    TablePlayerRound
+)
+from cah.settings import auto_config
+if TYPE_CHECKING:
+    from cah.cards import AnswerCard
 
 
 class Player:
     """Player-specific things"""
 
-    def __init__(self, player_id: str, display_name: str, avi_url: str = ''):
-        self.player_id = player_id
-        self.player_tag = f'<@{self.player_id}>'
+    def __init__(self, player_hash: str, display_name: str, avi_url: str, log: Log):
+        self.player_hash = player_hash
+        self.player_tag = f'<@{self.player_hash}>'
         self.display_name = display_name
+        self.log = log
         self.avi_url = avi_url
 
         player_table = self._get_player_tbl()
@@ -33,15 +47,10 @@ class Player:
         self._is_nuked_hand_caught = False
 
         self.game_id = None
-        self.round_id = None
-
-        # Check if display name is the same as in the table. If not, change the name in the table
-        if self.display_name != player_table.name:
-            player_table.name = self.display_name
-            cah_app.db.session.commit()
+        self.game_round_id = None
 
         self.pick_blocks = {}   # Provides a means for us to update a block kit ui upon a successful pick
-        self.hand = cahds.Hand(owner=player_id)
+        self.hand = cahds.Hand(owner=player_hash)
 
     @property
     def is_arp(self):
@@ -50,12 +59,12 @@ class Player:
     @is_arp.setter
     def is_arp(self, value):
         self._is_arp = value
-        tbl = self._get_player_tbl()
         round_tbl = self._get_playerround_tbl()
-        tbl.is_auto_randpick = self._is_arp
-        if round_tbl is not None:
-            round_tbl.is_arp = self._is_arp
-        cah_app.db.session.commit()
+        if round_tbl is not None and not round_tbl.is_picked:
+            # They haven't yet picked, so they'd ARP this round too.
+            #   Set that to make sure the data is logged properly
+            self._set_player_round_tbl(TablePlayerRound.is_arp, self._is_arp)
+        self._set_player_tbl(TablePlayer.is_auto_randpick, self._is_arp)
 
     @property
     def is_arc(self):
@@ -63,13 +72,13 @@ class Player:
 
     @is_arc.setter
     def is_arc(self, value):
+        self.log.debug(f'Setting ARC to {value}')
         self._is_arc = value
-        tbl = self._get_player_tbl()
         round_tbl = self._get_playerround_tbl()
-        tbl.is_auto_randchoose = self._is_arc
         if round_tbl is not None:
-            round_tbl.is_arc = self._is_arc
-        cah_app.db.session.commit()
+            # No check here, as once a judge picks, the round progresses immediately
+            self._set_player_round_tbl(TablePlayerRound.is_arc, self._is_arc)
+        self._set_player_tbl(TablePlayer.is_auto_randchoose, self._is_arc)
 
     @property
     def is_dm_cards(self):
@@ -77,10 +86,9 @@ class Player:
 
     @is_dm_cards.setter
     def is_dm_cards(self, value):
+        self.log.debug(f'Setting DM cards to {value}')
         self._is_dm_cards = value
-        tbl = self._get_player_tbl()
-        tbl.is_dm_cards = self._is_dm_cards
-        cah_app.db.session.commit()
+        self._set_player_tbl(TablePlayer.is_dm_cards, self._is_dm_cards)
 
     @property
     def honorific(self):
@@ -89,9 +97,7 @@ class Player:
     @honorific.setter
     def honorific(self, value):
         self._honorific = value
-        tbl = self._get_player_tbl()
-        tbl.honorific = self._honorific
-        cah_app.db.session.commit()
+        self._set_player_tbl(TablePlayer.honorific, self._honorific)
 
     @property
     def is_judge(self):
@@ -100,9 +106,7 @@ class Player:
     @is_judge.setter
     def is_judge(self, value):
         self._is_judge = value
-        round_tbl = self._get_playerround_tbl()
-        round_tbl.is_judge = self._is_judge
-        cah_app.db.session.commit()
+        self._set_player_round_tbl(TablePlayerRound.is_judge, self._is_judge)
 
     @property
     def is_nuked_hand(self):
@@ -111,9 +115,7 @@ class Player:
     @is_nuked_hand.setter
     def is_nuked_hand(self, value):
         self._is_nuked_hand = value
-        round_tbl = self._get_playerround_tbl()
-        round_tbl.is_nuked_hand = self._is_nuked_hand
-        cah_app.db.session.commit()
+        self._set_player_round_tbl(TablePlayerRound.is_nuked_hand, self._is_nuked_hand)
 
     @property
     def is_nuked_hand_caught(self):
@@ -122,42 +124,51 @@ class Player:
     @is_nuked_hand_caught.setter
     def is_nuked_hand_caught(self, value):
         self._is_nuked_hand_caught = value
-        round_tbl = self._get_playerround_tbl()
-        round_tbl.is_nuked_hand_caught = self._is_nuked_hand_caught
-        cah_app.db.session.commit()
+        self._set_player_round_tbl(TablePlayerRound.is_nuked_hand_caught, self._is_nuked_hand_caught)
 
-    def _get_player_tbl(self) -> TablePlayers:
+    def _set_player_tbl(self, attr, value):
+        with cah_app.eng.session_mgr() as session:
+            session.query(TablePlayer).filter(TablePlayer.slack_user_hash == self.player_hash).update({
+                attr: value
+            })
+
+    def _get_player_tbl(self) -> Optional[TablePlayer]:
         """Attempts to retrieve the player's info from the players table.
         if it doesnt exist, it creates a new row for the player."""
-        tbl = cah_app.db.session.query(TablePlayers).filter(TablePlayers.slack_id == self.player_id).one_or_none()
-        if tbl is None:
-            # Add player to table
-            tbl = cah_app.db.session.add(TablePlayers(slack_id=self.player_id, name=self.display_name))
-        cah_app.db.session.commit()
+        with cah_app.eng.session_mgr() as session:
+            tbl = session.query(TablePlayer).filter(TablePlayer.slack_user_hash == self.player_hash).one_or_none()
+            session.expunge(tbl)
         return tbl
 
-    def _get_playerround_tbl(self) -> TablePlayerRounds:
+    def _set_player_round_tbl(self, attr, value):
+        with cah_app.eng.session_mgr() as session:
+            session.query(TablePlayerRound).filter(and_(
+                TablePlayerRound.game_key == self.game_id,
+                TablePlayerRound.game_round_key == self.game_round_id
+            )).join(TablePlayer, TablePlayerRound.player_key == TablePlayer.player_id).update({
+                attr: value
+            })
+
+    def _get_playerround_tbl(self) -> TablePlayerRound:
         """Attempts to retrieve the player's info from the playerrounds table."""
-        tbl = cah_app.db.session.query(TablePlayerRounds)\
-            .filter(and_(
-                TablePlayerRounds.player_id == self.player_table_id,
-                TablePlayerRounds.game_id == self.game_id,
-                TablePlayerRounds.round_id == self.round_id
-            )).one_or_none()
-        cah_app.db.session.commit()
+        with cah_app.eng.session_mgr() as session:
+            tbl = session.query(TablePlayerRound).filter(and_(
+                TablePlayerRound.game_key == self.game_id,
+                TablePlayerRound.game_round_key == self.game_round_id
+            )).join(TablePlayer, TablePlayerRound.player_key == TablePlayer.player_id).one_or_none()
+            session.expunge(tbl)
         return tbl
 
-    def start_round(self, game_id: int, round_id: int):
+    def start_round(self, game_id: int, game_round_id: int):
         """Begins a new round"""
         self.game_id = game_id
-        self.round_id = round_id
+        self.game_round_id = game_round_id
         self.hand.pick.clear_picks()
         self._is_nuked_hand = False
         self._is_nuked_hand_caught = False
-        player_round_table = TablePlayerRounds(player_id=self.player_table_id, game_id=game_id, round_id=round_id,
-                                               is_arp=self.is_arp, is_arc=self.is_arc)
-        cah_app.db.session.add(player_round_table)
-        cah_app.db.session.commit()
+        with cah_app.eng.session_mgr() as session:
+            session.add(TablePlayerRound(player_key=self.player_table_id, game_key=game_id,
+                                         game_round_key=game_round_id, is_arp=self.is_arp,is_arc=self.is_arc))
 
     def toggle_cards_dm(self):
         """Toggles whether or not to DM cards to player"""
@@ -173,21 +184,21 @@ class Player:
 
     def add_points(self, points: int):
         """Adds points to the player's score"""
-        tbl = self._get_playerround_tbl()
-        tbl.score += points
-        cah_app.db.session.commit()
+        self._set_player_round_tbl(TablePlayerRound.score, TablePlayerRound.score + points)
 
     def get_full_name(self) -> str:
         """Combines the player's name with their honorific"""
         return f'{self.display_name.title()} {self.honorific.title()}'
 
-    def get_current_score(self, game_id: int):
+    def get_current_score(self, game_id: int) -> int:
         """Retrieves the players current score"""
-        return cah_app.db.session.query(func.sum(TablePlayerRounds.score))\
-            .filter(and_(
-                TablePlayerRounds.player_id == self.player_table_id,
-                TablePlayerRounds.game_id == game_id
-            )).scalar()
+        with cah_app.eng.session_mgr() as session:
+            return session.query(
+                    func.sum(TablePlayerRound.score)
+                ).filter(and_(
+                    TablePlayerRound.player_key == self.player_table_id,
+                    TablePlayerRound.game_key == game_id
+                )).scalar()
 
     def get_overall_score(self) -> int:
         """Retrieves the players current score"""
@@ -219,12 +230,12 @@ class Players:
         """Checks whether player exists in the player table and, if not, will add them to the table"""
         # Check if player table exists
         self.log.debug('Checking for player\'s existence in table')
-        player_table = cah_app.db.session.query(TablePlayers).filter_by(slack_id=user_id).one_or_none()
+        player_table = cah_app.db.session.query(TablePlayer).filter_by(slack_id=user_id).one_or_none()
 
         if player_table is None:
             # Add missing player to
             self.log.debug(f'Player {display_name} was not found in the players table. Adding...')
-            cah_app.db.session.add(TablePlayers(slack_id=user_id, name=display_name))
+            cah_app.db.session.add(TablePlayer(slack_id=user_id, name=display_name))
         cah_app.db.session.commit()
 
     def _build_players(self, player_id_list: List[str]) -> List[Player]:
@@ -367,7 +378,7 @@ class Players:
 
             self._update_player(player)
 
-    def take_dealt_cards(self, player_obj: Player, card_list: List[cahds.AnswerCard]):
+    def take_dealt_cards(self, player_obj: Player, card_list: List['AnswerCard']):
         """Deals out cards to players"""
         for card in card_list:
             if card is None:

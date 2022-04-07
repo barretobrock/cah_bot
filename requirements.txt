@@ -1,10 +1,10 @@
-easylogger
-Flask>=1.1.2
-Flask-SQLAlchemy
-requests>=2.23.0
+easylogger @ git+https://github.com/barretobrock/easylogger@main#egg=easylogger
+slacktools @ git+https://github.com/barretobrock/slacktools@main#egg=slacktools
+Flask==2.1.1
 numpy
 pandas
+psycopg2==2.9.3
 pykeepass
-slacktools
-slackeventsapi==2.1.0
-sqlalchemy
+requests>=2.23.0
+slackeventsapi==3.0.1
+sqlalchemy==1.4.32

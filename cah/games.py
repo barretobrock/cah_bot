@@ -1,42 +1,74 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from typing import List, Optional, Tuple, Union, Dict
+from typing import (
+    List,
+    Optional,
+    Tuple,
+    Union,
+    Dict,
+    TYPE_CHECKING
+)
 from datetime import datetime
-from random import shuffle, choice
+from random import (
+    shuffle,
+    choice
+)
 import numpy as np
-from sqlalchemy.sql import func, and_
+from sqlalchemy.sql import (
+    func,
+    and_
+)
 from slacktools import BlockKitBuilder as bkb
 from slack.errors import SlackApiError
 from easylogger import Log
 import cah.app as cah_app
 import cah.cards as cards
-from .players import Players, Player, Judge
-from .model import TableGames, TableGameRounds, TableGameSettings, GameStatuses, TablePlayerRounds, TablePlayers
-from .settings import auto_config
+from cah.players import (
+    Players,
+    Player,
+    Judge
+)
+from cah.model import (
+    GameStatus,
+    TableGame,
+    TableGameRound,
+    TableHonorific,
+    TablePlayer,
+    TablePlayerRound,
+    TableSetting
+)
+from cah.settings import auto_config
+if TYPE_CHECKING:
+    from cah.cards import Deck
 
 
 # Define statuses where game is not active
-game_not_active = [GameStatuses.initiated, GameStatuses.ended]
+game_not_active = [GameStatus.INITIATED, GameStatus.ENDED]
 # Status when ready to transition into new round
-new_round_ready = [GameStatuses.initiated, GameStatuses.end_round]
+new_round_ready = [GameStatus.INITIATED, GameStatus.END_ROUND]
 
 DECK_SIZE = 5
 
 
 class Game:
     """Holds data for current game"""
-    def __init__(self, players: List[str], deck: cards.Deck, parent_log: Log):
+    def __init__(self, players: List[str], deck: 'Deck', parent_log: Log):
         self.st = cah_app.Bot.st
         self.log = Log(parent_log, child_name=self.__class__.__name__)
         self.log.debug('Building out new game...')
 
         # Database table links
         # Create a new game
-        self.status = GameStatuses.initiated
-        game_tbl = TableGames()  # type: TableGames
-        cah_app.db.session.add(game_tbl)
-        cah_app.db.session.commit()
-        self.game_id = game_tbl.id
+        self.status = GameStatus.INITIATED
+        with cah_app.eng.session_mgr() as session:
+            game_tbl = TableGame()  # type: TableGame
+            session.add(game_tbl)
+            # We have to commit to get an id
+            session.commit()
+            # Refresh the object to retrieve the id
+            session.refresh(game_tbl)
+            # TODO Verify
+            self.game_id = game_tbl.id
 
         game_settings_tbl = self._get_game_settings_tbl()
         self._is_ping_judge = game_settings_tbl.is_ping_judge
@@ -101,27 +133,27 @@ class Game:
         game_tbl = self._get_game_tbl()
         return len(game_tbl.rounds)
 
-    def _get_game_settings_tbl(self) -> TableGameSettings:
+    def _get_game_settings_tbl(self) -> TableSetting:
         """Attempts to retrieve the gamesettings tbl. If it doesn't exist, will make a new one and commit it"""
         # Bring in the settings
-        game_settings_tbl = cah_app.db.session.query(TableGameSettings).one_or_none()
+        game_settings_tbl = cah_app.db.session.query(TableSetting).one_or_none()
         if game_settings_tbl is None:
             # No table found... make a new one
             self.log.debug('Game settings table not found. Making a new one.')
-            game_settings_tbl = TableGameSettings()
+            game_settings_tbl = TableSetting()
         return game_settings_tbl
 
-    def _get_game_tbl(self) -> TableGames:
+    def _get_game_tbl(self) -> TableGame:
         """Attempts to retrieve the game tbl."""
-        game_tbl = cah_app.db.session.query(TableGames).filter(TableGames.id == self.game_id).one_or_none()
+        game_tbl = cah_app.db.session.query(TableGame).filter(TableGame.id == self.game_id).one_or_none()
         return game_tbl
 
-    def _get_gameround_tbl(self) -> TableGameRounds:
+    def _get_gameround_tbl(self) -> TableGameRound:
         """Attempts to retrieve the game tbl."""
-        gameround_tbl = cah_app.db.session.query(TableGameRounds).join(TableGames)\
+        gameround_tbl = cah_app.db.session.query(TableGameRound).join(TableGame)\
             .filter(and_(
-                TableGames.id == self.game_id,
-                TableGameRounds.id == self.gameround_id
+                TableGame.id == self.game_id,
+                TableGameRound.id == self.gameround_id
             )).one_or_none()
         return gameround_tbl
 
@@ -154,7 +186,7 @@ class Game:
             notification_block = []
 
         self.round_start_time = datetime.now()
-        gameround = TableGameRounds(game_id=self.game_id)
+        gameround = TableGameRound(game_id=self.game_id)
         cah_app.db.session.add(gameround)
         cah_app.db.session.commit()
         self.gameround_id = gameround.id
@@ -180,7 +212,7 @@ class Game:
 
         cah_app.db.session.commit()
 
-        self.status = GameStatuses.players_decision
+        self.status = GameStatus.PLAYER_DECISION
 
         # Deal question card
         self.current_question_card = self.deck.deal_question_card()
@@ -199,7 +231,7 @@ class Game:
         gameround = self._get_gameround_tbl()
         gameround.end_time = datetime.utcnow()
         cah_app.db.session.commit()
-        self.status = GameStatuses.end_round
+        self.status = GameStatus.END_ROUND
 
     def end_game(self):
         """Ends the game"""
@@ -210,7 +242,7 @@ class Game:
         self.end_round()
         game_tbl = self._get_game_tbl()
         game_tbl.end_time = datetime.utcnow()
-        self.status = GameStatuses.ended
+        self.status = GameStatus.ENDED
         cah_app.db.session.commit()
 
     def handle_render_hands(self):
@@ -244,37 +276,16 @@ class Game:
         # Determine honorific for judge
         self.log.debug('Determining honorific for judge...')
         # Honorifics will be chosen based on which range of points the judge falls into
-        honorifics = {
-            range(-200, -6): ['loser', 'toady', 'weak', 'despised', 'defeated', 'under-under-underdog'],
-            range(-6, -3): ['concerned', 'bestumbled', 'under-underdog'],
-            range(-3, 0): ['temporarily disposed', 'momentarily disheveled', 'underdog'],
-            range(0, 3): ['lackey', 'intern', 'doormat', 'underling', 'deputy', 'amateur', 'newcomer'],
-            range(3, 6): ['young padawan', 'master apprentice', 'rookie', 'greenhorn', 'fledgling', 'tenderfoot'],
-            range(6, 9): ['honorable', 'respected and just', 'cold and yet still fair'],
-            range(9, 12): ['worthy inheriter of (mo|da)ddy\'s millions', '(mo|fa)ther of dragons',
-                           'most excellent', 'knowledgeable', 'wise'],
-            range(12, 15): ['elder', 'ruler of the lower cards', 'most fair dictator of difficult choices'],
-            range(15, 18): ['benevolent and omniscient chief of dutiful diddling', 'supreme high chancellor of '],
-            range(18, 21): ['almighty veteran diddler', 'ancient diddle dealer from before time began',
-                            'sage of the diddles'],
-            range(21, 500): ['bediddled', 'grand bediddler', 'most wise in the ways of the diddling',
-                             'pansophical bediddled sage of the dark cards']
-        }
-
         judge_pts = self.judge.get_current_score(game_id=self.game_id)
         judge_pts = judge_pts if judge_pts is not None else 0
-        # Determine the subset of honorifics to use
-        honorific_list = honorifics[range(0, 3)]
-        for k, v in honorifics.items():
-            if judge_pts in k:
-                honorific_list = v
-                break
-
-        honorific = f'the {choice(honorific_list)}'
+        with cah_app.eng.session_mgr() as session:
+            honorific = session.query(TableHonorific).filter(
+                TableHonorific.score_range.in_(judge_pts)
+            ).order_by(func.random()).limit(1).one_or_none()
+            session.expunge(honorific)
 
         # Assign this to the judge so we can refer to it in other areas.
-        self.judge.honorific = honorific.title()
-        cah_app.db.session.commit()
+        self.judge.honorific = honorific.name
 
     def get_next_judge(self, n_round: int, game_id: int, round_id: int):
         """Gets the following judge by the order set"""
@@ -339,23 +350,12 @@ class Game:
         card_list = [self._deal_card() for _ in range(n_cards)]
         self.players.take_dealt_cards(player, card_list=card_list)
 
-    def get_current_scores(self) -> List[TablePlayers]:
-        """Gets the current scores of the ongoing game"""
-        self.log.debug('Retrieving current player scores from database')
-        return cah_app.db.session.query(
-            TablePlayers.id,
-            TablePlayers.name,
-            func.sum(TablePlayerRounds.score).label('diddles')
-            ).join(TablePlayers, TablePlayerRounds.player_id == TablePlayers.id) \
-            .filter(TablePlayerRounds.game_id == self.game_id) \
-            .group_by(TablePlayers.id).all()
-
     def round_wrap_up(self):
         """Coordinates end-of-round logic (tallying votes, picking winner, etc.)"""
         # Make sure all users have votes and judge has made decision before wrapping up the round
         # Handle the announcement of winner and distribution of points
         self.st.message_test_channel(blocks=self.winner_selection())
-        self.status = GameStatuses.end_round
+        self.status = GameStatus.END_ROUND
         # Start new round
         self.new_round()
 
@@ -374,8 +374,8 @@ class Game:
             self.log.debug(f'The winner selected seems to have left the game. Spinning their object up to '
                            f'grant their points.')
             # Get the winner from the master list of the players
-            winner_tbl = cah_app.db.session.query(TablePlayers)\
-                .filter(TablePlayers.slack_id == winning_pick.owner_id).one_or_none()
+            winner_tbl = cah_app.db.session.query(TablePlayer)\
+                .filter(TablePlayer.slack_id == winning_pick.owner_id).one_or_none()
             # Load the winner object
             winner = Player(winner_tbl.slack_id, display_name=winner_tbl.name)
             # Attach the current round to the winner
@@ -607,7 +607,7 @@ class Game:
             else:
                 judge_msg = f'`{self.judge.display_name.title()}` to judge.'
             messages.append(judge_msg)
-            self.status = GameStatuses.judge_decision
+            self.status = GameStatus.JUDGE_DECISION
             # Update the "remaining picks" message
             self.st.update_message(auto_config.MAIN_CHANNEL, self.round_ts, message='we gone')
             self._display_picks(notifications=messages)

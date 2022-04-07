@@ -1,21 +1,48 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import sys
-import pandas as pd
 from datetime import datetime
-from typing import List, Optional, Dict, Union, Type
+from typing import (
+    List,
+    Optional,
+    Dict,
+    Union,
+    Type
+)
 from random import randrange
-from flask_sqlalchemy import BaseQuery
-from slacktools import SlackBotBase, BlockKitBuilder as bkb
+from sqlalchemy.sql import (
+    func,
+    and_
+)
+import pandas as pd
+from slacktools import (
+    SlackBotBase,
+    BlockKitBuilder as bkb
+)
 from easylogger import Log
+
+# import cah.cards as cahds
 import cah.app as cah_app
-import cah.cards as cahds
 import cah.games as cah_game
-from .players import Players, Player
-from .model import TablePlayers, TableDecks, TableGameSettings, TableGames, TableGameRounds, TableAnswerCards,\
-    TableQuestionCards, TablePlayerRounds
-from .settings import auto_config
-from .forms import Forms
+from cah.players import (
+    Players,
+    Player
+)
+
+from cah.model import (
+    SettingType,
+    TableAnswerCard,
+    TableDeck,
+    TableGame,
+    TableGameRound,
+    TablePlayer,
+    TablePlayerRound,
+    TableQuestionCard,
+    TableSetting
+)
+from cah.settings import auto_config
+from cah.forms import Forms
+from cah.cards import Decks as D
 
 
 class CAHBot:
@@ -198,7 +225,7 @@ class CAHBot:
         self.st = SlackBotBase(triggers=self.triggers, credstore=cah_app.credstore,
                                test_channel=self.channel_id, commands=self.commands,
                                cmd_categories=cmd_categories, slack_cred_name=auto_config.BOT_NICKNAME,
-                               parent_log=self.log)
+                               parent_log=self.log, use_session=False)
         self.bot_id = self.st.bot_id
         self.user_id = self.st.user_id
         self.bot = self.st.bot
@@ -206,20 +233,17 @@ class CAHBot:
 
         # More game environment-specific initialization stuff
         # Read in decks
-        self.decks = cahds.Decks()       # type: Optional['Decks']
-        # Build out all possible players (for possibly applying settings outside of a game)
-        all_player_ids = [x.slack_id for x in cah_app.db.session.query(TablePlayers.slack_id).all()]
-        self.potential_players = Players(player_id_list=all_player_ids, slack_api=self.st,
-                                         parent_log=self.log, is_global=True)  # type: Optional[Players]
-        self.global_game_settings_tbl = cah_app.db.session.query(TableGameSettings).one_or_none()
-        cah_app.db.session.commit()
-        self.game = None        # type: Optional[cah_game.Game]
+        self.decks = Decks()       # type: Optional['Decks']
 
-        if not auto_config.DEBUG:
+        self.current_game = None        # type: Optional[cah_game.Game]
+
+        if cah_app.eng.get_setting(SettingType.IS_ANNOUNCE_STARTUP):
             self.st.message_test_channel(blocks=self.get_bootup_msg())
 
         # Store for state across UI responses (thanks Slack for not supporting multi-user selects!)
-        self.state_store = {}
+        self.state_store = {
+            'deck': 'standard'
+        }
 
     def get_bootup_msg(self) -> List[Dict]:
         return [bkb.make_context_section([
@@ -241,20 +265,22 @@ class CAHBot:
 
     def cleanup(self, *args):
         """Runs just before instance is destroyed"""
-        if self.game is not None:
-            self.game.end_game()
+        _ = args
+        if self.current_game is not None:
+            self.current_game.end_game()
         notify_block = [
             bkb.make_context_section([bkb.markdown_section(f'{self.bot_name} died. '
                                                            f':death-drops::party-dead::death-drops:')])
         ]
-        self.st.message_test_channel(blocks=notify_block)
+        if cah_app.eng.get_bot_setting(SettingType.IS_ANNOUNCE_SHUTDOWN):
+            self.st.message_test_channel(blocks=notify_block)
         self.log.info('Bot shutting down...')
         self.log.close()
         sys.exit(0)
 
     def process_slash_command(self, event_dict: Dict):
-        """Hands off the slash command processing while also refeshing the session"""
-
+        """Hands off the slash command processing while also refreshing the session"""
+        # TODO: Log slash
         self.st.parse_slash_command(event_dict)
 
     def process_event(self, event_dict: Dict):
@@ -306,15 +332,15 @@ class CAHBot:
             self.st.send_message(channel=channel, message=f'Looks like <@{user}>, is starting a game. '
                                                           f'Might take a few seconds while they select stuff...')
             formp1 = Forms.build_new_game_form_p1(self.decks.deck_list)
-            resp = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p1',
-                                                   blocks=formp1)
+            _ = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p1',
+                                                blocks=formp1)
 
         elif action_id == 'new-game-deck':
             # Set the deck for the new game and then send the second form
             self.state_store['deck'] = action_dict['selected_option']['value'].replace('deck_', '')
             formp2 = Forms.build_new_game_form_p2(user_id=user)
-            resp = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p2',
-                                                   blocks=formp2)
+            _ = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p2',
+                                                blocks=formp2)
         elif action_id == 'new-game-users':
             self.new_game(deck=self.state_store['deck'], player_ids=action_dict['selected_users'])
         elif action_id == 'status':
@@ -322,34 +348,34 @@ class CAHBot:
             if status_block is not None:
                 self.st.send_message(channel=channel, message='Game status', blocks=status_block)
         elif action_id == 'modify-question-form':
-            qmod_form = Forms.modify_question_form(original_value=self.game.current_question_card.txt)
-            resp = self.st.private_channel_message(user_id=user, channel=channel, message='Modify question form',
-                                                   blocks=qmod_form)
+            qmod_form = Forms.modify_question_form(original_value=self.current_game.current_question_card.txt)
+            _ = self.st.private_channel_message(user_id=user, channel=channel, message='Modify question form',
+                                                blocks=qmod_form)
         elif action_id == 'modify-question':
             # Response from modify question form
-            self.game.current_question_card.modify_text(action_value)
-            self.st.message_test_channel(f'Question updated: *{self.game.current_question_card.txt}* by <@{user}>')
+            self.current_game.current_question_card.modify_text(action_value)
+            self.st.message_test_channel(f'Question updated: *{self.current_game.current_question_card.txt}* by <@{user}>')
         elif action_id == 'my-settings':
-            settings_form = Forms.build_my_settings_form(session_object=cah_app.db.session, user_id=user)
-            resp = self.st.private_channel_message(user_id=user, channel=channel, message='Settings form',
-                                                   blocks=settings_form)
+            settings_form = Forms.build_my_settings_form(eng=cah_app.eng, user_id=user)
+            _ = self.st.private_channel_message(user_id=user, channel=channel, message='Settings form',
+                                                blocks=settings_form)
         elif action_id == 'add-player':
             add_user = Forms.build_add_user_form()
-            resp = self.st.private_channel_message(user_id=user, channel=channel, message='Add player form',
-                                                   blocks=add_user)
+            _ = self.st.private_channel_message(user_id=user, channel=channel, message='Add player form',
+                                                blocks=add_user)
         elif action_id == 'add-player-done':
-            if self.game is not None:
+            if self.current_game is not None:
                 add_user = action_dict.get('selected_user')
-                self.game.players.add_player_to_game(add_user, game_id=self.game.game_id,
-                                                     round_id=self.game.gameround_id)
+                self.current_game.players.add_player_to_game(add_user, game_id=self.current_game.game_id,
+                                                             round_id=self.current_game.gameround_id)
         elif action_id == 'remove-player':
             rem_user = Forms.build_remove_user_form()
-            resp = self.st.private_channel_message(user_id=user, channel=channel, message='Remove player form',
-                                                   blocks=rem_user)
+            _ = self.st.private_channel_message(user_id=user, channel=channel, message='Remove player form',
+                                                blocks=rem_user)
         elif action_id == 'remove-player-done':
-            if self.game is not None:
+            if self.current_game is not None:
                 rem_user = action_dict.get('selected_user')
-                self.game.players.remove_player_from_game(rem_user)
+                self.current_game.players.remove_player_from_game(rem_user)
         elif action_id.startswith('toggle-'):
             if action_id == 'toggle-auto-randpick':
                 self.toggle_auto_pick_or_choose(user_id=user, channel=channel, message=action_id.replace('-', ' '),
@@ -367,11 +393,11 @@ class CAHBot:
             if score_block is not None:
                 self.st.send_message(channel=channel, message='Scores', blocks=score_block)
         elif action_id == 'ping':
-            if self.game is not None:
-                if self.game.status == cah_game.GameStatuses.players_decision:
+            if self.current_game is not None:
+                if self.current_game.status == cah_game.GameStatus.PLAYER_DECISION:
                     ping_txt = self.ping_players_left_to_pick()
-                elif self.game.status == cah_game.GameStatuses.judge_decision:
-                    ping_txt = f'Hey <@{self.game.judge.player_id}> time to do your doodie'
+                elif self.current_game.status == cah_game.GameStatus.JUDGE_DECISION:
+                    ping_txt = f'Hey <@{self.current_game.judge.player_id}> time to do your doodie'
                 else:
                     ping_txt = 'Wrong status for a ping, bucko.'
                 self.st.send_message(channel=channel, message=ping_txt)
@@ -384,12 +410,12 @@ class CAHBot:
 
     def prebuild_main_menu(self, user_id: str, channel: str):
         """Encapsulates required objects for building and sending the main menu form"""
-        Forms.build_main_menu(game_obj=self.game, slack_api=self.st, user=user_id, channel=channel)
+        Forms.build_main_menu(game_obj=self.current_game, slack_api=self.st, user=user_id, channel=channel)
 
     def new_game(self, deck: str = 'standard', player_ids: List[str] = None, message: str = None):
         """Begins a new game"""
-        if self.game is not None:
-            if self.game.status != cah_game.GameStatuses.ended:
+        if self.current_game is not None:
+            if self.current_game.status != cah_game.GameStatus.ENDED:
                 self.st.message_test_channel('Looks like you haven\'t ended the current game yet. '
                                              'Do that and then start a new game.')
                 return None
@@ -403,9 +429,9 @@ class CAHBot:
         deck = self._read_in_cards(deck)
 
         # Load the game, add players, shuffle the players
-        self.game = cah_game.Game(player_ids, deck, parent_log=self.log)
+        self.current_game = cah_game.Game(player_ids, deck, parent_log=self.log)
         # Get order of judges
-        response_list.append(self.game.judge_order)
+        response_list.append(self.current_game.judge_order)
         # Kick off the new round, message details to the group
         self.new_round(notifications=response_list)
 
@@ -413,113 +439,39 @@ class CAHBot:
         """Deals the user a new hand while randpicking one of the cards from their current deck.
         The card that's picked will have a negative point value
         """
-        self.game.decknuke(player_id=user)
+        self.current_game.decknuke(player_id=user)
 
     def show_decks(self) -> str:
         """Returns the deck names currently available"""
         return f'`{",".join(self.decks.deck_list)}`'
 
-    def game_stats(self):
-        def tbl_to_df(result: BaseQuery) -> pd.DataFrame:
-            """Takes in unprocessed query results and converts to dataframe"""
-            return pd.DataFrame(result.all(), columns=[column['name'] for column in result.column_descriptions])
-
-        def get_duration_stats(tbl: Type[Union[TableGames, TableGameRounds]]) -> Dict[str, float]:
-            """Retrieves min max median duration stats from a table with start and end times"""
-            result = None
-            if tbl.__tablename__ == 'games':
-                result = cah_app.db.session.query(tbl.start_time, tbl.end_time)
-            elif tbl.__tablename__ == 'gamerounds':
-                result = cah_app.db.session.query(tbl.start_time, tbl.end_time, tbl.game_id)
-            df = tbl_to_df(result)
-            total = df.shape[0]
-            # Filter out unfinished before calculating duration
-            df = df[~df['end_time'].isnull()]
-            df['duration'] = df['end_time'] - df['start_time']
-            dur = df['duration']
-            return {
-                'total': total,
-                'min': dur.min(),
-                'median': dur.median(),
-                'max': dur.max()
-            }
-        # General game stats
-        #   - Number of games
-        #   - median duration
-        #   - longest game
-        #   - shortest game - decknukes per game
-        games_dur_stats = get_duration_stats(TableGames)
-
-        # Round stats
-        #   - Median number of rounds per game
-        #   - longest shortest median round
-        rounds_dur_stats = get_duration_stats(TableGameRounds)
-
-        # Card stats
-        #   - most chosen
-        a_cards_result = cah_app.db.session.query(
-            TableAnswerCards.card_text,
-            TableAnswerCards.times_chosen,
-            TableAnswerCards.times_burned,
-            TableAnswerCards.times_picked,
-        )
-        a_cards_df = tbl_to_df(a_cards_result)
-        n_cards = a_cards_df.shape[0]
-        most_chosen = a_cards_df.loc[a_cards_df['times_chosen'].idxmax()]
-        most_chosen_text = most_chosen.card_text
-        most_chosen_val = most_chosen.times_chosen
-
-        # Player stats
-        #   - least/most likely to have caught a decknuke
-        #   - longest non-judge streak
-        playerround_result = cah_app.db.session.query(
-            TablePlayerRounds.player_id, TablePlayerRounds.game_id, TablePlayerRounds.round_id,
-            TablePlayerRounds.is_judge, TablePlayerRounds.score
-        )
-        pr_df = tbl_to_df(playerround_result)
-        streak_df = pr_df.loc[~pr_df.is_judge, :]
-        streak_df = streak_df.pivot_table(index='round_id', columns='player_id', values='score').fillna(0)
-        streaks = pd.DataFrame()
-        for col in streak_df.columns:
-            group = (streak_df.loc[:, col] != streak_df.loc[:, col].shift()).cumsum()
-            streaks[col] = streak_df.loc[:, col].groupby(group).cumsum()
-        longest_streak = streaks.idxmax()
-
     @staticmethod
     def show_gsheets_link():
         return f'https://docs.google.com/spreadsheets/d/{cah_app.cah_creds.spreadsheet_key}/'
 
-    def _read_in_cards(self, card_set: str = 'standard') -> cahds.Deck:
+    def _read_in_cards(self, card_set: str = 'standard') -> 'Deck':
         """Reads in the cards"""
-        deck = cah_app.db.session.query(TableDecks).filter_by(name=card_set).one_or_none()
-        if deck is None:
-            raise ValueError(f'The card set `{card_set}` was not found. '
-                             f'Possible sets: `{",".join(self.decks.deck_names)}`.')
-        return cahds.Deck(name=deck.name)
+        with cah_app.eng.session_mgr() as session:
+            deck = session.query(TableDeck).filter(TableDeck.name == card_set).one_or_none()
+            if deck is None:
+                raise ValueError(f'The card set `{card_set}` was not found. '
+                                 f'Possible sets: `{",".join(self.decks.deck_names)}`.')
+            session.expunge(deck)
+        return Deck(name=deck.name)
+
+    def _toggle_bool_setting(self, setting: SettingType):
+        old_val = cah_app.eng.get_setting(setting)
+        new_val = not old_val
+        cah_app.eng.set_setting(setting, setting_val=new_val)
+        self.st.message_test_channel(f'`{setting.name}` set to: `{new_val}`')
 
     def toggle_judge_ping(self):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
-        if self.game is None:
-            # Apply changes to game settings through the global table
-            self.global_game_settings_tbl.is_ping_judge = not self.global_game_settings_tbl.is_ping_judge
-            cah_app.db.session.commit()
-            new_val = self.global_game_settings_tbl.is_ping_judge
-        else:
-            self.game.toggle_judge_ping()
-            new_val = self.game.is_ping_judge
-        self.st.message_test_channel(f'Judge pinging set to: `{new_val}`')
+        self._toggle_bool_setting(SettingType.IS_PING_JUDGE)
 
     def toggle_winner_ping(self):
         """Toggles whether or not to ping the winner when they've won a round"""
-        if self.game is None:
-            # Apply changes to game settings through the global table
-            self.global_game_settings_tbl.is_ping_winner = not self.global_game_settings_tbl.is_ping_winner
-            cah_app.db.session.commit()
-            new_val = self.global_game_settings_tbl.is_ping_winner
-        else:
-            self.game.toggle_winner_ping()
-            new_val = self.game.is_ping_winner
-        self.st.message_test_channel(f'Weiner pinging set to: `{new_val}`')
+        self._toggle_bool_setting(SettingType.IS_PING_WINNER)
 
     def toggle_auto_pick_or_choose(self, user_id: str, channel: str, message: str, pick_or_choose: str) -> str:
         """Toggles card dming"""
@@ -532,7 +484,7 @@ class CAHBot:
             if not any([player.player_tag in x for x in msg_split]):
                 # Tagged someone else. Get that other tag & use it to change the player.
                 ptag = next((x for x in msg_split if '<@' in x))
-                player = self.game.players.get_player(player_attr=ptag.upper(), attr_name='player_tag')
+                player = self.current_game.players.get_player(player_attr=ptag.upper(), attr_name='player_tag')
 
         is_randpick = pick_or_choose == 'randpick'
         is_both = pick_or_choose == 'both'
@@ -543,9 +495,9 @@ class CAHBot:
             player.toggle_arp()
             resp_msg.append(f'Auto randpick for player `{player.display_name}` set to '
                             f'`{player.is_arp}`')
-            if self.game is not None:
-                if all([self.game.status == cah_game.GameStatuses.players_decision,
-                        player.player_id != self.game.judge.player_id,
+            if self.current_game is not None:
+                if all([self.current_game.status == cah_game.GameStatus.PLAYER_DECISION,
+                        player.player_id != self.current_game.judge.player_id,
                         player.is_arp,
                         player.hand.pick.is_empty()]):
                     # randpick for the player immediately if:
@@ -561,11 +513,11 @@ class CAHBot:
             player.toggle_arc()
             resp_msg.append(f'Auto randchoose for player `{player.display_name}` set to '
                             f'`{player.is_arc}`')
-            if self.game is not None:
-                if all([self.game.status == cah_game.GameStatuses.judge_decision,
-                        player.player_id == self.game.judge.player_id,
+            if self.current_game is not None:
+                if all([self.current_game.status == cah_game.GameStatus.JUDGE_DECISION,
+                        player.player_id == self.current_game.judge.player_id,
                         player.is_arc,
-                        self.game.judge.pick_idx is None]):
+                        self.current_game.judge.pick_idx is None]):
                     # randchoose for the player immediately if:
                     #   - game active
                     #   - judge's decision status
@@ -582,41 +534,30 @@ class CAHBot:
         player.toggle_cards_dm()
         msg = f'Card DMing for player `{player.display_name}` set to `{player.is_dm_cards}`'
         self.st.send_message(channel, msg)
-        if self.game is not None:
+        if self.current_game is not None:
             # Send cards to user if the status shows we're currently in a game
-            if self.game.status == cah_game.GameStatuses.players_decision and \
+            if self.current_game.status == cah_game.GameStatus.PLAYER_DECISION and \
                     player.is_dm_cards:
                 self.dm_cards_now(user_id)
 
-    def _get_player_in_or_out_of_game(self, user_id: str) -> Player:
-        """Attempts to retrieve the player object from and existing game if possible, and then falling back to
-        A general list of all workspace members if no game currently exists
-        """
-        if self.game is None:
-            # Set the player object outside of the game
-            player_retrieval_func = self.potential_players.get_player
-        else:
-            player_retrieval_func = self.game.players.get_player
-        return player_retrieval_func(player_attr=user_id, attr_name='player_id')
-
     def dm_cards_now(self, user_id: str) -> Optional:
         """DMs current card set to user"""
-        if self.game is None:
+        if self.current_game is None:
             self.st.message_test_channel('Start a game first, then tell me to do that.')
             return None
 
-        player = self.game.players.get_player(user_id)
+        player = self.current_game.players.get_player(user_id)
 
         # Send cards to user if the status shows we're currently in a game
         if len(player.hand.cards) == 0:
             msg_txt = "You have no cards to send. This likely means you're not a current player"
             self.st.private_message(player.player_id, msg_txt)
-        elif self.game.status == cah_game.GameStatuses.players_decision:
-            question_block = self.game.make_question_block()
+        elif self.current_game.status == cah_game.GameStatus.PLAYER_DECISION:
+            question_block = self.current_game.make_question_block()
             cards_block = player.hand.render_hand()
             self.st.private_message(player.player_id, message='', blocks=question_block + cards_block)
         else:
-            msg_txt = f"The game's current status (`{self.game.status.name}`) doesn't allow for card DMing"
+            msg_txt = f"The game's current status (`{self.current_game.status.name}`) doesn't allow for card DMing"
             self.st.private_message(player.player_id, msg_txt)
 
     def new_round(self, notifications: List[str] = None) -> Optional:
@@ -631,80 +572,88 @@ class CAHBot:
             # Process incoming notifications into the block
             notification_block.append(bkb.make_context_section([bkb.markdown_section(x) for x in notifications]))
 
-        if self.game.status == cah_game.GameStatuses.ended:
+        if self.current_game.status == cah_game.GameStatus.ENDED:
             # Game ended because we ran out of questions
             self.st.message_test_channel(blocks=notification_block)
             self.end_game()
             return None
 
-        self.game.new_round(notification_block=notification_block)
+        self.current_game.new_round(notification_block=notification_block)
 
     def process_picks(self, user: str, message: str) -> Optional:
         """Processes the card selection made by the user"""
-        if self.game is None:
+        if self.current_game is None:
             self.st.message_test_channel('Start a game first, then tell me to do that.')
             return None
 
-        if self.game.status != cah_game.GameStatuses.players_decision:
+        if self.current_game.status != cah_game.GameStatus.PLAYER_DECISION:
             # Prevent this method from being called outside of the player's decision stage
             self.st.message_test_channel(f'<@{user}> You cannot make selections '
-                                         f'in the current status of this game: `{self.game.status.name}`.')
+                                         f'in the current status of this game: `{self.current_game.status.name}`.')
             return None
 
-        self.game.process_picks(user=user, message=message)
+        self.current_game.process_picks(user=user, message=message)
 
     def choose_card(self, user: str, message: str) -> Optional:
         """For the judge to choose the winning card and
         for other players to vote on the card they think should win"""
-        if self.game is None:
+        if self.current_game is None:
             self.st.message_test_channel('Start a game first, then tell me to do that.')
             return None
 
-        if self.game.status != cah_game.GameStatuses.judge_decision:
+        if self.current_game.status != cah_game.GameStatus.JUDGE_DECISION:
             # Prevent this method from being called outside of the judge's decision stage
-            self.st.message_test_channel(f'Not the right status for this command: `{self.game.status.name}`')
+            self.st.message_test_channel(f'Not the right status for this command: '
+                                         f'`{self.current_game.status.name}`')
             return None
 
-        self.game.choose_card(user=user, message=message)
-        if self.game.judge.pick_idx is not None:
-            self.game.round_wrap_up()
+        self.current_game.choose_card(user=user, message=message)
+        if self.current_game.judge.pick_idx is not None:
+            self.current_game.round_wrap_up()
 
     def end_game(self) -> Optional:
         """Ends the current game"""
-        if self.game is None:
+        if self.current_game is None:
             self.st.message_test_channel('You have to start a game before you can end it...????')
             return None
-        if self.game.status != cah_game.GameStatuses.ended:
+        if self.current_game.status != cah_game.GameStatus.ENDED:
             # Check if game was not already ended automatically
-            self.game.end_game()
+            self.current_game.end_game()
         # Save score history to file
         self.display_points()
-        self.game = None
+        self.current_game = None
         self.st.message_test_channel('The game has ended. :died:')
 
     def get_score(self, in_game: bool = True) -> List[Dict[str, Union[str, int]]]:
         """Queries db for players' scores"""
         # Get overall score
-        overall = cah_app.db.session.query(
-            TablePlayers.id,
-            TablePlayers.name,
-            TablePlayers.total_score
-        ).group_by(TablePlayers.id).all()
-        current = []
-        if in_game and self.game is not None:
-            # Calculate in-game score
-            current = self.game.get_current_scores()
-        cah_app.db.session.commit()
-        # Loop through results, build out a usable dictionary
+        is_current_game = in_game and self.current_game is not None
         scores = []
-        for player in overall:
-            current_results = next(iter([x for x in current if x.id == player.id]), None)
-            scores.append({
-                'name': player.name,
-                'diddles': current_results.diddles if current_results is not None else 0,
-                'overall': player.total_score,
-                'is_playing': current_results is not None or player.total_score > 0
-            })
+        with cah_app.eng.session_mgr() as session:
+            if is_current_game:
+                result = session.query(
+                    TablePlayer.player_id,
+                    TablePlayer.display_name,
+                    func.sum(TablePlayerRound.score).label('diddles'),
+                    TablePlayer.total_score
+                ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
+                    TablePlayerRound.game_key == self.current_game.game_id
+                ).group_by(TablePlayer.player_id).all()
+            else:
+                result = session.query(
+                    TablePlayer.player_id,
+                    TablePlayer.display_name,
+                    TablePlayer.total_score
+                ).filter(TablePlayer.is_active).group_by(TablePlayer.player_id).all()
+            for p in result:
+                diddles = p.diddles if is_current_game else 0
+                score_dict = {
+                    'name': p.display_name,
+                    'diddles': diddles,
+                    'overall': p.total_score
+                }
+                scores.append(score_dict)
+
         return scores
 
     def display_points(self) -> List[dict]:
@@ -713,8 +662,6 @@ class CAHBot:
         scores = self.get_score(in_game=True)  # type: List[Dict[str, Union[str, int]]]
         points_df = pd.DataFrame(scores)
         self.log.debug(f'Retrieved {points_df.shape[0]} players\' scores')
-        points_df = points_df.loc[points_df['is_playing']].copy()
-        self.log.debug(f'Filtered to {points_df.shape[0]} players\' scores')
         if points_df.shape[0] == 0:
             return [
                 bkb.make_block_section('No one has scored yet. Check back later!')
@@ -753,12 +700,12 @@ class CAHBot:
 
     def ping_players_left_to_pick(self) -> str:
         """Generates a string to tag any players that have yet to pick"""
-        if self.game is None:
+        if self.current_game is None:
             return 'I can\'t really do this outside of a game WHAT DO YOU WANT FROM ME?!?!?!?!??!'
         self.log.debug('Determining players that haven\'t yet picked for pinging...')
         remaining = []
-        for player in self.game.players.player_list:
-            if player.hand.pick.is_empty() and player.player_id != self.game.judge.player_id:
+        for player in self.current_game.players.player_list:
+            if player.hand.pick.is_empty() and player.player_id != self.current_game.judge.player_id:
                 remaining.append(player.player_id)
         if len(remaining) > 0:
             tagged = ' and '.join([f'<@{x}>' for x in remaining])
@@ -780,7 +727,7 @@ class CAHBot:
     def display_status(self) -> Optional[List[dict]]:
         """Displays status of the game"""
 
-        if self.game is None:
+        if self.current_game is None:
             self.st.message_test_channel('I just stahted this wicked pissa game, go grab me some dunkies.')
             return None
 
@@ -788,32 +735,33 @@ class CAHBot:
             bkb.make_block_section('*Game Info*')
         ]
 
-        if self.game.status not in [cah_game.GameStatuses.ended, cah_game.GameStatuses.initiated]:
+        if self.current_game.status not in [cah_game.GameStatus.ENDED, cah_game.GameStatus.INITIATED]:
 
             # Players that have card DMing enabled
             dm_section = self._generate_avi_context_section(
-                self.game.players.get_players_with_dm_cards(name_only=False), ':orange_check: *DM Cards*: ')
+                self.current_game.players.get_players_with_dm_cards(name_only=False), ':orange_check: *DM Cards*: ')
             # Players that have auto randpick enabled
             arp_section = self._generate_avi_context_section(
-                self.game.players.get_players_with_arp(name_only=False), ':orange_check: *ARP*: ')
+                self.current_game.players.get_players_with_arp(name_only=False), ':orange_check: *ARP*: ')
             # Players that have auto randchoose enabled
             arc_section = self._generate_avi_context_section(
-                self.game.players.get_players_with_arc(name_only=False), ':orange_check: *ARC*: ')
+                self.current_game.players.get_players_with_arc(name_only=False), ':orange_check: *ARC*: ')
 
-            status_section = f'*Status*: *`{self.game.status.name.replace("_", " ").title()}`*\n' \
-                             f'*Judge Ping*: `{self.game.is_ping_judge}`\t\t' \
-                             f'*Weiner Ping*: `{self.game.is_ping_winner}`\n'
-            game_section = f':stopwatch: *Round `{self.game.round_number}`*: ' \
-                           f'{self.st.get_time_elapsed(self.game.round_start_time)}\t\t' \
-                           f'*Game*: {self.st.get_time_elapsed(self.game.game_start_time)}\n' \
-                           f':stack-of-cards: *Deck*: `{self.game.deck.name}` - ' \
-                           f'`{len(self.game.deck.questions_card_list)}` question & ' \
-                           f'`{len(self.game.deck.answers_card_list)}` answer cards remain\n:conga_parrot: ' \
-                           f'*Player Order*: {" ".join(self.game.players.get_player_names(monospace=True))}'
+            status_section = f'*Status*: *`{self.current_game.status.name.replace("_", " ").title()}`*\n' \
+                             f'*Judge Ping*: `{self.current_game.is_ping_judge}`\t\t' \
+                             f'*Weiner Ping*: `{self.current_game.is_ping_winner}`\n'
+            game_section = f':stopwatch: *Round `{self.current_game.round_number}`*: ' \
+                           f'{self.st.get_time_elapsed(self.current_game.round_start_time)}\t\t' \
+                           f'*Game*: {self.st.get_time_elapsed(self.current_game.game_start_time)}\n' \
+                           f':stack-of-cards: *Deck*: `{self.current_game.deck.name}` - ' \
+                           f'`{len(self.current_game.deck.questions_card_list)}` question & ' \
+                           f'`{len(self.current_game.deck.answers_card_list)}` answer cards remain\n' \
+                           f':conga_parrot: *Player Order*: ' \
+                           f'{" ".join(self.current_game.players.get_player_names(monospace=True))}'
 
             status_block += [
                 bkb.make_context_section([
-                    bkb.markdown_section(f':gavel: *Judge*: *`{self.game.judge.get_full_name()}`*')
+                    bkb.markdown_section(f':gavel: *Judge*: *`{self.current_game.judge.get_full_name()}`*')
                 ]),
                 bkb.make_block_divider(),
                 bkb.make_context_section([
@@ -828,15 +776,15 @@ class CAHBot:
                 ])
             ]
 
-        if self.game.status in [cah_game.GameStatuses.players_decision,
-                                cah_game.GameStatuses.judge_decision]:
-            picks_needed = ['`{}`'.format(x) for x in self.game.players_left_to_pick()]
+        if self.current_game.status in [cah_game.GameStatus.PLAYER_DECISION,
+                                cah_game.GameStatus.JUDGE_DECISION]:
+            picks_needed = ['`{}`'.format(x) for x in self.current_game.players_left_to_pick()]
             pickle_txt = '' if len(picks_needed) == 0 else f'\n:pickle-sword: ' \
                                                            f'*Pickles Needed*: {" ".join(picks_needed)}'
             status_block = status_block[:1] + [
-                bkb.make_block_section(f':regional_indicator_q: `{self.game.current_question_card.txt}`'),
+                bkb.make_block_section(f':regional_indicator_q: `{self.current_game.current_question_card.txt}`'),
                 bkb.make_context_section([
-                    bkb.markdown_section(f':gavel: *Judge*: *`{self.game.judge.get_full_name()}`'
+                    bkb.markdown_section(f':gavel: *Judge*: *`{self.current_game.judge.get_full_name()}`'
                                          f'*{pickle_txt}')
                 ])
             ] + status_block[2:]  # Skip over the previous judge block

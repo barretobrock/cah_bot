@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import re
-from typing import List, Optional, Dict
+from typing import (
+    List,
+    Optional,
+    Dict
+)
 from random import shuffle
 from slacktools import BlockKitBuilder as bkb
-import cah.app as cah_app
-from .model import TableDecks, TableQuestionCards, TableAnswerCards
+from cah.db_eng import WizzyPSQLClient
+from cah.model import (
+    TableAnswerCard,
+    TableDeck,
+    TableQuestionCard
+)
 
 
 class OutOfCardsException(Exception):
@@ -44,12 +52,13 @@ class QuestionCard(Card):
         else:
             return len(match)
 
-    def modify_text(self, new_text: str):
+    def modify_text(self, eng: WizzyPSQLClient, new_text: str):
         """Modifies the question text"""
         self.txt = new_text
-        cah_app.db.session.query(TableQuestionCards).filter_by(id=self.id).update({
-                'card_text': new_text})
-        cah_app.db.session.commit()
+        with eng.session_mgr() as session:
+            session.query(TableQuestionCard).filter(TableQuestionCard.question_card_id == self.id).update({
+                TableQuestionCard.card_text: self.txt
+            })
 
 
 class AnswerCard(Card):
@@ -103,10 +112,11 @@ class Pick:
 
 class Hand:
     """Player's stack of cards"""
-    def __init__(self, owner: str):
+    def __init__(self, owner: str, eng: WizzyPSQLClient):
         self.owner = owner
         self.cards = list()
         self.pick = Pick()
+        self.eng = eng
 
     def pick_card(self, pos_list: List[int]) -> bool:
         """Picks card at index"""
@@ -117,9 +127,10 @@ class Hand:
                 # Then pop out those cards from max to min
                 for p in sorted(pos_list, reverse=True):
                     card = self.cards.pop(p)
-                    cah_app.db.session.query(TableAnswerCards).filter_by(id=card.id).update({
-                        'times_picked': TableAnswerCards.times_picked + 1})
-                    cah_app.db.session.commit()
+                    with self.eng.session_mgr() as session:
+                        session.query(TableAnswerCard).filter(TableAnswerCard.answer_card_id == card.id).update({
+                            TableAnswerCard.times_picked: TableAnswerCard.times_picked + 1
+                        })
                 return True
         return False
 
@@ -127,9 +138,10 @@ class Hand:
         """When a pick is chosen by the judge, this section handles marking those cards as chosen in the db
         for better tracking"""
         for card in self.pick.pick_list:
-            cah_app.db.session.query(TableAnswerCards).filter_by(id=card.id).update({
-                'times_chosen': TableAnswerCards.times_chosen + 1})
-            cah_app.db.session.commit()
+            with self.eng.session_mgr() as session:
+                session.query(TableAnswerCard).filter(TableAnswerCard.answer_card_id == card.id).update({
+                    TableAnswerCard.times_chosen: TableAnswerCard.times_chosen + 1
+                })
 
     def render_hand(self, max_selected: int = 1) -> List[Dict]:
         """Prints out the hand to the player
@@ -182,9 +194,11 @@ class Hand:
 
     def burn_cards(self):
         """Removes all cards in the hand"""
-        cah_app.db.session.query(TableAnswerCards).filter(TableAnswerCards.id.in_([x.id for x in self.cards]))\
-            .update({'times_burned': TableAnswerCards.times_burned + 1})
-        cah_app.db.session.commit()
+        with self.eng.session_mgr() as session:
+            session.query(TableAnswerCard).filter(TableAnswerCard.answer_card_id.in_([x.id for x in self.cards])).\
+                update({
+                    TableAnswerCard.times_burned: TableAnswerCard.times_burned + 1
+                })
         self.cards = list()
 
     def get_num_cards(self):
@@ -193,17 +207,21 @@ class Hand:
 
 class Deck:
     """Deck of question and answer cards for a game"""
-    def __init__(self, name: str):
+    def __init__(self, name: str, eng: WizzyPSQLClient):
         self.name = name
+        self.eng = eng
         self.questions_card_list = list()
         # Read in cards to deck
         # Read in questions and answers
-        qcards = cah_app.db.session.query(TableQuestionCards).join(TableDecks)\
-            .filter(TableDecks.name == name).all()
-        acards = cah_app.db.session.query(TableAnswerCards).join(TableDecks).filter(TableDecks.name == name).all()
+        with self.eng.session_mgr() as session:
+            qcards, acards = session.query(TableQuestionCard, TableAnswerCard).\
+                join(TableDeck, TableDeck.deck_id == TableQuestionCard.deck_key).\
+                join(TableDeck, TableDeck.deck_id == TableAnswerCard.deck_key).filter(
+                    TableDeck.name == name
+                ).all()
 
-        self.questions_card_list = [QuestionCard(q.card_text, q.id) for q in qcards]
-        self.answers_card_list = [AnswerCard(a.card_text, a.id) for a in acards]
+            self.questions_card_list = [QuestionCard(q.card_text, q.question_card_id) for q in qcards]
+            self.answers_card_list = [AnswerCard(a.card_text, a.answer_card_id,) for a in acards]
 
     @property
     def num_answer_cards(self):
@@ -222,31 +240,22 @@ class Deck:
         """Deals an answer card in the deck."""
         card = self.answers_card_list.pop(0)
         # Increment the card usage by one
-        cah_app.db.session.query(TableAnswerCards).filter_by(id=card.id).update({
-            'times_drawn': TableAnswerCards.times_drawn + 1})
-        cah_app.db.session.commit()
+        with self.eng.session_mgr() as session:
+            session.query(TableAnswerCard).filter(
+                TableAnswerCard.answer_card_id == card.id
+            ).update({
+                TableAnswerCard.times_drawn: TableAnswerCard.times_drawn + 1
+            })
         return card
 
     def deal_question_card(self) -> QuestionCard:
         """Deals a question card in the deck."""
         card = self.questions_card_list.pop(0)
         # Increment the card usage by one
-        cah_app.db.session.query(TableQuestionCards).filter_by(id=card.id).update({
-                'times_drawn': TableQuestionCards.times_drawn + 1})
-        cah_app.db.session.commit()
+        with self.eng.session_mgr() as session:
+            session.query(TableQuestionCard).filter(
+                TableQuestionCard.question_card_id == card.id
+            ).update({
+                TableQuestionCard.times_drawn: TableQuestionCard.times_drawn + 1
+            })
         return card
-
-
-class Decks:
-    """Possible card decks to choose"""
-    def __init__(self):
-        """Read in a dictionary of dfs that serve as each deck"""
-        decks = cah_app.db.session.query(TableDecks).all()
-        self.deck_list = [x.name for x in decks]
-
-    def get_deck_by_name(self, name: str) -> Optional[Deck]:
-        """Returns a deck matching the name provided. If no matches, returns None"""
-        for d in self.deck_list:
-            if d.name == name:
-                return Deck(d)
-        return None
