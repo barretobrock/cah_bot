@@ -2,7 +2,7 @@
 # Then
 # sudo chmod 644 <filename>
 # sudo systemctl daemon-reload
-# sudo systemctl enable <filename>
+# sudo systemctl enable cah
 
 [Unit]
 Description=Cards Against Humanity Slackbot

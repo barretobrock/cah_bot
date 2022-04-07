@@ -723,7 +723,7 @@ class CAHBot:
         return 'Looks like everyone\'s made picks?'
 
     @staticmethod
-    def _generate_avi_context_section(players: List[Player], pretext: str):
+    def _generate_avi_context_section(players: List['Player'], pretext: str):
         """Generates a context section with players' avatars rendered"""
         sect_list = [bkb.markdown_section(pretext)]
         if len(players) == 0:

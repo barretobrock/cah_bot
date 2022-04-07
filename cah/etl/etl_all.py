@@ -175,7 +175,7 @@ class ETL:
 
 
 if __name__ == '__main__':
-    etl = ETL(tables=ETL.ALL_TABLES, env='dev', drop_all=True)
+    etl = ETL(tables=ETL.ALL_TABLES, env='prod', drop_all=True)
     etl.etl_bot_settings()
     etl.etl_decks()
     etl.etl_players()
