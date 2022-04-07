@@ -119,13 +119,13 @@ class CAHBot:
                 'desc': 'Toggles whether or not the winner is pinged when they win a round. default: `True`',
                 'response': [self.toggle_winner_ping]
             },
-            r'^toggle (auto\s?randpick|arp[^\w])': {
+            r'^toggle (auto\s?randpick|arp($|\s))': {
                 'pattern': 'toggle (auto randpick|arp) [-u <user>]',
                 'cat': cat_settings,
                 'desc': 'Toggles automated randpicking. default: `False`',
                 'response': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'randpick']
             },
-            r'^toggle (auto\s?randchoose|arc[^\w])': {
+            r'^toggle (auto\s?randchoose|arc($|\s))': {
                 'pattern': 'toggle (auto randchoose|arc) [-u <user>]',
                 'cat': cat_settings,
                 'desc': 'Toggles automated randchoose (i.e., arp for judges). default: `False`',
@@ -440,6 +440,8 @@ class CAHBot:
         """Deals the user a new hand while randpicking one of the cards from their current deck.
         The card that's picked will have a negative point value
         """
+        if self.current_game is None or self.current_game.status not in [GameStatus.PLAYER_DECISION]:
+            return 'Here\'s a nuke for ya :walkfart:'
         self.current_game.decknuke(player_hash=user)
 
     def show_decks(self) -> str:
@@ -548,14 +550,18 @@ class CAHBot:
 
     def toggle_card_dm(self, user_hash: str, channel: str):
         """Toggles card dming"""
-        player = self.current_game.players.player_dict[user_hash]
-        player.toggle_cards_dm()
-        msg = f'Card DMing for player `{player.display_name}` set to `{player.is_dm_cards}`'
-        self.st.send_message(channel, msg)
         if self.current_game is not None:
+            player = self.current_game.players.player_dict[user_hash]
+            player.toggle_cards_dm()
             # Send cards to user if the status shows we're currently in a game
             if self.current_game.status == GameStatus.PLAYER_DECISION and player.is_dm_cards:
                 self.dm_cards_now(user_hash)
+        else:
+            player = self.eng.get_player_from_hash(user_hash=user_hash)
+            player.is_dm_cards = not player.is_dm_cards
+
+        msg = f'Card DMing for player `{player.display_name}` set to `{player.is_dm_cards}`'
+        self.st.send_message(channel, msg)
 
     def dm_cards_now(self, user_hash: str) -> Optional:
         """DMs current card set to user"""
