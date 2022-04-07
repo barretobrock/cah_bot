@@ -75,13 +75,13 @@ class AnswerCard(Card):
 
 class Pick:
     def __init__(self):
-        self.owner_id = None  # type: Optional[str]
+        self.owner_hash = None  # type: Optional[str]
         self.pick_list = []
         self.pick_txt_list = []
 
-    def assign(self, owner_id: str):
+    def assign(self, owner_hash: str):
         """Assign id to the pick"""
-        self.owner_id = owner_id
+        self.owner_hash = owner_hash
 
     def add_card_to_pick(self, card: Card):
         """Appends a card's text to the pick list"""
