@@ -35,7 +35,10 @@ from cah.core.players import (
 )
 from cah.core.cards import OutOfCardsException
 if TYPE_CHECKING:
-    from cah.core.cards import QuestionCard
+    from cah.core.cards import (
+        QuestionCard,
+        Pick
+    )
     from cah.core.deck import Deck
 
 
@@ -354,15 +357,15 @@ class Game:
         # Get the list of cards picked by each player
         self.log.debug(f'Selecting winner at index: {self.judge.pick_idx}')
         rps = self.round_picks
-        winning_pick = rps[self.judge.pick_idx]     # type: 'Pick'
+        winning_pick = rps[self.judge.pick_idx]     # type: Pick
 
         # Winner selection
         winner = self.players.player_dict.get(winning_pick.owner_hash)
         winner_was_none = winner is None  # This is used later in the method
         if winner_was_none:
             # Likely the player who won left the game. Add to their overall points
-            self.log.debug(f'The winner selected seems to have left the game. Spinning their object up to '
-                           f'grant their points.')
+            self.log.debug('The winner selected seems to have left the game. Spinning their object up to '
+                           'grant their points.')
             winner_tbl = self.eng.get_player_from_hash(user_hash=winning_pick.owner_hash)
             # Load the Player object so we can make the same changes as an existing player
             winner = Player(player_hash=winner_tbl.slack_user_hash, eng=self.eng, log=self.log)

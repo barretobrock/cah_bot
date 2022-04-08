@@ -172,7 +172,7 @@ class CAHBot:
                 'cat': cat_player,
                 'desc': 'Don\'t like any of your cards? Use this and one card will get randpicked from your '
                         'current deck. The other will be shuffled out and replaced with new cards \n\t\t'
-                        f'_NOTE: If your randpicked card is chosen, you\'ll get PENALIZED',
+                        '_NOTE: If your randpicked card is chosen, you\'ll get PENALIZED',
                 'response': [self.decknuke, 'user']
             },
             r'^randpick': {
@@ -325,7 +325,7 @@ class CAHBot:
             self.st.send_message(channel=channel, message=f'Looks like <@{user}>, is starting a game. '
                                                           f'Might take a few seconds while they select stuff...')
             with self.eng.session_mgr() as session:
-                deck_names = session.query(TableDeck.name).all()
+                deck_names = [x.name for x in session.query(TableDeck).all()]
             formp1 = self.forms.build_new_game_form_p1(deck_names)
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p1',
                                                 blocks=formp1)

@@ -301,7 +301,7 @@ class Players:
         """Removes a player from the existing game"""
         self.log.debug('Beginning process to remove player from game...')
         if self.player_dict.get(player_hash) is None:
-            return f'That player is not in the current game...'
+            return 'That player is not in the current game...'
         self.log.debug(f'Removing player {player_hash} from game and judge order...')
         player = self.player_dict.pop(player_hash)
         # Remove from judge order
