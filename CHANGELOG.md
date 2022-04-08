@@ -15,6 +15,19 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.1] - 2022-04-08
+#### Added
+ - CHANGELOG
+ - pyproject.toml
+ - poetry.lock
+#### Changed
+ - Completed switch to poetry
+ - Shifted to new PPM routine for package management
+#### Deprecated
+ - Versioneer
+#### Removed
+ - Lots of PPM-dependent files
+ 
 
 
 __END-CHANGELOG__
