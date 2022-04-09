@@ -18,7 +18,6 @@ include = ["CHANGELOG.md"]
 [tool.poetry.dependencies]
 python = "^3.8"
 slacktools = {git = "https://github.com/barretobrock/slacktools.git"}
-kavalkilu = {git = "https://github.com/barretobrock/kavalkilu.git"}
 Flask = "2.1.1"
 psycopg2 = "2.9.3"
 loguru = "0.6.0"
