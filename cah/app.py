@@ -9,11 +9,11 @@ from flask import (
 )
 from slackeventsapi import SlackEventAdapter
 from slacktools import SecretStore
-from easylogger import Log
-import cah.bot_base as botbase
 from cah.model import TablePlayer
 from cah.db_eng import WizzyPSQLClient
 from cah.settings import auto_config
+from cah.logg import get_base_logger
+from cah.bot_base import CAHBot
 
 # TODO:
 #  - add menu to control other users that are unresponsive (e.g., arparca)
@@ -21,9 +21,8 @@ from cah.settings import auto_config
 #       - in-game commands given priority when a game is active, otherwise general commands are priority.
 #           (this will require adding an overflow element to the menu)
 
-
 bot_name = auto_config.BOT_NICKNAME
-logg = Log(bot_name, log_to_file=True)
+logg = get_base_logger()
 
 credstore = SecretStore('secretprops-davaiops.kdbx')
 # Set up database connection
@@ -35,7 +34,7 @@ app = Flask(__name__)
 eng = WizzyPSQLClient(props=conn_dict, parent_log=logg)
 
 logg.debug('Instantiating bot...')
-Bot = botbase.CAHBot(eng=eng, creds=credstore, parent_log=logg)
+Bot = CAHBot(eng=eng, creds=credstore, parent_log=logg)
 
 # Register the cleanup function as a signal handler
 signal.signal(signal.SIGINT, Bot.cleanup)

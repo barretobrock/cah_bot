@@ -19,7 +19,7 @@ from slacktools import (
     SlackBotBase
 )
 from slack.errors import SlackApiError
-from easylogger import Log
+from loguru import logger
 from cah.model import (
     GameStatus,
     SettingType,
@@ -66,11 +66,11 @@ class Game:
     ]
 
     def __init__(self, player_hashes: List[str], deck: 'Deck', st: SlackBotBase, eng: WizzyPSQLClient,
-                 parent_log: Log):
+                 parent_log: logger):
         self.st = st
         self.eng = eng
         self.judge_order_divider = ':shiny_arrow:'
-        self.log = Log(parent_log, child_name=self.__class__.__name__)
+        self.log = parent_log.bind(child_name=self.__class__.__name__)
         self.log.debug(f'Building out new game with deck: {deck.name}...')
 
         # Database table links

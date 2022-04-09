@@ -1,5 +1,5 @@
 from typing import Dict
-from easylogger import Log
+from loguru import logger
 from slacktools import SlackTools
 from cah.model import TablePlayer
 from cah.db_eng import WizzyPSQLClient
@@ -17,7 +17,7 @@ def process_player_slack_details(uid: str, profile_dict: Dict) -> Dict[str, str]
     }
 
 
-def refresh_players_in_channel(channel: str, eng: WizzyPSQLClient, st: SlackTools, log: Log,
+def refresh_players_in_channel(channel: str, eng: WizzyPSQLClient, st: SlackTools, log: logger,
                                check_activity: bool = False):
     """Confirms the players in the channel, adds new ones and flags ones that aren't present"""
     log.debug('Fetching players in table')

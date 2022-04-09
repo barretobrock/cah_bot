@@ -11,9 +11,8 @@ from sqlalchemy.sql import (
     func,
     and_
 )
-from easylogger import Log
+from loguru import logger
 from slacktools import SlackTools
-import cah.app as cah_app
 from cah.model import (
     TableHonorific,
     TablePlayer,
@@ -31,10 +30,10 @@ from cah.core.common_methods import refresh_players_in_channel
 class Player:
     """Player-specific things"""
 
-    def __init__(self, player_hash: str, eng: WizzyPSQLClient, log: Log):
+    def __init__(self, player_hash: str, eng: WizzyPSQLClient, log: logger):
         self.player_hash = player_hash
         self.player_tag = f'<@{self.player_hash}>'
-        self.log = log
+        self.log = log.bind(child_name=self.__class__.__name__)
         self.eng = eng
 
         player_table = self._get_player_tbl()
@@ -132,7 +131,7 @@ class Player:
         self._set_player_round_tbl(TablePlayerRound.is_nuked_hand_caught, self._is_nuked_hand_caught)
 
     def _set_player_tbl(self, attr, value):
-        with cah_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             session.query(TablePlayer).filter(TablePlayer.slack_user_hash == self.player_hash).update({
                 attr: value
             })
@@ -140,13 +139,13 @@ class Player:
     def _get_player_tbl(self) -> Optional[TablePlayer]:
         """Attempts to retrieve the player's info from the players table.
         if it doesnt exist, it creates a new row for the player."""
-        with cah_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             tbl = session.query(TablePlayer).filter(TablePlayer.slack_user_hash == self.player_hash).one_or_none()
             session.expunge(tbl)
         return tbl
 
     def _set_player_round_tbl(self, attr, value):
-        with cah_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             session.query(TablePlayerRound).filter(and_(
                 TablePlayerRound.game_key == self.game_id,
                 TablePlayerRound.game_round_key == self.game_round_id
@@ -156,7 +155,7 @@ class Player:
 
     def _get_playerround_tbl(self) -> TablePlayerRound:
         """Attempts to retrieve the player's info from the playerrounds table."""
-        with cah_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             tbl = session.query(TablePlayerRound).filter(and_(
                 TablePlayerRound.game_key == self.game_id,
                 TablePlayerRound.game_round_key == self.game_round_id
@@ -174,7 +173,7 @@ class Player:
         self.hand.pick.clear_picks()
         self._is_nuked_hand = False
         self._is_nuked_hand_caught = False
-        with cah_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             session.add(TablePlayerRound(player_key=self.player_table_id, game_key=game_id,
                                          game_round_key=game_round_id, is_arp=self.is_arp, is_arc=self.is_arc))
 
@@ -196,7 +195,7 @@ class Player:
 
     def get_current_score(self, game_id: int) -> int:
         """Retrieves the players current score"""
-        with cah_app.eng.session_mgr() as session:
+        with self.eng.session_mgr() as session:
             return session.query(
                     func.sum(TablePlayerRound.score)
                 ).filter(and_(
@@ -225,14 +224,15 @@ class Player:
 
 class Players:
     """Methods for handling all players"""
-    def __init__(self, player_hash_list: List[str], slack_api: SlackTools, eng: WizzyPSQLClient, parent_log: Log):
+    def __init__(self, player_hash_list: List[str], slack_api: SlackTools, eng: WizzyPSQLClient,
+                 parent_log: logger):
         """
         Args:
             player_hash_list: list of player slack hashes
             slack_api: slack api to send messages to the channel
             parent_log: log object to record important details
         """
-        self.log = Log(parent_log, child_name=self.__class__.__name__)
+        self.log = parent_log.bind(child_name=self.__class__.__name__)
         self.st = slack_api
         self.eng = eng
         self.player_dict = {
@@ -353,6 +353,6 @@ class Players:
 
 class Judge(Player):
     """Player who chooses winning card"""
-    def __init__(self, player_hash: str, eng: WizzyPSQLClient, log: Log):
+    def __init__(self, player_hash: str, eng: WizzyPSQLClient, log: logger):
         super().__init__(player_hash=player_hash, eng=eng, log=log)
         self.pick_idx = None    # type: Optional[int]

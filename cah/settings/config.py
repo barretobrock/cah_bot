@@ -1,5 +1,8 @@
 """Configuration setup"""
-from cah._version import get_versions
+from cah import (
+    __version__,
+    __update_date__
+)
 
 
 class Common(object):
@@ -9,9 +12,8 @@ class Common(object):
     ADMINS = ['UM35HE6R5']
     TRIGGERS = ['cah', 'c!']
 
-    _v = get_versions()
-    VERSION = _v['version']
-    UPDATE_DATE = _v['date']
+    VERSION = __version__
+    UPDATE_DATE = __update_date__
 
 
 class Development(Common):

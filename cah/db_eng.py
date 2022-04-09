@@ -15,7 +15,7 @@ from sqlalchemy.orm import (
     sessionmaker,
     Session
 )
-from easylogger import Log
+from loguru import logger
 from cah.model import (
     SettingType,
     CahErrorType,
@@ -28,9 +28,9 @@ from cah.model import (
 class WizzyPSQLClient:
     """Creates Postgres connection engine"""
 
-    def __init__(self, props: Dict, parent_log: Log, **kwargs):
+    def __init__(self, props: Dict, parent_log: logger, **kwargs):
         _ = kwargs
-        self.log = Log(parent_log, child_name=self.__class__.__name__)
+        self.log = parent_log.bind(child_name=self.__class__.__name__)
         self.engine = create_engine(URL.create(
             drivername='postgresql+psycopg2',
             username=props.get('usr'),

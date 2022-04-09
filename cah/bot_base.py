@@ -19,7 +19,7 @@ from slacktools import (
     SlackBotBase,
     BlockKitBuilder as bkb
 )
-from easylogger import Log
+from loguru import logger
 from cah.model import (
     SettingType,
     TableDeck,
@@ -42,13 +42,13 @@ if TYPE_CHECKING:
 class CAHBot:
     """Bot for playing Cards Against Humanity on Slack"""
 
-    def __init__(self, eng: WizzyPSQLClient, creds: SecretStore, parent_log: Log):
+    def __init__(self, eng: WizzyPSQLClient, creds: SecretStore, parent_log: logger):
         """
         Args:
 
         """
         self.bot_name = f'{auto_config.BOT_FIRST_NAME} {auto_config.BOT_LAST_NAME}'
-        self.log = Log(parent_log, child_name='cah_bot')
+        self.log = parent_log.bind(child_name=self.__class__.__name__)
         self.eng = eng
         self.triggers = auto_config.TRIGGERS
         self.channel_id = auto_config.MAIN_CHANNEL  # cah or cah-test
@@ -268,7 +268,6 @@ class CAHBot:
         if self.eng.get_setting(SettingType.IS_ANNOUNCE_SHUTDOWN):
             self.st.message_test_channel(blocks=notify_block)
         self.log.info('Bot shutting down...')
-        self.log.close()
         sys.exit(0)
 
     def process_slash_command(self, event_dict: Dict):
@@ -315,9 +314,11 @@ class CAHBot:
 
             if 'pick' in parsed_command:
                 # Handle pick/randpick
+                self.log.debug(f'Processed "pick" command to: {parsed_command}')
                 self.process_picks(user, parsed_command)
             elif 'choose' in parsed_command:
                 # handle choose/randchoose
+                self.log.debug(f'Processed "choose" command to: {parsed_command}')
                 self.choose_card(user, parsed_command)
         elif action_id == 'new-game-start':
             # Kicks off the new game form process
@@ -332,7 +333,10 @@ class CAHBot:
 
         elif action_id == 'new-game-deck':
             # Set the deck for the new game and then send the second form
-            self.state_store['deck'] = action_dict['selected_option']['value'].replace('deck_', '')
+            self.log.debug('Processing second part of new game process.')
+            deck_name = action_dict['selected_option']['value'].replace('deck_', '')
+            self.log.debug(f'Processed deck name to {deck_name}')
+            self.state_store['deck'] = deck_name
             formp2 = self.forms.build_new_game_form_p2()
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p2',
                                                 blocks=formp2)

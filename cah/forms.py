@@ -3,7 +3,7 @@ from typing import (
     Dict,
     TYPE_CHECKING
 )
-from easylogger import Log
+from loguru import logger
 from slacktools import (
     BlockKitBuilder as bkb,
     SlackTools
@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 
 class Forms:
     """Stores various Block Kit forms"""
-    def __init__(self, st: SlackTools, eng: WizzyPSQLClient, parent_log: Log):
-        self.log = Log(parent_log, child_name=self.__class__.__name__)
+    def __init__(self, st: SlackTools, eng: WizzyPSQLClient, parent_log: logger):
+        self.log = parent_log.bind(child_name=self.__class__.__name__)
         self.st = st
         self.eng = eng
 

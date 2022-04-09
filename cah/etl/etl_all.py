@@ -1,6 +1,5 @@
 from typing import List
 from sqlalchemy.sql import not_
-from easylogger import Log
 from slacktools import (
     SecretStore,
     GSheetReader,
@@ -24,6 +23,7 @@ from cah.db_eng import WizzyPSQLClient
 from cah.settings import auto_config
 from cah.core.cards import QuestionCard
 from cah.core.common_methods import refresh_players_in_channel
+from cah.logg import logger
 
 
 class ETL:
@@ -43,7 +43,7 @@ class ETL:
     ]
 
     def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True):
-        self.log = Log('cah-etl', log_level_str='DEBUG', log_to_file=True)
+        self.log = logger
         self.log.debug('Obtaining credential file...')
         credstore = SecretStore('secretprops-davaiops.kdbx')
 
