@@ -15,6 +15,13 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.2] - 2022-04-08
+#### Added
+ - test files for all the package modules
+ - some initial test cases
+#### Changed
+ - logging now uses `loguru`
+ 
 ### [2.0.1] - 2022-04-08
 #### Added
  - CHANGELOG
