@@ -19,7 +19,7 @@ sudo dpkg-reconfigure dash
 cd ~/venvs && python3 -m venv cah_bot
 source ~/venvs/cah_bot/bin/activate
 cd ~/extras && git clone https://github.com/barretobrock/cah_bot.git
-cd cah_bot && sh update_script.sh
+cd cah_bot && sh ppmgr.sh pull
 
 # Add service file to system
 sudo cp cah.service /lib/systemd/system/
