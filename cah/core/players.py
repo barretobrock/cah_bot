@@ -148,8 +148,9 @@ class Player:
         with self.eng.session_mgr() as session:
             session.query(TablePlayerRound).filter(and_(
                 TablePlayerRound.game_key == self.game_id,
-                TablePlayerRound.game_round_key == self.game_round_id
-            )).join(TablePlayer, TablePlayerRound.player_key == TablePlayer.player_id).update({
+                TablePlayerRound.game_round_key == self.game_round_id,
+                TablePlayerRound.player_key == self.player_table_id
+            )).update({
                 attr: value
             })
 
