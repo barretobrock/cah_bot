@@ -1,0 +1,208 @@
+# Expected structure for commands:
+#   <cmd_regex>:
+#       name: <command_name>
+#       tags: <comma-separated-tags>
+#       desc: <description>
+#       # Response should be one of these:
+#       response-cmd:
+#           A dynamic command that's mapped to the dict on instantiation via attribute lookup
+#           callable: <name_of_callable>
+#           args:
+#               # Note: these arg names should match what's coming in from an event
+#               #   (e.g., user, channel, message)
+#               - list
+#               - of
+#               - args
+#       response-txt: something <@{user}>
+
+commands:
+    group-support:
+        ^help$:
+            tags:
+                - support
+            desc: Description of all the commands I respond to
+            response-cmd:
+                callable: generate_intro
+        ^search help:
+            tags:
+                - support
+            desc: Search the command descriptions by tag or group
+            response-cmd:
+                callable: search_help_block
+                args:
+                    - message
+        ^about$:
+            tags:
+                - debug
+            desc: Bootup time of Viktor's current instance, his current version and last update date
+            response-cmd:
+                callable: get_bootup_msg
+        ^m(ain\s?menu|m):
+            tags:
+                - ui
+                - settings
+            desc: Wizzy's wain wenu
+            response-cmd:
+                callable: prebuild_main_menu
+                args:
+                    - user
+                    - channel
+        ^show decks:
+            tags:
+                - game
+            desc: Show the decks currently available
+            response-cmd:
+                callable: show_decks
+    group-game:
+        ^new round:
+            tags:
+                - game
+            desc: For manually transitioning to another round when Wizzy fails to.
+            response-cmd:
+                callable: new_round
+        ^(points|score[s]?):
+            tags:
+                - player
+                - game
+            desc: Show points / score of all players
+            response-cmd:
+                callable: display_points
+        ^status:
+            tags:
+                - game
+            desc: Get current status of the game and other metadata
+            response-cmd:
+                callable: display_status
+        ^refresh player:
+            tags:
+                - player
+            desc: Forces a refresh of the current players in the channel
+            response-cmd:
+                callable: refresh_players_in_channel
+        ^end game$:
+            tags:
+                - game
+            desc: Ends the current game
+            response-cmd:
+                callable: end_game
+    group-settings:
+        ^toggle (judge\s?|j)ping:
+            tags:
+                - settings
+            desc: Toggles whether or not the judge is pinged after all selections are made.
+            response-cmd:
+                callable: toggle_judge_ping
+        ^toggle (w[ine]+r\s?|w)ping:
+            tags:
+                - settings
+            desc: Toggles whether or not the winner is pinged when they win a round.
+            response-cmd:
+                callable: toggle_winner_ping
+        ^toggle (auto\s?randpick|arp($|\s)):
+            tags:
+                - settings
+            desc: Fully. Automated. Luxury. Random. Picking. (this one's for The Player)
+            response-cmd:
+                callable: toggle_auto_pick_or_choose
+                args:
+                    - user
+                    - channel
+                    - message
+                    - randpick
+        ^toggle (auto\s?randchoose|arc($|\s)):
+            tags:
+                - settings
+            desc: Fully. Automated. Luxury. Random. Choosing. (this one's for The Judge)
+            response-cmd:
+                callable: toggle_auto_pick_or_choose
+                args:
+                    - user
+                    - channel
+                    - message
+                    - randchoose
+        ^toggle ar[pc]ar[pc]a:
+            tags:
+                - settings
+            desc: Fully. Automated. Luxury. Random. Bothing. (this one's for... Everyone?)
+            response-cmd:
+                callable: toggle_auto_pick_or_choose
+                args:
+                    - user
+                    - channel
+                    - message
+                    - both
+        ^toggle (c[har]+ds?\s?)?dm:
+            tags:
+                - settings
+            desc: Toggles whether or not you receive cards as a DM from Wizzy.
+            response-cmd:
+                callable: toggle_card_dm
+                args:
+                    - user
+                    - channel
+    group-player-moves:
+        ^c[har]+ds (now|dm):
+            tags:
+                - player
+                - game
+            desc: DMs you your cards immediately, if you have any.
+            response-cmd:
+                callable: dm_cards_now
+                args:
+                    - user
+        ^p(ick)? \d[\d,]*:
+            tags:
+                - player
+            desc: Pick your card(s) for the round
+            response-cmd:
+                callable: process_picks
+                args:
+                    - user
+                    - message
+        ^decknuke:
+            tags:
+                - player
+            desc: Don't like any of your cards? They don't like you either. lol jk luv u. Use this and one of your cards gets picked randomly for you and in return you get a totally new hand! Ah, but nothing in life is without risk - you see, if the judge chooses your card, you will be punished.....
+            response-cmd:
+                callable: decknuke
+                args:
+                    - user
+        ^randpick:
+            tags:
+                - player
+            desc: Randomly select your card(s) for judgement (AKA 'pick').
+            examples:
+                - randpick <- select from entire hand
+                - randpick 234 <- select from subset
+                - randpick 2,3,4
+                - randpick 234 @other_user
+            response-cmd:
+                callable: process_picks
+                args:
+                    - user
+                    - message
+        ^c(hoose)? \d:
+            tags:
+                - judge
+            desc: Used by the judge to select (AKA choose) the :Q:best:Q:card from the picks
+            response-cmd:
+                callable: choose_card
+                args:
+                    - user
+                    - message
+        ^randchoose:
+            tags:
+                - judge
+            desc: Randomly choose the best card from all the cards or a subset
+            response-cmd:
+                callable: choose_card
+                args:
+                    - user
+                    - message
+        ^ping ppl:
+            tags:
+                - player
+                - game
+            desc: Ping (non-judge) players who haven't yet picked
+            response-cmd:
+                callable: ping_players_left_to_pick

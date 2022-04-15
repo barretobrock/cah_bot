@@ -9,17 +9,19 @@ from typing import (
     Union,
     TYPE_CHECKING
 )
+from types import SimpleNamespace
 from random import randrange
 from sqlalchemy.sql import (
     func,
 )
 import pandas as pd
 from slacktools import (
-    SecretStore,
     SlackBotBase,
-    BlockKitBuilder as bkb
+    BlockKitBuilder as BKitB
 )
+from slacktools.tools import build_commands
 from loguru import logger
+from cah import ROOT_PATH
 from cah.model import (
     SettingType,
     TableDeck,
@@ -39,10 +41,10 @@ if TYPE_CHECKING:
     from cah.core.players import Player
 
 
-class CAHBot:
+class CAHBot(Forms):
     """Bot for playing Cards Against Humanity on Slack"""
 
-    def __init__(self, eng: WizzyPSQLClient, creds: SecretStore, parent_log: logger):
+    def __init__(self, eng: WizzyPSQLClient, bot_cred_entry: SimpleNamespace, parent_log: logger):
         """
         Args:
 
@@ -57,181 +59,27 @@ class CAHBot:
         self.update_date = auto_config.UPDATE_DATE
 
         # Begin loading and organizing commands
-        # Command categories
-        cat_basic = 'basic'
-        cat_settings = 'settings'
-        cat_player = 'player'
-        cat_judge = 'judge'
-        cmd_categories = [cat_basic, cat_settings, cat_player, cat_judge]
-        self.commands = {
-            r'^help': {
-                'pattern': 'help',
-                'cat': cat_basic,
-                'desc': 'Description of all the commands I respond to!',
-                'response': [],
-            },
-            r'^about$': {
-                'pattern': 'about',
-                'cat': cat_basic,
-                'desc': 'Bootup time, version and last update date',
-                'response': [self.get_bootup_msg],
-            },
-            r'^m(ain\s?menu|m)': {
-                'pattern': 'main menu|mm',
-                'cat': cat_basic,
-                'desc': 'Access CAH main menu',
-                'response': [self.prebuild_main_menu, 'user', 'channel'],
-            },
-            r'^new round': {
-                'pattern': 'new round',
-                'cat': cat_basic,
-                'desc': 'For manually transitioning to another round when Wizzy fails to.',
-                'response': [self.new_round]
-            },
-            r'^(points|score[s]?)': {
-                'pattern': '(points|score[s]?)',
-                'cat': cat_basic,
-                'desc': 'Show points / score of all players',
-                'response': [self.display_points]
-            },
-            r'^status': {
-                'pattern': 'status',
-                'cat': cat_basic,
-                'desc': 'Get current status of the game and other metadata',
-                'response': [self.display_status]
-            },
-            r'^refresh players': {
-                'pattern': 'refresh players',
-                'cat': cat_basic,
-                'desc': 'Refresh the current players in the channel',
-                'response': [self.refresh_players_in_channel]
-            },
-            r'^toggle (judge\s?|j)ping': {
-                'pattern': 'toggle (judge|j)ping',
-                'cat': cat_settings,
-                'desc': 'Toggles whether or not the judge is pinged after all selections are made. '
-                        'default: `True`',
-                'response': [self.toggle_judge_ping]
-            },
-            r'^toggle (w[ine]+r\s?|w)ping': {
-                'pattern': 'toggle (w[ien]er|w)ping',
-                'cat': cat_settings,
-                'desc': 'Toggles whether or not the winner is pinged when they win a round. default: `True`',
-                'response': [self.toggle_winner_ping]
-            },
-            r'^toggle (auto\s?randpick|arp($|\s))': {
-                'pattern': 'toggle (auto randpick|arp) [-u <user>]',
-                'cat': cat_settings,
-                'desc': 'Toggles automated randpicking. default: `False`',
-                'response': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'randpick']
-            },
-            r'^toggle (auto\s?randchoose|arc($|\s))': {
-                'pattern': 'toggle (auto randchoose|arc) [-u <user>]',
-                'cat': cat_settings,
-                'desc': 'Toggles automated randchoose (i.e., arp for judges). default: `False`',
-                'response': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'randchoose']
-            },
-            r'^toggle ar[pc]ar[pc]a': {
-                'pattern': 'toggle arparca [-u <user>]',
-                'cat': cat_settings,
-                'desc': 'Toggles both automated randpicking and automated randchoose (i.e., arp for judges).',
-                'response': [self.toggle_auto_pick_or_choose, 'user', 'channel', 'message', 'both']
-            },
-            r'^toggle (c[har]+ds?\s?)?dm': {
-                'pattern': 'toggle (dm|card dm)',
-                'cat': cat_settings,
-                'desc': 'Toggles whether or not you receive cards as a DM from Wizzy. default: `True`',
-                'response': [self.toggle_card_dm, 'user', 'channel']
-            },
-            r'^c[har]+ds (now|dm)': {
-                'pattern': 'cahds (now|dm)',
-                'cat': cat_player,
-                'desc': 'Toggles whether or not you receive cards as a DM from Wizzy. default: `True`',
-                'response': [self.dm_cards_now, 'user']
-            },
-            r'^end game': {
-                'pattern': 'end game',
-                'cat': cat_basic,
-                'desc': 'Ends the current game and saves scores',
-                'response': [self.end_game]
-            },
-            r'^show decks': {
-                'pattern': 'show decks',
-                'cat': cat_basic,
-                'desc': 'Shows the decks currently available',
-                'response': [self.show_decks]
-            },
-            r'^p(ick)? \d[\d,]*': {
-                'pattern': '(p|pick) <card-num>[<next-card>]',
-                'cat': cat_player,
-                'desc': 'Pick your card(s) for the round',
-                'response': [self.process_picks, 'user', 'message']
-            },
-            r'^decknuke': {
-                'pattern': 'decknuke',
-                'cat': cat_player,
-                'desc': 'Don\'t like any of your cards? Use this and one card will get randpicked from your '
-                        'current deck. The other will be shuffled out and replaced with new cards \n\t\t'
-                        '_NOTE: If your randpicked card is chosen, you\'ll get PENALIZED',
-                'response': [self.decknuke, 'user']
-            },
-            r'^randpick': {
-                'pattern': 'randpick [FLAGS]',
-                'cat': cat_player,
-                'desc': 'Randomly select your card when you just can\'t decide.',
-                'flags': [
-                    {
-                        'pattern': '@other_player',
-                        'desc': 'Randomly select for another player'
-                    }, {
-                        'pattern': '1234` or `1,2,3,4',
-                        'desc': 'Randomly select from a subset of your cards'
-                    }
-                ],
-                'response': [self.process_picks, 'user', 'message']
-            },
-            r'^c(hoose)? \d': {
-                'pattern': '(c|choose) <card-num>',
-                'cat': cat_judge,
-                'desc': 'Used by the judge to select the :Q:best:Q: card from the picks.',
-                'response': [self.choose_card, 'user', 'message']
-            },
-            r'^randchoose': {
-                'pattern': 'randchoose [FLAGS]',
-                'cat': cat_judge,
-                'desc': 'Randomly choose the best card from all the cards or a subset.',
-                'response': [self.choose_card, 'user', 'message'],
-                'flags': [
-                    {
-                        'pattern': '234` or `2,3,4',
-                        'desc': 'Choose randomly from a subset'
-                    }
-                ]
-            },
-            r'^ping ppl': {
-                'pattern': 'ping ppl',
-                'cat': cat_basic,
-                'desc': 'Ping players who haven\'t yet picked',
-                'response': [self.ping_players_left_to_pick]
-            },
-        }
+        self.commands = build_commands(self, cmd_yaml_path=ROOT_PATH.parent.joinpath('commands.yaml'),
+                                       log=self.log)
         # Initate the bot, which comes with common tools for interacting with Slack's API
-        self.st = SlackBotBase(triggers=self.triggers, credstore=creds,
-                               test_channel=self.channel_id, commands=self.commands,
-                               cmd_categories=cmd_categories, slack_cred_name=auto_config.BOT_NICKNAME,
+        self.st = SlackBotBase(bot_cred_entry=bot_cred_entry, triggers=self.triggers, main_channel=self.channel_id,
                                parent_log=self.log, use_session=False)
+        # Pass in commands to SlackBotBase, where task delegation occurs
+        self.log.debug('Patching in commands to SBB...')
+        self.st.update_commands(commands=self.commands)
         self.bot_id = self.st.bot_id
         self.user_id = self.st.user_id
         self.bot = self.st.bot
         self.generate_intro()
 
-        self.forms = Forms(st=self.st, eng=self.eng, parent_log=self.log)
+        super().__init__(st=self.st, eng=self.eng, parent_log=self.log)
 
         # More game environment-specific initialization stuff
         self.current_game = None        # type: Optional[Game]
 
         if self.eng.get_setting(SettingType.IS_ANNOUNCE_STARTUP):
-            self.st.message_test_channel(blocks=self.get_bootup_msg())
+            self.log.debug('IS_ANNOUNCE_STARTUP was enabled, so sending message to main channel')
+            self.st.message_main_channel(blocks=self.get_bootup_msg())
 
         # Store for state across UI responses (thanks Slack for not supporting multi-user selects!)
         self.state_store = {
@@ -239,9 +87,9 @@ class CAHBot:
         }
 
     def get_bootup_msg(self) -> List[Dict]:
-        return [bkb.make_context_section([
-            bkb.markdown_section(f"*{self.bot_name}* *`{self.version}`* booted up at `{datetime.now():%F %T}`!"),
-            bkb.markdown_section(f"(updated {self.update_date})")
+        return [BKitB.make_context_section([
+            BKitB.markdown_section(f"*{self.bot_name}* *`{self.version}`* booted up at `{datetime.now():%F %T}`!"),
+            BKitB.markdown_section(f"(updated {self.update_date})")
         ])]
 
     def generate_intro(self):
@@ -252,9 +100,7 @@ class CAHBot:
         avi_url = "https://avatars.slack-edge.com/2020-01-28/925065624848_3efb45d2ac590a466dbd_512.png"
         avi_alt = 'dat me'
         # Build the help text based on the commands above and insert back into the commands dict
-        self.commands[r'^help']['response'] = self.st.build_help_block(intro, avi_url, avi_alt)
-        # Update the command dict in SlackBotBase
-        self.st.update_commands(self.commands)
+        return self.st.build_help_block(intro, avi_url, avi_alt)
 
     def cleanup(self, *args):
         """Runs just before instance is destroyed"""
@@ -262,11 +108,11 @@ class CAHBot:
         if self.current_game is not None:
             self.current_game.end_game()
         notify_block = [
-            bkb.make_context_section([bkb.markdown_section(f'{self.bot_name} died. '
-                                                           f':death-drops::party-dead::death-drops:')])
+            BKitB.make_context_section([BKitB.markdown_section(f'{self.bot_name} died. '
+                                                               f':death-drops::party-dead::death-drops:')])
         ]
         if self.eng.get_setting(SettingType.IS_ANNOUNCE_SHUTDOWN):
-            self.st.message_test_channel(blocks=notify_block)
+            self.st.message_main_channel(blocks=notify_block)
         self.log.info('Bot shutting down...')
         sys.exit(0)
 
@@ -353,7 +199,7 @@ class CAHBot:
         elif action_id == 'modify-question':
             # Response from modify question form
             self.current_game.current_question_card.modify_text(eng=self.eng, new_text=action_value)
-            self.st.message_test_channel(f'Question updated: *{self.current_game.current_question_card.txt}*'
+            self.st.message_main_channel(f'Question updated: *{self.current_game.current_question_card.txt}*'
                                          f' by <@{user}>')
         elif action_id == 'my-settings':
             settings_form = self.forms.build_my_settings_form(eng=self.eng, user_id=user)
@@ -418,7 +264,7 @@ class CAHBot:
         _ = message
         if self.current_game is not None:
             if self.current_game.status != GameStatus.ENDED:
-                self.st.message_test_channel('Looks like you haven\'t ended the current game yet. '
+                self.st.message_main_channel('Looks like you haven\'t ended the current game yet. '
                                              'Do that and then start a new game.')
                 return None
 
@@ -478,7 +324,7 @@ class CAHBot:
         old_val = self.eng.get_setting(setting)
         new_val = not old_val
         self.eng.set_setting(setting, setting_val=new_val)
-        self.st.message_test_channel(f'`{setting.name}` set to: `{new_val}`')
+        self.st.message_main_channel(f'`{setting.name}` set to: `{new_val}`')
 
     def toggle_judge_ping(self):
         """Toggles whether or not to ping the judge when all card decisions have been completed"""
@@ -580,7 +426,7 @@ class CAHBot:
     def dm_cards_now(self, user_hash: str) -> Optional:
         """DMs current card set to user"""
         if self.current_game is None:
-            self.st.message_test_channel('Start a game first, then tell me to do that.')
+            self.st.message_main_channel('Start a game first, then tell me to do that.')
             return None
         player = self.current_game.players.player_dict[user_hash]
 
@@ -607,11 +453,12 @@ class CAHBot:
 
         if notifications is not None:
             # Process incoming notifications into the block
-            notification_block.append(bkb.make_context_section([bkb.markdown_section(x) for x in notifications]))
+            notification_block.append(BKitB.make_context_section([BKitB.markdown_section(x)
+                                                                  for x in notifications]))
 
         if self.current_game.status == GameStatus.ENDED:
             # Game ended because we ran out of questions
-            self.st.message_test_channel(blocks=notification_block)
+            self.st.message_main_channel(blocks=notification_block)
             self.end_game()
             return None
 
@@ -620,12 +467,12 @@ class CAHBot:
     def process_picks(self, user_hash: str, message: str) -> Optional:
         """Processes the card selection made by the user"""
         if self.current_game is None:
-            self.st.message_test_channel('Start a game first, then tell me to do that.')
+            self.st.message_main_channel('Start a game first, then tell me to do that.')
             return None
 
         if self.current_game.status != GameStatus.PLAYER_DECISION:
             # Prevent this method from being called outside of the player's decision stage
-            self.st.message_test_channel(f'<@{user_hash}> You cannot make selections '
+            self.st.message_main_channel(f'<@{user_hash}> You cannot make selections '
                                          f'in the current status of this game: `{self.current_game.status.name}`.')
             return None
 
@@ -635,12 +482,12 @@ class CAHBot:
         """For the judge to choose the winning card and
         for other players to vote on the card they think should win"""
         if self.current_game is None:
-            self.st.message_test_channel('Start a game first, then tell me to do that.')
+            self.st.message_main_channel('Start a game first, then tell me to do that.')
             return None
 
         if self.current_game.status != GameStatus.JUDGE_DECISION:
             # Prevent this method from being called outside of the judge's decision stage
-            self.st.message_test_channel(f'Not the right status for this command: '
+            self.st.message_main_channel(f'Not the right status for this command: '
                                          f'`{self.current_game.status.name}`')
             return None
 
@@ -651,7 +498,7 @@ class CAHBot:
     def end_game(self) -> Optional:
         """Ends the current game"""
         if self.current_game is None:
-            self.st.message_test_channel('You have to start a game before you can end it...????')
+            self.st.message_main_channel('You have to start a game before you can end it...????')
             return None
         if self.current_game.status != GameStatus.ENDED:
             # Check if game was not already ended automatically
@@ -659,7 +506,7 @@ class CAHBot:
         # Save score history to file
         self.display_points()
         self.current_game = None
-        self.st.message_test_channel('The game has ended. :died:')
+        self.st.message_main_channel('The game has ended. :died:')
 
     def get_score(self, in_game: bool = True) -> List[Dict[str, Union[str, int]]]:
         """Queries db for players' scores"""
@@ -701,7 +548,7 @@ class CAHBot:
         self.log.debug(f'Retrieved {points_df.shape[0]} players\' scores')
         if points_df.shape[0] == 0:
             return [
-                bkb.make_block_section('No one has scored yet. Check back later!')
+                BKitB.make_block_section('No one has scored yet. Check back later!')
             ]
         # Apply fun emojis
         poops = ['poop_wtf', 'poop', 'poop_ugh', 'poop_tugh', 'poopfire', 'poopstar']
@@ -730,9 +577,9 @@ class CAHBot:
                    f"{r['diddles']:<3} ({r['overall']:<4}overall)`"
             scores_list.append(line)
         return [
-            bkb.make_context_section([bkb.markdown_section('*Current Scores*')]),
-            bkb.make_block_divider(),
-            bkb.make_block_section(scores_list)
+            BKitB.make_context_section([BKitB.markdown_section('*Current Scores*')]),
+            BKitB.make_block_divider(),
+            BKitB.make_block_section(scores_list)
         ]
 
     def ping_players_left_to_pick(self) -> str:
@@ -752,10 +599,10 @@ class CAHBot:
     @staticmethod
     def _generate_avi_context_section(players: List['Player'], pretext: str):
         """Generates a context section with players' avatars rendered"""
-        sect_list = [bkb.markdown_section(pretext)]
+        sect_list = [BKitB.markdown_section(pretext)]
         if len(players) == 0:
             return sect_list
-        player_list = [bkb.make_image_element(x.avi_url, x.display_name) for x in players]
+        player_list = [BKitB.make_image_element(x.avi_url, x.display_name) for x in players]
         if len(sect_list + player_list) > 10:
             # Only 10 elements are allowed in a context block at a given time
             player_list = player_list[:9]
@@ -765,11 +612,11 @@ class CAHBot:
         """Displays status of the game"""
 
         if self.current_game is None:
-            self.st.message_test_channel('I just stahted this wicked pissa game, go grab me some dunkies.')
+            self.st.message_main_channel('I just stahted this wicked pissa game, go grab me some dunkies.')
             return None
 
         status_block = [
-            bkb.make_block_section('*Game Info*')
+            BKitB.make_block_section('*Game Info*')
         ]
 
         if self.current_game.status not in [GameStatus.ENDED, GameStatus.INITIATED]:
@@ -797,19 +644,19 @@ class CAHBot:
                            f'{" ".join(self.current_game.players.get_player_names(monospace=True))}'
 
             status_block += [
-                bkb.make_context_section([
-                    bkb.markdown_section(f':gavel: *Judge*: *`{self.current_game.judge.get_full_name()}`*')
+                BKitB.make_context_section([
+                    BKitB.markdown_section(f':gavel: *Judge*: *`{self.current_game.judge.get_full_name()}`*')
                 ]),
-                bkb.make_block_divider(),
-                bkb.make_context_section([
-                    bkb.markdown_section(status_section)
+                BKitB.make_block_divider(),
+                BKitB.make_context_section([
+                    BKitB.markdown_section(status_section)
                 ]),
-                bkb.make_context_section(dm_section),
-                bkb.make_context_section(arp_section),
-                bkb.make_context_section(arc_section),
-                bkb.make_block_divider(),
-                bkb.make_context_section([
-                    bkb.markdown_section(game_section)
+                BKitB.make_context_section(dm_section),
+                BKitB.make_context_section(arp_section),
+                BKitB.make_context_section(arc_section),
+                BKitB.make_block_divider(),
+                BKitB.make_context_section([
+                    BKitB.markdown_section(game_section)
                 ])
             ]
 
@@ -818,10 +665,11 @@ class CAHBot:
             pickle_txt = '' if len(picks_needed) == 0 else f'\n:pickle-sword: ' \
                                                            f'*Pickles Needed*: {" ".join(picks_needed)}'
             status_block = status_block[:1] + [
-                bkb.make_block_section(f':regional_indicator_q: `{self.current_game.current_question_card.txt}`'),
-                bkb.make_context_section([
-                    bkb.markdown_section(f':gavel: *Judge*: *`{self.current_game.judge.get_full_name()}`'
-                                         f'*{pickle_txt}')
+                BKitB.make_block_section(f':regional_indicator_q: '
+                                         f'`{self.current_game.current_question_card.txt}`'),
+                BKitB.make_context_section([
+                    BKitB.markdown_section(f':gavel: *Judge*: *`{self.current_game.judge.get_full_name()}`'
+                                           f'*{pickle_txt}')
                 ])
             ] + status_block[2:]  # Skip over the previous judge block
 

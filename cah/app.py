@@ -34,7 +34,7 @@ app = Flask(__name__)
 eng = WizzyPSQLClient(props=conn_dict, parent_log=logg)
 
 logg.debug('Instantiating bot...')
-Bot = CAHBot(eng=eng, creds=credstore, parent_log=logg)
+Bot = CAHBot(eng=eng, bot_cred_entry=cah_creds, parent_log=logg)
 
 # Register the cleanup function as a signal handler
 signal.signal(signal.SIGINT, Bot.cleanup)

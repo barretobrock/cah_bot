@@ -128,9 +128,10 @@ class WizzyPSQLClient:
             tbl_obj = _refresh(sess=session, tbl=tbl_obj)
         return tbl_obj
 
-    def log_error_to_db(self, e: Exception, error_type: CahErrorType, player_key: int = None,
+    def log_cah_error_to_db(self, e: Exception, error_type: CahErrorType, player_key: int = None,
                         player_round_key: int = None, game_round_key: int = None, game_key: int = None):
         """Logs error info to the service_error_log table"""
+
         err = TableCahError(
             error_type=error_type,
             error_class=e.__class__.__name__,

@@ -220,7 +220,7 @@ class Game:
                                         ":gavel::gavel::gavel: You're the judge this round! :gavel::gavel::gavel:")
         question_block = self.make_question_block()
         notification_block += question_block
-        self.st.message_test_channel(blocks=notification_block)
+        self.st.message_main_channel(blocks=notification_block)
         self.handle_render_hands()
 
     def end_round(self):
@@ -258,7 +258,7 @@ class Game:
             self.log.debug('Stopping game - ran out of cards!')
             blocks = [bkb.make_block_section(f'The people have run out of answer cards! Game over! '
                                              f'{":party-dead:" * 3}')]
-            self.st.message_test_channel(blocks=blocks)
+            self.st.message_main_channel(blocks=blocks)
             self.end_game()
             return None
         # Determine randpick players and pick for them
@@ -325,11 +325,11 @@ class Game:
         player = self.players.player_dict[player_hash]
         self.log.debug(f'Player {player.display_name} has nuked their deck. Processing command.')
         if self.judge.player_hash == player_hash:
-            self.st.message_test_channel(f'Decknuke rejected. {player.player_tag} you is the judge baby. :shame:')
+            self.st.message_main_channel(f'Decknuke rejected. {player.player_tag} you is the judge baby. :shame:')
             return
         # Randpick a card for this user
         if player.hand.get_num_cards() < self.current_question_card.required_answers:
-            self.st.message_test_channel(f'Decknuke rejected. {player.player_tag} you haz ranned '
+            self.st.message_main_channel(f'Decknuke rejected. {player.player_tag} you haz ranned '
                                          f'out of cahds. :shame:')
             self.end_game()
             return
@@ -337,7 +337,7 @@ class Game:
         # Remove all cards form their hand & tag player
         self.players.process_player_decknuke(player_hash=player_hash)
         addl_txt = '...also, we\'re out of cards hehe..' if self.deck.num_answer_cards == 0 else ''
-        self.st.message_test_channel(f'{player.player_tag} nuked their deck! :frogsiren: {addl_txt}')
+        self.st.message_main_channel(f'{player.player_tag} nuked their deck! :frogsiren: {addl_txt}')
         # Deal the player the unused new cards the number of cards played will be replaced after the round ends.
         n_cards = DECK_SIZE - self.current_question_card.required_answers
         card_list = [self._deal_card() for _ in range(n_cards)]
@@ -347,7 +347,7 @@ class Game:
         """Coordinates end-of-round logic (tallying votes, picking winner, etc.)"""
         # Make sure all users have votes and judge has made decision before wrapping up the round
         # Handle the announcement of winner and distribution of points
-        self.st.message_test_channel(blocks=self.winner_selection())
+        self.st.message_main_channel(blocks=self.winner_selection())
         self.status = GameStatus.END_ROUND
         # Start new round
         self.new_round()
@@ -533,7 +533,7 @@ class Game:
 
         # Make sure the player referenced isn't the judge
         if player.player_hash == self.judge.player_hash:
-            self.st.message_test_channel(f'{player.player_tag} is the judge this round. Judges can\'t pick!')
+            self.st.message_main_channel(f'{player.player_tag} is the judge this round. Judges can\'t pick!')
             return None
 
         # Player is set, now determine what we need to do
@@ -552,7 +552,7 @@ class Game:
                         card_subset = list(map(int, after_randpick.split(',')))
                     else:
                         # Pick not understood; doesn't match expected syntax
-                        self.st.message_test_channel(
+                        self.st.message_main_channel(
                             f'<@{player_hash}> I didn\'t understand your randpick message (`{message}`). '
                             f'Pick voided.')
                         return None
@@ -569,7 +569,7 @@ class Game:
                 if len(card_subset) >= req_ans:
                     picks = [x - 1 for x in np.random.choice(card_subset, req_ans, False).tolist()]
                 else:
-                    self.st.message_test_channel(f'<@{player_hash}> your subset of picks is too small. '
+                    self.st.message_main_channel(f'<@{player_hash}> your subset of picks is too small. '
                                                  f'At least (`{req_ans}`) picks required. Pick voided.')
                     return None
             else:
@@ -583,7 +583,7 @@ class Game:
         if picks is None:
             return None
         elif any([x > len(player.hand.cards) - 1 or x < 0 for x in picks]):
-            self.st.message_test_channel(f'<@{player_hash}> I think you picked outside the range of suggestions. '
+            self.st.message_main_channel(f'<@{player_hash}> I think you picked outside the range of suggestions. '
                                          f'Your picks: `{picks}`.')
             return None
         messages = [self.assign_player_pick(player.player_hash, picks)]
@@ -650,14 +650,14 @@ class Game:
             picks = isolate_pick(pick_part)
 
         if picks is None:
-            self.st.message_test_channel(f'<@{player_hash}> - I didn\'t understand your pick. '
+            self.st.message_main_channel(f'<@{player_hash}> - I didn\'t understand your pick. '
                                          f'You entered: `{message}` \nTry something like `p 12` or `pick 2`')
         elif judge_decide:
             if len(picks) == 1:
                 # Expected number of picks for judge
                 return picks[0] - 1
             else:
-                self.st.message_test_channel(f'<@{player_hash}> - You\'re the judge. '
+                self.st.message_main_channel(f'<@{player_hash}> - You\'re the judge. '
                                              f'You should be choosing only one set. Try again!')
         else:
             # Confirm that the number of picks matches the required number of answers
@@ -666,7 +666,7 @@ class Game:
                 # Set picks to 0-based index and send onward
                 return [x - 1 for x in picks]
             else:
-                self.st.message_test_channel(f'<@{player_hash}> - You chose {len(picks)} things, '
+                self.st.message_main_channel(f'<@{player_hash}> - You chose {len(picks)} things, '
                                              f'but the current question requires {req_ans}.')
         return None
 
@@ -685,7 +685,7 @@ class Game:
         # Judge's block
         judge_response_block = question_block + private_choices
         # Show everyone's picks to the group, but only send the choice buttons to the judge
-        self.st.message_test_channel(blocks=public_response_block)
+        self.st.message_main_channel(blocks=public_response_block)
 
         # Handle sending judge messages
         # send as private in-channel message (though this sometimes goes unrendered)
@@ -770,7 +770,7 @@ class Game:
             # Pick can either be:
             #   -less than total players minus judge, minus 1 more to account for array
             #   -greater than -1
-            self.st.message_test_channel(f'I think you picked outside the range of suggestions. '
+            self.st.message_main_channel(f'I think you picked outside the range of suggestions. '
                                          f'Your pick: {pick}')
             return None
         else:
@@ -780,10 +780,10 @@ class Game:
                     self.log.debug(f'Setting judge\'s pick as {pick}:')
                     self.judge.pick_idx = pick
                 else:
-                    self.st.message_test_channel('Judge\'s pick voided. You\'ve already picked this round.')
+                    self.st.message_main_channel('Judge\'s pick voided. You\'ve already picked this round.')
             else:
                 self.log.debug(f'Nonjudge user tried to choose: {player_hash}')
-                self.st.message_test_channel(f'<@{player_hash}>, you\'re not the judge!')
+                self.st.message_main_channel(f'<@{player_hash}>, you\'re not the judge!')
 
     def _randchoose_handling(self, message: str) -> Optional[Tuple[int, bool]]:
         """Contains all the logic for handling a randchoose command"""
@@ -802,7 +802,7 @@ class Game:
                 pick = list(np.random.choice(card_subset, 1))[0] - 1
             else:
                 # Card subset wasn't able to be parsed
-                self.st.message_test_channel('I wasn\'t able to parse the card subset you entered. '
+                self.st.message_main_channel('I wasn\'t able to parse the card subset you entered. '
                                              'Try again!')
                 return None
         else:
