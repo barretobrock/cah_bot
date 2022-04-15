@@ -145,8 +145,11 @@ class Game:
     @property
     def round_number(self) -> int:
         """Retrieves the round number from the db"""
-        self.refresh_game_tbl()
-        return len(self.game_tbl.rounds)
+        with self.eng.session_mgr() as session:
+            tbl = session.query(TableGame).filter(TableGame.game_id == self.game_id).one_or_none()
+            if tbl is None:
+                return 0
+            return len(tbl.rounds)
 
     def refresh_game_tbl(self):
         """Refreshes the game table by pulling 'down' any updates"""
