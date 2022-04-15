@@ -63,7 +63,7 @@ class CAHBot(Forms):
                                        log=self.log)
         # Initate the bot, which comes with common tools for interacting with Slack's API
         self.st = SlackBotBase(bot_cred_entry=bot_cred_entry, triggers=self.triggers, main_channel=self.channel_id,
-                               parent_log=self.log, use_session=False)
+                               parent_log=self.log, debug=True, use_session=False)
         # Pass in commands to SlackBotBase, where task delegation occurs
         self.log.debug('Patching in commands to SBB...')
         self.st.update_commands(commands=self.commands)
@@ -208,9 +208,7 @@ class CAHBot(Forms):
             self.st.message_main_channel(f'Question updated: *{self.current_game.current_question_card.txt}*'
                                          f' by <@{user}>')
         elif action_id == 'my-settings':
-            settings_form = self.build_my_settings_form(eng=self.eng, user_id=user)
-            _ = self.st.private_channel_message(user_id=user, channel=channel, message='Settings form',
-                                                blocks=settings_form)
+            self.get_my_settings(user=user, channel=channel)
         elif action_id == 'add-player':
             add_user = self.build_add_user_form()
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='Add player form',
@@ -260,6 +258,11 @@ class CAHBot(Forms):
             # Probably should notify the user, but I'm not sure if Slack will attempt
             #   to send requests multiple times if it doesn't get a response in time.
             return None
+
+    def get_my_settings(self, user: str, channel: str):
+        settings_form = self.build_my_settings_form(eng=self.eng, user_id=user)
+        _ = self.st.private_channel_message(user_id=user, channel=channel, message='Settings form',
+                                            blocks=settings_form)
 
     def prebuild_main_menu(self, user_hash: str, channel: str):
         """Encapsulates required objects for building and sending the main menu form"""

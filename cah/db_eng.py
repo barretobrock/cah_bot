@@ -6,16 +6,9 @@ from typing import (
     Optional,
     Union
 )
-from contextlib import contextmanager
-from sqlalchemy.engine import (
-    create_engine,
-    URL
-)
-from sqlalchemy.orm import (
-    sessionmaker,
-    Session
-)
+from sqlalchemy.orm import Session
 from loguru import logger
+from slacktools.db_engine import PSQLClient
 from cah.model import (
     SettingType,
     CahErrorType,
@@ -25,34 +18,12 @@ from cah.model import (
 )
 
 
-class WizzyPSQLClient:
+class WizzyPSQLClient(PSQLClient):
     """Creates Postgres connection engine"""
 
     def __init__(self, props: Dict, parent_log: logger, **kwargs):
         _ = kwargs
-        self.log = parent_log.bind(child_name=self.__class__.__name__)
-        self.engine = create_engine(URL.create(
-            drivername='postgresql+psycopg2',
-            username=props.get('usr'),
-            password=props.get('pwd'),
-            host=props.get('host'),
-            port=props.get('port'),
-            database=props.get('database')
-        ))
-        self._dbsession = sessionmaker(bind=self.engine)
-
-    @contextmanager
-    def session_mgr(self):
-        """This sets up a transactional scope around a series of operations"""
-        session = self._dbsession()
-        try:
-            yield session
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
+        super().__init__(props=props, parent_log=parent_log)
 
     def get_setting(self, setting: SettingType) -> Optional[Union[int, bool]]:
         """Attempts to return a given setting"""
@@ -129,7 +100,7 @@ class WizzyPSQLClient:
         return tbl_obj
 
     def log_cah_error_to_db(self, e: Exception, error_type: CahErrorType, player_key: int = None,
-                        player_round_key: int = None, game_round_key: int = None, game_key: int = None):
+                            player_round_key: int = None, game_round_key: int = None, game_key: int = None):
         """Logs error info to the service_error_log table"""
 
         err = TableCahError(

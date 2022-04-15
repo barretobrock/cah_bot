@@ -83,7 +83,7 @@ def set_thread_count(mapper_, cls) -> None:
             .where(TablePlayerRound.player_key == cls.player_id)
             .label('total_score')
         )
-        cls.total_score = column_property(total_score_subquery, deferred=True)
+        cls.total_score = column_property(total_score_subquery, deferred=False)
 
         # Calculate games played
         total_games_subquery = (
@@ -91,7 +91,7 @@ def set_thread_count(mapper_, cls) -> None:
             .where(TablePlayerRound.player_key == cls.player_id)
             .label('total_games_played')
         )
-        cls.total_games_played = column_property(total_games_subquery, deferred=True)
+        cls.total_games_played = column_property(total_games_subquery, deferred=False)
 
         # Calculate decknukes issued
         total_decknukes_issued_subquery = (
@@ -102,7 +102,7 @@ def set_thread_count(mapper_, cls) -> None:
             ))
             .label('total_decknukes_issued')
         )
-        cls.total_decknukes_issued = column_property(total_decknukes_issued_subquery, deferred=True)
+        cls.total_decknukes_issued = column_property(total_decknukes_issued_subquery, deferred=False)
 
         # Calculate decknukes caught
         total_decknukes_caught_subquery = (
@@ -113,4 +113,4 @@ def set_thread_count(mapper_, cls) -> None:
             ))
             .label('total_decknukes_caught')
         )
-        cls.total_decknukes_caught = column_property(total_decknukes_caught_subquery, deferred=True)
+        cls.total_decknukes_caught = column_property(total_decknukes_caught_subquery, deferred=False)
