@@ -15,18 +15,24 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.6] - 2022-04-15
+#### Added
+ - Methods to replace the mapped subqueries that were causing problems
+#### Changed
+ - Removed reliance (for now) on subqueries as saved means of extracting stats. This causes hard-to-anticipate errors.
+ - Table round getters didn't need to join
+#### Fixed
+ - Method for refreshing players had unfortunately the same name as a child method
+ - Edge case when judge leaves game taken into account
+ - Fixed bad assumption that `bool` would be automagically cast as `int` when writing to an `Integer` column
+ 
 ### [2.0.5] - 2022-04-15
 #### Fixed
  - table object refresher wasn't returning anything
  
 ### [2.0.4] - 2022-04-15
-#### Added
-#### Changed
-#### Deprecated
-#### Removed
 #### Fixed
  - Error logging works again
-#### Security
  
 ### [2.0.3] - 2022-04-15
 #### Added

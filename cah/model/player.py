@@ -4,22 +4,11 @@ from sqlalchemy import (
     VARCHAR,
     Integer,
     Boolean,
-    event,
-    select
 )
-from sqlalchemy.sql import (
-    func,
-    and_
-)
-from sqlalchemy.orm import (
-    relationship,
-    column_property,
-    mapper
-)
+from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
 # local imports
 from cah.model.base import Base
-from cah.model.game import TablePlayerRound
 
 
 class TablePlayer(Base):
@@ -72,45 +61,3 @@ class TableHonorific(Base):
     def __repr__(self) -> str:
         return f'<TableHonorific(id={self.honorific_id}, ' \
                f'score_range=({self.score_lower_lim},{self.score_upper_lim}), text={self.text})>'
-
-
-@event.listens_for(mapper, 'mapper_configured')
-def set_thread_count(mapper_, cls) -> None:
-    if issubclass(cls, TablePlayer):
-        # Calculate total score
-        total_score_subquery = (
-            select([func.coalesce(func.sum(TablePlayerRound.score), 0)])
-            .where(TablePlayerRound.player_key == cls.player_id)
-            .label('total_score')
-        )
-        cls.total_score = column_property(total_score_subquery, deferred=False)
-
-        # Calculate games played
-        total_games_subquery = (
-            select([func.distinct(TablePlayerRound.game_key)])
-            .where(TablePlayerRound.player_key == cls.player_id)
-            .label('total_games_played')
-        )
-        cls.total_games_played = column_property(total_games_subquery, deferred=False)
-
-        # Calculate decknukes issued
-        total_decknukes_issued_subquery = (
-            select([func.count(TablePlayerRound.is_nuked_hand)])
-            .where(and_(
-                TablePlayerRound.player_key == cls.player_id,
-                TablePlayerRound.is_nuked_hand
-            ))
-            .label('total_decknukes_issued')
-        )
-        cls.total_decknukes_issued = column_property(total_decknukes_issued_subquery, deferred=False)
-
-        # Calculate decknukes caught
-        total_decknukes_caught_subquery = (
-            select([func.count(TablePlayerRound.is_nuked_hand_caught)])
-            .where(and_(
-                TablePlayerRound.player_key == cls.player_id,
-                TablePlayerRound.is_nuked_hand_caught
-            ))
-            .label('total_decknukes_caught')
-        )
-        cls.total_decknukes_caught = column_property(total_decknukes_caught_subquery, deferred=False)

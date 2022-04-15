@@ -141,7 +141,8 @@ class Player:
         if it doesnt exist, it creates a new row for the player."""
         with self.eng.session_mgr() as session:
             tbl = session.query(TablePlayer).filter(TablePlayer.slack_user_hash == self.player_hash).one_or_none()
-            session.expunge(tbl)
+            if tbl is not None:
+                session.expunge(tbl)
         return tbl
 
     def _set_player_round_tbl(self, attr, value):
@@ -159,10 +160,40 @@ class Player:
         with self.eng.session_mgr() as session:
             tbl = session.query(TablePlayerRound).filter(and_(
                 TablePlayerRound.game_key == self.game_id,
-                TablePlayerRound.game_round_key == self.game_round_id
-            )).join(TablePlayer, TablePlayerRound.player_key == TablePlayer.player_id).one_or_none()
-            session.expunge(tbl)
+                TablePlayerRound.game_round_key == self.game_round_id,
+                TablePlayerRound.player_key == self.player_table_id
+            )).one_or_none()
+            if tbl is not None:
+                session.expunge(tbl)
         return tbl
+
+    def get_total_games_played(self) -> int:
+        with self.eng.session_mgr() as session:
+            return session.query(func.count(func.distinct(TablePlayerRound.game_key))).filter(
+                TablePlayerRound.player_key == self.player_table_id
+            ).scalar()
+
+    def get_total_score(self) -> int:
+        with self.eng.session_mgr() as session:
+            return session.query(
+                func.sum(TablePlayerRound.score)
+            ).filter(and_(
+                TablePlayerRound.player_key == self.player_table_id
+            )).scalar()
+
+    def get_total_decknukes_issued(self) -> int:
+        with self.eng.session_mgr() as session:
+            return session.query(func.count(TablePlayerRound.is_nuked_hand)).filter(and_(
+                TablePlayerRound.player_key == self.player_table_id,
+                TablePlayerRound.is_nuked_hand
+            )).scalar()
+
+    def get_total_decknukes_caught(self) -> int:
+        with self.eng.session_mgr() as session:
+            return session.query(func.count(TablePlayerRound.is_nuked_hand_caught)).filter(and_(
+                TablePlayerRound.player_key == self.player_table_id,
+                TablePlayerRound.is_nuked_hand_caught
+            )).scalar()
 
     def get_full_name(self) -> str:
         return self._get_player_tbl().full_name
@@ -219,8 +250,12 @@ class Player:
 
     def get_overall_score(self) -> int:
         """Retrieves the players current score"""
-        tbl = self._get_player_tbl()
-        return tbl.total_score
+        with self.eng.session_mgr() as session:
+            return session.query(
+                func.sum(TablePlayerRound.score)
+            ).filter(and_(
+                TablePlayerRound.player_key == self.player_table_id
+            )).scalar()
 
 
 class Players:

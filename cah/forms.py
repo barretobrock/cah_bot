@@ -4,13 +4,18 @@ from typing import (
     TYPE_CHECKING
 )
 from loguru import logger
+from sqlalchemy.sql import (
+    and_,
+    func
+)
 from slacktools import (
     BlockKitBuilder as BKitB,
     SlackTools
 )
 from cah.model import (
     GameStatus,
-    TablePlayer
+    TablePlayer,
+    TablePlayerRound
 )
 from cah.db_eng import WizzyPSQLClient
 if TYPE_CHECKING:
@@ -129,12 +134,33 @@ class Forms:
                                                     danger_style=not v['bool']))
 
         honorific = f', {player.honorific}' if player.honorific is not None else ''
-        stats_dict = {
-            'Overall score': player.total_score,
-            'Games played': player.total_games_played if player.total_games_played is not None else 0,
-            'Decknukes used': player.total_decknukes_issued,
-            'Decknukes caught': player.total_decknukes_caught,
-        }
+        with eng.session_mgr() as session:
+            total_score = session.query(
+                    func.sum(TablePlayerRound.score)
+                ).filter(and_(
+                    TablePlayerRound.player_key == player.player_id
+                )).scalar()
+
+            total_games_played = session.query(func.count(func.distinct(TablePlayerRound.game_key))).filter(
+                    TablePlayerRound.player_key == player.player_id
+                ).scalar()
+
+            total_decknukes_issued = session.query(func.count(TablePlayerRound.is_nuked_hand)).filter(and_(
+                    TablePlayerRound.player_key == player.player_id,
+                    TablePlayerRound.is_nuked_hand
+                )).scalar()
+
+            total_decknukes_caught = session.query(func.count(TablePlayerRound.is_nuked_hand_caught)).filter(and_(
+                    TablePlayerRound.player_key == player.player_id,
+                    TablePlayerRound.is_nuked_hand_caught
+                )).scalar()
+
+            stats_dict = {
+                'Overall score': total_score,
+                'Games played': total_games_played,
+                'Decknukes used': total_decknukes_issued,
+                'Decknukes caught': total_decknukes_caught,
+            }
 
         return [
             BKitB.make_header(f'Player details: {player.display_name.title()}{honorific}'),

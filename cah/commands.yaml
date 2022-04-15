@@ -83,12 +83,12 @@ commands:
             desc: Get current status of the game and other metadata
             response-cmd:
                 callable: display_status
-        ^refresh player:
+        ^refresh players?:
             tags:
                 - player
             desc: Forces a refresh of the current players in the channel
             response-cmd:
-                callable: refresh_players_in_channel
+                callable: refresh_players
         ^end game$:
             tags:
                 - game

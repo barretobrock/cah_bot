@@ -45,6 +45,8 @@ class WizzyPSQLClient(PSQLClient):
         """Attempts to set a given setting"""
         self.log.debug(f'Received request to set setting: {setting.name} to {setting_val}')
         with self.session_mgr() as session:
+            if isinstance(setting_val, bool):
+                setting_val = int(setting_val)
             session.query(TableSetting).filter(TableSetting.setting_type == setting).update(
                 {TableSetting.setting_int: setting_val}
             )

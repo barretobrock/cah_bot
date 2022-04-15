@@ -63,7 +63,7 @@ class CAHBot(Forms):
                                        log=self.log)
         # Initate the bot, which comes with common tools for interacting with Slack's API
         self.st = SlackBotBase(bot_cred_entry=bot_cred_entry, triggers=self.triggers, main_channel=self.channel_id,
-                               parent_log=self.log, debug=True, use_session=False)
+                               parent_log=self.log, debug=False, use_session=False)
         # Pass in commands to SlackBotBase, where task delegation occurs
         self.log.debug('Patching in commands to SBB...')
         self.st.update_commands(commands=self.commands)
@@ -294,10 +294,10 @@ class CAHBot(Forms):
         self.log.debug('Beginning new round')
         self.new_round(notifications=response_list)
 
-    def refresh_players_in_channel(self):
+    def refresh_players(self):
         """Refresh all channel members' details, including the players' names.
         While doing so, make sure they're members of the channel."""
-        refresh_players_in_channel(channel=auto_config.MAIN_CHANNEL, eng=self.eng, st=self.st, log=self.log)
+        refresh_players_in_channel(channel='CMPV3K8AE', eng=self.eng, st=self.st, log=self.log)
         return 'Players refreshed o7'
 
     def decknuke(self, user: str):
@@ -523,27 +523,30 @@ class CAHBot(Forms):
         is_current_game = in_game and self.current_game is not None
         scores = []
         with self.eng.session_mgr() as session:
+            # Get overall score first
+            overall = session.query(
+                TablePlayer.player_id,
+                TablePlayer.display_name,
+                func.sum(TablePlayerRound.score).label('tiddles')
+            ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
+                TablePlayer.is_active
+            ).group_by(TablePlayer.player_id).all()
+
             if is_current_game:
-                result = session.query(
+                current = session.query(
                     TablePlayer.player_id,
                     TablePlayer.display_name,
                     func.sum(TablePlayerRound.score).label('diddles'),
-                    TablePlayer.total_score
                 ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
                     TablePlayerRound.game_key == self.current_game.game_id
                 ).group_by(TablePlayer.player_id).all()
-            else:
-                result = session.query(
-                    TablePlayer.player_id,
-                    TablePlayer.display_name,
-                    TablePlayer.total_score
-                ).filter(TablePlayer.is_active).group_by(TablePlayer.player_id).all()
-            for p in result:
-                diddles = p.diddles if is_current_game else 0
+
+            for o, c in zip(overall, current):
+                diddles = c.diddles if is_current_game else 0
                 score_dict = {
-                    'name': p.display_name,
+                    'name': o.display_name,
                     'diddles': diddles,
-                    'overall': p.total_score
+                    'overall': o.tiddles
                 }
                 scores.append(score_dict)
 

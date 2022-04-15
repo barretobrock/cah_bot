@@ -288,10 +288,14 @@ class Game:
         if n_round > 1:
             # Rotate judge
             self.prev_judge = self.judge
-            self.players.player_dict[self.prev_judge.player_hash].is_judge = False
-            prev_judge_pos = self.players.judge_order.index(self.prev_judge.player_hash)
-            next_judge_pos = 0 if prev_judge_pos == len(self.players.player_dict) - 1 else prev_judge_pos + 1
-            _judge = self.players.judge_order[next_judge_pos]
+            if self.players.player_dict.get(self.prev_judge.player_hash) is not None:
+                self.players.player_dict[self.prev_judge.player_hash].is_judge = False
+                prev_judge_pos = self.players.judge_order.index(self.prev_judge.player_hash)
+                next_judge_pos = 0 if prev_judge_pos == len(self.players.player_dict) - 1 else prev_judge_pos + 1
+                _judge = self.players.judge_order[next_judge_pos]
+            else:
+                # Just select the judge at random from the list
+                _judge = choice(self.players.judge_order)
             self.judge = Judge(player_hash=_judge, eng=self.eng, log=self.log)
         self.judge.game_id = game_id
         self.judge.game_round_id = game_round_id
