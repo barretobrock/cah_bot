@@ -172,6 +172,15 @@ commands:
                 args:
                     - user
                     - channel
+        ^(my\s?)?settings:
+            tags:
+                - settings
+            desc: Retrieves an overview of your settings
+            response-cmd:
+                callable: get_my_settings
+                args:
+                    - user
+                    - channel
     group-player:
         ^c[har]+ds (now|dm):
             tags:
