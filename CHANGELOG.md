@@ -15,6 +15,15 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.4] - 2022-04-15
+#### Added
+#### Changed
+#### Deprecated
+#### Removed
+#### Fixed
+ - Error logging works again
+#### Security
+ 
 ### [2.0.3] - 2022-04-15
 #### Added
  - command search capability
