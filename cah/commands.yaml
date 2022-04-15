@@ -20,13 +20,19 @@ commands:
         ^help$:
             tags:
                 - support
-            desc: Description of all the commands I respond to
+                - main
+            desc: Description of the main commands I respond to, along with other groups and tags to search my other commands
             response-cmd:
                 callable: generate_intro
-        ^search help:
+        ^(search\s?help|shelp):
             tags:
                 - support
+                - main
             desc: Search the command descriptions by tag or group
+            examples:
+                - search help -t support
+                - search help -g game
+                - shelp -g player
             response-cmd:
                 callable: search_help_block
                 args:
@@ -42,6 +48,10 @@ commands:
                 - ui
                 - settings
             desc: Wizzy's wain wenu
+            examples:
+                - mm
+                - main menu
+                - mainmenu
             response-cmd:
                 callable: prebuild_main_menu
                 args:
@@ -90,18 +100,29 @@ commands:
             tags:
                 - settings
             desc: Toggles whether or not the judge is pinged after all selections are made.
+            examples:
+                - toggle judge ping
+                - toggle jping
             response-cmd:
                 callable: toggle_judge_ping
         ^toggle (w[ine]+r\s?|w)ping:
             tags:
                 - settings
             desc: Toggles whether or not the winner is pinged when they win a round.
+            examples:
+                - toggle winnerping
+                - toggle weiner ping
+                - toggle wping
             response-cmd:
                 callable: toggle_winner_ping
         ^toggle (auto\s?randpick|arp($|\s)):
             tags:
                 - settings
             desc: Fully. Automated. Luxury. Random. Picking. (this one's for The Player)
+            examples:
+                - toggle arp
+                - toggle autorandpick
+                - toggle arp @{other_user}
             response-cmd:
                 callable: toggle_auto_pick_or_choose
                 args:
@@ -113,6 +134,10 @@ commands:
             tags:
                 - settings
             desc: Fully. Automated. Luxury. Random. Choosing. (this one's for The Judge)
+            examples:
+                - toggle arc
+                - toggle autorandchoose
+                - toggle arc @{other_user}
             response-cmd:
                 callable: toggle_auto_pick_or_choose
                 args:
@@ -124,6 +149,10 @@ commands:
             tags:
                 - settings
             desc: Fully. Automated. Luxury. Random. Bothing. (this one's for... Everyone?)
+            examples:
+                - toggle arparca
+                - toggle arcarpa
+                - toggle arcarca
             response-cmd:
                 callable: toggle_auto_pick_or_choose
                 args:
@@ -135,12 +164,15 @@ commands:
             tags:
                 - settings
             desc: Toggles whether or not you receive cards as a DM from Wizzy.
+            examples:
+                - toggle cahds dm
+                - toggle chadsdm
             response-cmd:
                 callable: toggle_card_dm
                 args:
                     - user
                     - channel
-    group-player-moves:
+    group-player:
         ^c[har]+ds (now|dm):
             tags:
                 - player
@@ -154,6 +186,11 @@ commands:
             tags:
                 - player
             desc: Pick your card(s) for the round
+            examples:
+                - pick 3
+                - p 2
+                - p 3,4
+                - p 34
             response-cmd:
                 callable: process_picks
                 args:
@@ -172,10 +209,10 @@ commands:
                 - player
             desc: Randomly select your card(s) for judgement (AKA 'pick').
             examples:
-                - randpick <- select from entire hand
-                - randpick 234 <- select from subset
+                - randpick                  //select from entire hand
+                - randpick 234              //subset selections
                 - randpick 2,3,4
-                - randpick 234 @other_user
+                - randpick 234 @{other_user}
             response-cmd:
                 callable: process_picks
                 args:
@@ -185,6 +222,11 @@ commands:
             tags:
                 - judge
             desc: Used by the judge to select (AKA choose) the :Q:best:Q:card from the picks
+            examples:
+                - choose 3
+                - c 2
+                - c 3,4
+                - c 34
             response-cmd:
                 callable: choose_card
                 args:
@@ -194,6 +236,10 @@ commands:
             tags:
                 - judge
             desc: Randomly choose the best card from all the cards or a subset
+            examples:
+                - randchoose                  //select from entire picklings
+                - randchoose 234              //subset selections
+                - randchoose 2,3,4
             response-cmd:
                 callable: choose_card
                 args:

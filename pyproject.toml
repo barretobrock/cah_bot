@@ -19,14 +19,12 @@ include = ["CHANGELOG.md"]
 python = "^3.8"
 slacktools = {git = "https://github.com/barretobrock/slacktools.git"}
 Flask = "2.1.1"
-psycopg2 = "2.9.3"
 loguru = "0.6.0"
 numpy = "^1.22.3"
 pandas = "^1.4.2"
 pykeepass = "^4.0.1"
 requests = ">=2.23.0"
 slackeventsapi = "3.0.1"
-sqlalchemy = "1.4.32"
 # Optional dependencies would go down here
 # example = { version = ">=1.7.0", optional = true }
 

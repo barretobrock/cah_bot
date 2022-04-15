@@ -92,6 +92,12 @@ class CAHBot(Forms):
             BKitB.markdown_section(f"(updated {self.update_date})")
         ])]
 
+    def search_help_block(self, message: str):
+        """Takes in a message and filters command descriptions for output
+        """
+        self.log.debug(f'Got help search command: {message}')
+        return self.st.search_help_block(message=message)
+
     def generate_intro(self):
         """Generates the intro message and feeds it in to the 'help' command"""
         intro = f"Hi! I'm *{self.bot_name}* and I help you play Cards Against Humanity! \n" \
@@ -173,7 +179,7 @@ class CAHBot(Forms):
                                                           f'Might take a few seconds while they select stuff...')
             with self.eng.session_mgr() as session:
                 deck_names = [x.name for x in session.query(TableDeck).all()]
-            formp1 = self.forms.build_new_game_form_p1(deck_names)
+            formp1 = self.build_new_game_form_p1(deck_names)
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p1',
                                                 blocks=formp1)
 
@@ -183,7 +189,7 @@ class CAHBot(Forms):
             deck_name = action_dict['selected_option']['value'].replace('deck_', '')
             self.log.debug(f'Processed deck name to {deck_name}')
             self.state_store['deck'] = deck_name
-            formp2 = self.forms.build_new_game_form_p2()
+            formp2 = self.build_new_game_form_p2()
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p2',
                                                 blocks=formp2)
         elif action_id == 'new-game-users':
@@ -193,7 +199,7 @@ class CAHBot(Forms):
             if status_block is not None:
                 self.st.send_message(channel=channel, message='Game status', blocks=status_block)
         elif action_id == 'modify-question-form':
-            qmod_form = self.forms.modify_question_form(original_value=self.current_game.current_question_card.txt)
+            qmod_form = self.modify_question_form(original_value=self.current_game.current_question_card.txt)
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='Modify question form',
                                                 blocks=qmod_form)
         elif action_id == 'modify-question':
@@ -202,11 +208,11 @@ class CAHBot(Forms):
             self.st.message_main_channel(f'Question updated: *{self.current_game.current_question_card.txt}*'
                                          f' by <@{user}>')
         elif action_id == 'my-settings':
-            settings_form = self.forms.build_my_settings_form(eng=self.eng, user_id=user)
+            settings_form = self.build_my_settings_form(eng=self.eng, user_id=user)
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='Settings form',
                                                 blocks=settings_form)
         elif action_id == 'add-player':
-            add_user = self.forms.build_add_user_form()
+            add_user = self.build_add_user_form()
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='Add player form',
                                                 blocks=add_user)
         elif action_id == 'add-player-done':
@@ -215,7 +221,7 @@ class CAHBot(Forms):
                 self.current_game.players.add_player_to_game(add_user, game_id=self.current_game.game_id,
                                                              game_round_id=self.current_game.game_round_id)
         elif action_id == 'remove-player':
-            rem_user = self.forms.build_remove_user_form()
+            rem_user = self.build_remove_user_form()
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='Remove player form',
                                                 blocks=rem_user)
         elif action_id == 'remove-player-done':
@@ -257,7 +263,7 @@ class CAHBot(Forms):
 
     def prebuild_main_menu(self, user_hash: str, channel: str):
         """Encapsulates required objects for building and sending the main menu form"""
-        self.forms.build_main_menu(game_obj=self.current_game, user=user_hash, channel=channel)
+        self.build_main_menu(game_obj=self.current_game, user=user_hash, channel=channel)
 
     def new_game(self, deck: str = 'standard', player_hashes: List[str] = None, message: str = None):
         """Begins a new game"""

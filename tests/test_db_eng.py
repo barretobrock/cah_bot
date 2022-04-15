@@ -1,8 +1,4 @@
 from unittest import TestCase, main
-from unittest.mock import (
-    patch,
-    MagicMock
-)
 from cah.model import SettingType
 from cah.db_eng import WizzyPSQLClient
 from tests.common import (
@@ -30,24 +26,6 @@ class TestPSQLClient(TestCase):
             'port': 5432,
         }
         self.eng = WizzyPSQLClient(props=props, parent_log=self.log)
-
-    def test_init(self):
-        self.mock_create_engine.assert_called()
-        self.mock_url.create.assert_called()
-        self.mock_sessionmacher.assert_called()
-
-    def test_session_mgr(self):
-        # Normal ops
-        with self.eng.session_mgr() as session:
-            self.mock_sessionmacher().assert_called()
-        self.mock_sessionmacher()().commit.assert_called()
-        self.mock_sessionmacher()().close.assert_called()
-        self.mock_sessionmacher()().rollback.assert_not_called()
-        # Exception
-        with self.assertRaises(Exception) as err:
-            with self.eng.session_mgr() as session:
-                raise Exception('rollback')
-        self.mock_sessionmacher()().rollback.assert_called()
 
     def test_get_setting(self):
         self.mock_sessionmacher()().query().filter().one_or_none.return_value = None
