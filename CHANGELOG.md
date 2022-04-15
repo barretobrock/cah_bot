@@ -15,6 +15,10 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.5] - 2022-04-15
+#### Fixed
+ - table object refresher wasn't returning anything
+ 
 ### [2.0.4] - 2022-04-15
 #### Added
 #### Changed

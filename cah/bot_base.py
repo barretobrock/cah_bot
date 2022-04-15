@@ -35,9 +35,9 @@ from cah.core.games import (
     Game,
     GameStatus
 )
+from cah.core.deck import Deck
 from cah.core.common_methods import refresh_players_in_channel
 if TYPE_CHECKING:
-    from cah.core.deck import Deck
     from cah.core.players import Player
 
 

@@ -89,6 +89,7 @@ class WizzyPSQLClient(PSQLClient):
             sess.refresh(tbl)
             # Remove obj from session
             sess.expunge(tbl)
+            return tbl
 
         self.log.debug('Received request to refresh object...')
         if session is None:
