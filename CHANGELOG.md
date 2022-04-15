@@ -15,6 +15,12 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.3] - 2022-04-15
+#### Added
+ - command search capability
+#### Changed
+ - improve command structure to account for tagging
+ 
 ### [2.0.2] - 2022-04-08
 #### Added
  - test files for all the package modules
