@@ -16,9 +16,9 @@ def get_base_logger() -> logger:
              '<level>{message}</level>'
     config = {
         'handlers': [
-            {'sink': sys.stdout, 'level': 'DEBUG', 'format': FORMAT},
+            {'sink': sys.stdout, 'level': 'DEBUG', 'format': FORMAT, 'backtrace': True},
             {'sink': LOGPATH.joinpath(f'{SERVICE_NAME}.log'), 'level': 'DEBUG', 'rotation': '1 day',
-             'retention': '30 days', 'format': FORMAT, 'enqueue': True}
+             'retention': '30 days', 'format': FORMAT, 'enqueue': True, 'backtrace': True}
         ],
         'extra': {'child_name': 'main'}
     }

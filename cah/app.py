@@ -45,6 +45,7 @@ bot_events = SlackEventAdapter(cah_creds.signing_secret, "/api/events", app)
 
 
 @app.route('/api/actions', methods=['GET', 'POST'])
+@logg.catch
 def handle_action():
     """Handle a response when a user clicks a button from Wizzy in Slack"""
     event_data = json.loads(request.form["payload"])
@@ -96,11 +97,13 @@ def handle_action():
 
 
 @bot_events.on('message')
+@logg.catch
 def scan_message(event_data):
     Bot.process_event(event_data)
 
 
 @app.route('/api/slash', methods=['GET', 'POST'])
+@logg.catch
 def handle_slash():
     """Handles a slash command"""
     event_data = request.form
@@ -112,6 +115,7 @@ def handle_slash():
 
 
 @bot_events.on('user_change')
+@logg.catch
 def notify_new_statuses(event_data):
     """Triggered when a user updates their profile info. Gets saved to global dict
     where we then report it in #general"""
