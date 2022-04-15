@@ -85,7 +85,7 @@ class Game:
             session.refresh(game_tbl)
             session.expunge(game_tbl)
         self.game_tbl = game_tbl
-        self.game_id = self.game_tbl.id
+        self.game_id = self.game_tbl.game_id
 
         self._is_ping_judge = self.eng.get_setting(SettingType.IS_PING_JUDGE)
         self._is_ping_winner = self.eng.get_setting(SettingType.IS_PING_WINNER)

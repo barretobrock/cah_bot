@@ -37,7 +37,7 @@ class Player:
         self.eng = eng
 
         player_table = self._get_player_tbl()
-        self.player_table_id = player_table.id
+        self.player_table_id = player_table.player_id
         self.display_name = player_table.display_name
         self.avi_url = player_table.avi_url
         self._is_arp = player_table.is_auto_randpick
