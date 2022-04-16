@@ -15,6 +15,14 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.7] - 2022-04-15
+#### Added
+ - `is_picked` player attribut to match what's in the table, along with getter/setter methods
+#### Changed
+ - Player pick enforcement
+#### Fixed
+ - Player display names now update in-game upon refresh
+ 
 ### [2.0.6] - 2022-04-15
 #### Added
  - Methods to replace the mapped subqueries that were causing problems

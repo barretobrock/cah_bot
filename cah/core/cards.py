@@ -96,9 +96,9 @@ class Pick:
         """Checks if anything has been assigned to the pick yet"""
         return len(self.pick_txt_list) == 0
 
-    def assign_and_add(self, owner: str, cards: List[Card]):
+    def assign_and_add(self, owner_hash: str, cards: List[Card]):
         """Assigns owner and adds cards"""
-        self.assign(owner)
+        self.assign(owner_hash)
         for card in cards:
             self.add_card_to_pick(card)
 

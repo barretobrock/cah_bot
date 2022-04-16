@@ -490,17 +490,20 @@ class Game:
     def assign_player_pick(self, player_hash: str, picks: List[int]) -> str:
         """Takes in an int and assigns it to the player who wrote it"""
         player = self.players.player_dict[player_hash]
-        self.log.debug(f'Assigning pick to player {player.display_name}')
+        self.log.debug(f'Received pick request from player {player.display_name}: {picks}')
         success = player.hand.pick_card(picks)
         if success:
             # Replace the pick messages
             self.log.debug('Pick assignment successful. Updating player.')
+            player.is_picked = True
             self.players.player_dict[player_hash] = player
             self.replace_block_forms(player_hash)
             return f'*`{player.display_name}`*\'s pick has been registered.'
         elif not success and not player.hand.pick.is_empty():
+            self.log.debug('Pick assignment unsuccessful. Avoiding updating player.')
             return f'*`{player.display_name}`*\'s pick voided. You already picked.'
         else:
+            self.log.debug(f'Pick assignment unsuccessful. Other reason.')
             return 'Pick not registered.'
 
     def players_left_to_pick(self) -> List[str]:
@@ -626,7 +629,8 @@ class Game:
             if self.round_msg_ts is None:
                 # Announcing the picks for the first time; capture the timestamp so
                 #   we can update that same message later
-                self.round_msg_ts = self.st.send_message(auto_config.MAIN_CHANNEL, message='Here are some picks!',
+                self.round_msg_ts = self.st.send_message(auto_config.MAIN_CHANNEL,
+                                                         message='Message about current game!',
                                                          ret_ts=True, blocks=msg_block)
             else:
                 # Update the message we've already got

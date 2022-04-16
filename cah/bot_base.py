@@ -298,6 +298,13 @@ class CAHBot(Forms):
         """Refresh all channel members' details, including the players' names.
         While doing so, make sure they're members of the channel."""
         refresh_players_in_channel(channel='CMPV3K8AE', eng=self.eng, st=self.st, log=self.log)
+        if self.current_game is not None:
+            self.log.debug('After refresh, syncing display names for current game\'s player objects...')
+            with self.eng.session_mgr() as session:
+                for uid, player in self.current_game.players.player_dict.items():
+                    dname = session.query(TablePlayer.display_name).filter(
+                        TablePlayer.slack_user_hash == uid).one().display_name
+                    self.current_game.players.player_dict[uid].display_name = dname
         return 'Players refreshed o7'
 
     def decknuke(self, user: str):

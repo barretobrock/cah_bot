@@ -49,6 +49,7 @@ class Player:
         self._is_judge = False
         self._is_nuked_hand = False
         self._is_nuked_hand_caught = False
+        self._is_picked = False
 
         self.game_id = None
         self.game_round_id = None
@@ -93,6 +94,19 @@ class Player:
         self.log.debug(f'Setting DM cards to {value}')
         self._is_dm_cards = value
         self._set_player_tbl(TablePlayer.is_dm_cards, self._is_dm_cards)
+
+    @property
+    def is_picked(self):
+        return self._is_picked
+
+    @is_picked.setter
+    def is_picked(self, value):
+        self.log.debug(f'Setting is_picked to {value}')
+        self._is_picked = value
+        round_tbl = self._get_playerround_tbl()
+        if round_tbl is not None:
+            # No check here, as once a judge picks, the round progresses immediately
+            self._set_player_round_tbl(TablePlayerRound.is_picked, self._is_picked)
 
     @property
     def honorific(self):
