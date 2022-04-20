@@ -545,6 +545,8 @@ class Game:
         if player.player_hash == self.judge.player_hash:
             self.st.message_main_channel(f'{player.player_tag} is the judge this round. Judges can\'t pick!')
             return None
+        elif player.is_picked:
+            self.st.message_main_channel(f'{player.player_tag} you already pickled this round')
 
         # Player is set, now determine what we need to do
         if 'randpick' in message:

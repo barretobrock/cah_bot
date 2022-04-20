@@ -219,6 +219,7 @@ class Player:
         self.hand.pick.clear_picks()
         self._is_nuked_hand = False
         self._is_nuked_hand_caught = False
+        self._is_picked = False
         with self.eng.session_mgr() as session:
             session.add(TablePlayerRound(player_key=self.player_table_id, game_key=game_id,
                                          game_round_key=game_round_id, is_arp=self.is_arp, is_arc=self.is_arc))
