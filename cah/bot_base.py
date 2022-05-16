@@ -135,7 +135,7 @@ class CAHBot(Forms):
         """Handles an incoming action (e.g., when a button is clicked)"""
         action_id = action_dict.get('action_id')
         action_value = action_dict.get('value')
-        msg = event_dict.get('message')
+        msg = event_dict.get('message', {})
         thread_ts = msg.get('thread_ts')
         self.log.debug(f'Receiving action_id: {action_id} and value: {action_value} from user: {user} in '
                        f'channel: {channel}')
