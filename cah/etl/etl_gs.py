@@ -1,3 +1,4 @@
+import sys
 from typing import List
 from sqlalchemy.sql import not_
 from slacktools import (
@@ -42,8 +43,8 @@ class ETL:
         TableSetting
     ]
 
-    def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True):
-        self.log = logger
+    def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True, incl_services: bool = True):
+        self.log = logger.bind(sink=sys.stdout, level='DEBUG')
         self.log.debug('Obtaining credential file...')
         credstore = SecretStore('secretprops-davaiops.kdbx')
 
@@ -66,9 +67,10 @@ class ETL:
 
         self.log.debug('Authenticating credentials for services...')
         cah_creds = credstore.get_key_and_make_ns(auto_config.BOT_NICKNAME)
-        self.gsr = GSheetAgent(sec_store=credstore, sheet_key=cah_creds.spreadsheet_key)
-        self.st = SlackTools(credstore, auto_config.BOT_NICKNAME, self.log)
-        self.log.debug('Completed loading services')
+        if incl_services:
+            self.gsr = GSheetAgent(sec_store=credstore, sheet_key=cah_creds.spreadsheet_key)
+            self.st = SlackTools(credstore, auto_config.BOT_NICKNAME, self.log)
+            self.log.debug('Completed loading services')
 
     def etl_bot_settings(self):
         self.log.debug('Working on settings...')
