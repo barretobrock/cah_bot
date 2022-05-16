@@ -3,15 +3,15 @@ from unittest.mock import (
     patch,
     MagicMock
 )
+from pukr import get_logger
 from cah.core.cards import Card
-from tests.common import get_test_logger
 
 
 class TestCard(TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.log = get_test_logger()
+        cls.log = get_logger('cah_test')
 
     def test_init(self):
         txt = 'test'

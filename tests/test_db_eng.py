@@ -1,8 +1,11 @@
-from unittest import TestCase, main
+from unittest import (
+    TestCase,
+    main
+)
+from pukr import get_logger
 from cah.model import SettingType
 from cah.db_eng import WizzyPSQLClient
 from tests.common import (
-    get_test_logger,
     make_patcher,
     random_string
 )
@@ -12,7 +15,7 @@ class TestPSQLClient(TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.log = get_test_logger()
+        cls.log = get_logger('cah_test')
 
     def setUp(self) -> None:
         self.mock_create_engine = make_patcher(self, 'cah.db_eng.create_engine')

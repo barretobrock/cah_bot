@@ -1,8 +1,6 @@
-import sys
 import string
 import random
 from unittest.mock import patch
-from loguru import logger
 
 
 def make_patcher(obj, name: str) -> patch:
@@ -17,30 +15,6 @@ def make_patcher(obj, name: str) -> patch:
     patched_item = patcher.start()
     obj.addCleanup(patcher.stop)
     return patched_item
-
-
-def get_test_logger() -> logger:
-    """Configures and returns the logger object for running tests.
-
-    Note that this only logs to stdout.
-    """
-    FORMAT = '<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | ' \
-             '<cyan>{name} -> {extra[child_name]}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - ' \
-             '<level>{message}</level>'
-    config = {
-        'handlers': [
-            {
-                'sink': sys.stdout,
-                'level': 'DEBUG',
-                'format': FORMAT
-            }
-        ],
-        'extra': {
-            'child_name': 'main'
-        }
-    }
-    logger.configure(**config)
-    return logger
 
 
 def random_string(n_chars: int = 10, addl_chars: str = None) -> str:

@@ -3,18 +3,15 @@ from unittest.mock import (
     patch,
     MagicMock
 )
-from tests.common import (
-    get_test_logger,
-    random_string
-)
+from pukr import get_logger
+from tests.common import random_string
 
 
 class TestDeck(TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.log = get_test_logger()
-
+        cls.log = get_logger('cah_test')
 
 
 if __name__ == '__main__':

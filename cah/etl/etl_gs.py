@@ -2,9 +2,9 @@ from typing import List
 from sqlalchemy.sql import not_
 from slacktools import (
     SecretStore,
-    GSheetReader,
     SlackTools
 )
+from slacktools.gsheet import GSheetAgent
 from cah.model import (
     Base,
     SettingType,
@@ -66,7 +66,7 @@ class ETL:
 
         self.log.debug('Authenticating credentials for services...')
         cah_creds = credstore.get_key_and_make_ns(auto_config.BOT_NICKNAME)
-        self.gsr = GSheetReader(sec_store=credstore, sheet_key=cah_creds.spreadsheet_key)
+        self.gsr = GSheetAgent(sec_store=credstore, sheet_key=cah_creds.spreadsheet_key)
         self.st = SlackTools(credstore, auto_config.BOT_NICKNAME, self.log)
         self.log.debug('Completed loading services')
 

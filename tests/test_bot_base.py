@@ -3,9 +3,9 @@ from unittest.mock import (
     patch,
     MagicMock
 )
+from pukr import get_logger
 from cah.bot_base import CAHBot
 from tests.common import (
-    get_test_logger,
     make_patcher,
     random_string
 )
@@ -15,22 +15,23 @@ class TestCAHBot(TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.log = get_test_logger()
+        cls.log = get_logger('test_cah')
 
     def setUp(self) -> None:
         self.mock_eng = MagicMock(name='PSQLClient')
-        self.mock_creds = make_patcher(self, 'cah.bot_base.SecretStore')
+        self.mock_creds = make_patcher(self, 'cah.bot_base.SimpleNamespace')
         self.mock_slack_base = make_patcher(self, 'cah.bot_base.SlackBotBase')
+        self.mock_forms_init = make_patcher(self, 'cah.bot_base.Forms.__init__')
         self.mock_forms = make_patcher(self, 'cah.bot_base.Forms')
 
-        self.cahbot = CAHBot(eng=self.mock_eng, creds=self.mock_creds, parent_log=self.log)
+        self.cahbot = CAHBot(eng=self.mock_eng, bot_cred_entry=self.mock_creds, parent_log=self.log)
 
     def test_init(self):
         # Assert greater than 10 entries
-        self.assertGreater(len(self.cahbot.commands.keys()), 10)
+        self.assertGreater(len(self.cahbot.commands), 10)
         self.mock_eng.get_setting.assert_called()
         self.mock_slack_base.assert_called()
-        self.mock_forms.assert_called()
+        self.mock_forms_init.assert_called()
 
     def test_process_incoming_action(self):
         self.cahbot.process_picks = MagicMock(name='process_picks')
@@ -118,7 +119,7 @@ class TestCAHBot(TestCase):
                         'args': []
                     },
                     {
-                        'call': self.cahbot.forms.build_new_game_form_p1,
+                        'call': self.cahbot.build_new_game_form_p1,
                         'args': []
                     }
                 ]
@@ -136,7 +137,7 @@ class TestCAHBot(TestCase):
                         'args': []
                     },
                     {
-                        'call': self.cahbot.forms.build_new_game_form_p2,
+                        'call': self.cahbot.build_new_game_form_p2,
                         'args': []
                     }
                 ]
@@ -170,7 +171,7 @@ class TestCAHBot(TestCase):
                 },
                 'check_calls': [
                     {
-                        'call': self.cahbot.forms.modify_question_form,
+                        'call': self.cahbot.modify_question_form,
                         'args': []
                     },
                     {
@@ -198,8 +199,8 @@ class TestCAHBot(TestCase):
 
         for scen, scen_dict in action_scenarios.items():
             self.log.debug(f'Working on scenario {scen}')
-            resp = self.cahbot.process_incoming_action(user=user, channel=channel, action_dict=scen_dict['resp'],
-                                                       event_dict={})
+            _ = self.cahbot.process_incoming_action(user=user, channel=channel, action_dict=scen_dict['resp'],
+                                                    event_dict={})
             if 'check_call' in scen_dict.keys():
                 check_dict = scen_dict['check_call']
                 check_dict['call'].assert_called_with(*check_dict['args'])

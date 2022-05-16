@@ -3,18 +3,16 @@ from unittest.mock import (
     patch,
     MagicMock
 )
+from pukr import get_logger
 from cah.core.common_methods import process_player_slack_details
-from tests.common import (
-    get_test_logger,
-    random_string
-)
+from tests.common import random_string
 
 
 class TestCommonMethods(TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.log = get_test_logger()
+        cls.log = get_logger('cah_test')
 
     def test_process_player_slack_details(self):
         name = 'Gethrey Phranthis'
