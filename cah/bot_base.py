@@ -9,7 +9,6 @@ from typing import (
     TYPE_CHECKING
 )
 from types import SimpleNamespace
-from random import randrange
 from sqlalchemy.sql import (
     func,
 )
@@ -557,7 +556,7 @@ class CAHBot(Forms):
                 prev_round = session.query(
                     TablePlayer.player_id,
                     TablePlayer.display_name,
-                    func.sum(TablePlayerRound.score).label('prev_diddles'),
+                    func.sum(TablePlayerRound.score).label('prev_round'),
                 ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
                     TablePlayerRound.game_key == self.current_game.game_id,
                     TablePlayerRound.game_round_key < self.current_game.game_round_id - 1
@@ -581,31 +580,29 @@ class CAHBot(Forms):
     def display_points(self) -> List[dict]:
         """Displays points for all players"""
         self.log.debug('Generating scores...')
-        scores_df = self.get_score(in_game=True)  # type: pd.DataFrame
-        self.log.debug(f'Retrieved {scores_df.shape[0]} players\' scores')
-        if scores_df.shape[0] == 0:
+        score_df = self.get_score(in_game=True)  # type: pd.DataFrame
+        self.log.debug(f'Retrieved {score_df.shape[0]} players\' scores')
+        if score_df.shape[0] == 0:
             return [
                 BKitB.make_block_section('No one has scored yet. Check back later!')
             ]
-        # Apply fun emojis
-        poops = ['poop_wtf', 'poop', 'poop_ugh', 'poop_tugh', 'poopfire', 'poopstar']
-        scores_df.loc[:, 'rank'] = [f':{poops[randrange(0, len(poops))]}:' for _ in range(scores_df.shape[0])]
-        if scores_df['current'].sum() != 0:
+        score_df.loc[:, 'rank'] = [':blank:' for _ in range(score_df.shape[0])]
+        if score_df['current'].sum() != 0:
             # Determine the emojis for 1st, 2nd and 3rd place
-            first_place = scores_df['current_rank'].min()
+            first_place = score_df['current_rank'].min()
             second_place = first_place + 1
             third_place = second_place + 1
-            is_zero = (scores_df.current == 0)
-            scores_df.loc[(scores_df.current_rank == first_place) & (~is_zero), 'rank'] = ':first_place_medal:'
-            scores_df.loc[(scores_df.current_rank == second_place) & (~is_zero), 'rank'] = ':second_place_medal:'
-            scores_df.loc[(scores_df.current_rank == third_place) & (~is_zero), 'rank'] = ':third_place_medal:'
+            is_zero = (score_df.current == 0)
+            score_df.loc[(score_df.current_rank == first_place) & (~is_zero), 'rank'] = ':first_place_medal:'
+            score_df.loc[(score_df.current_rank == second_place) & (~is_zero), 'rank'] = ':second_place_medal:'
+            score_df.loc[(score_df.current_rank == third_place) & (~is_zero), 'rank'] = ':third_place_medal:'
 
         # Set order of the columns
-        scores_df = scores_df[['rank_chg_emoji', 'rank', 'name', 'current', 'overall']]
-        scores_df = scores_df.sort_values(['current', 'overall'], ascending=False)
+        score_df = score_df[['rank_chg_emoji', 'rank', 'display_name', 'current', 'overall']]
+        score_df = score_df.sort_values(['current', 'overall'], ascending=False)
 
         scores_list = []
-        for i, r in scores_df.iterrows():
+        for i, r in score_df.iterrows():
             line = f"{r['rank_chg_emoji']}{r['rank']} `{r['display_name'][:20].title():_<20}`:diddlecoin:`" \
                    f"{r['current']:>4} ({r['overall']:>4} overall)`"
             scores_list.append(line)

@@ -2,6 +2,7 @@ from unittest import (
     TestCase,
     main
 )
+from unittest.mock import MagicMock
 from pukr import get_logger
 from cah.model import SettingType
 from cah.db_eng import WizzyPSQLClient
@@ -18,9 +19,8 @@ class TestPSQLClient(TestCase):
         cls.log = get_logger('cah_test')
 
     def setUp(self) -> None:
-        self.mock_create_engine = make_patcher(self, 'cah.db_eng.create_engine')
-        self.mock_url = make_patcher(self, 'cah.db_eng.URL')
-        self.mock_sessionmacher = make_patcher(self, 'cah.db_eng.sessionmaker')
+        self.mock_psql_client = make_patcher(self, 'cah.db_eng.PSQLClient')
+        self.mock_session = MagicMock(name='session_mgr')
         props = {
             'usr': 'someone',
             'pwd': 'password',
@@ -29,14 +29,13 @@ class TestPSQLClient(TestCase):
             'port': 5432,
         }
         self.eng = WizzyPSQLClient(props=props, parent_log=self.log)
+        self.eng.session_mgr = self.mock_session
 
     def test_get_setting(self):
-        self.mock_sessionmacher()().query().filter().one_or_none.return_value = None
+        self.mock_session().__enter__().query().filter().one_or_none.return_value = None
         resp = self.eng.get_setting(SettingType.IS_PING_WINNER)
 
-        self.mock_sessionmacher()().query.assert_called()
-        self.mock_sessionmacher()().commit.assert_called()
-        self.mock_sessionmacher()().close.assert_called()
+        self.mock_session().__enter__().query.assert_called()
         self.assertIsNone(resp)
 
 
