@@ -6,7 +6,6 @@ from typing import (
     List,
     Optional,
     Dict,
-    Union,
     TYPE_CHECKING
 )
 from types import SimpleNamespace
@@ -134,10 +133,12 @@ class CAHBot(Forms):
     def process_incoming_action(self, user: str, channel: str, action_dict: Dict, event_dict: Dict,
                                 ) -> Optional:
         """Handles an incoming action (e.g., when a button is clicked)"""
-        _ = event_dict
         action_id = action_dict.get('action_id')
         action_value = action_dict.get('value')
-        self.log.debug(f'Receiving action_id: {action_id} and value: {action_value}')
+        msg = event_dict.get('message')
+        thread_ts = msg.get('thread_ts')
+        self.log.debug(f'Receiving action_id: {action_id} and value: {action_value} from user: {user} in '
+                       f'channel: {channel}')
 
         if action_id.startswith('game-'):
             # Special in-game commands like pick & choose
@@ -197,7 +198,8 @@ class CAHBot(Forms):
         elif action_id == 'status':
             status_block = self.display_status()
             if status_block is not None:
-                self.st.send_message(channel=channel, message='Game status', blocks=status_block)
+                self.st.send_message(channel=channel, message='Game status', blocks=status_block,
+                                     thread_ts=thread_ts)
         elif action_id == 'modify-question-form':
             qmod_form = self.modify_question_form(original_value=self.current_game.current_question_card.txt)
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='Modify question form',
@@ -524,77 +526,90 @@ class CAHBot(Forms):
         self.current_game = None
         self.st.message_main_channel('The game has ended. :died:')
 
-    def get_score(self, in_game: bool = True) -> List[Dict[str, Union[str, int]]]:
+    def get_score(self, in_game: bool = True) -> pd.DataFrame:
         """Queries db for players' scores"""
         # Get overall score
         is_current_game = in_game and self.current_game is not None
-        scores = []
         with self.eng.session_mgr() as session:
             # Get overall score first
             overall = session.query(
                 TablePlayer.player_id,
                 TablePlayer.display_name,
-                func.sum(TablePlayerRound.score).label('tiddles')
+                func.sum(TablePlayerRound.score).label('overall')
             ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
                 TablePlayer.is_active
             ).group_by(TablePlayer.player_id).all()
+            score_df = pd.DataFrame(overall)
 
             if is_current_game:
                 current = session.query(
                     TablePlayer.player_id,
                     TablePlayer.display_name,
-                    func.sum(TablePlayerRound.score).label('diddles'),
+                    func.sum(TablePlayerRound.score).label('current'),
                 ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
                     TablePlayerRound.game_key == self.current_game.game_id
                 ).group_by(TablePlayer.player_id).all()
+                current_df = pd.DataFrame(current)
+                score_df = score_df.merge(current_df, on=['player_id', 'display_name'], how='left')
 
-            for o, c in zip(overall, current):
-                diddles = c.diddles if is_current_game else 0
-                score_dict = {
-                    'name': o.display_name,
-                    'diddles': diddles,
-                    'overall': o.tiddles
-                }
-                scores.append(score_dict)
+                # Determine rank trajectory
+                self.log.debug('Determining rank and trajectory...')
+                prev_round = session.query(
+                    TablePlayer.player_id,
+                    TablePlayer.display_name,
+                    func.sum(TablePlayerRound.score).label('prev_diddles'),
+                ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
+                    TablePlayerRound.game_key == self.current_game.game_id,
+                    TablePlayerRound.game_round_key < self.current_game.game_round_id - 1
+                ).group_by(TablePlayer.player_id).all()
+                prev_round_df = pd.DataFrame(prev_round)
+                if prev_round_df.empty:
+                    score_df['prev_round'] = score_df['current']
+                else:
+                    score_df = score_df.merge(prev_round_df, on=['player_id', 'display_name'], how='left')
+                score_df['current_rank'] = score_df['current'].rank(ascending=False, method='first')
+                score_df['prev_rank'] = score_df['prev_round'].rank(ascending=False, method='first')
+                score_df['rank_chg'] = score_df['prev_rank'] - score_df['current_rank']
+                score_df['rank_chg_emoji'] = score_df['rank_chg'].apply(
+                    lambda x: ':arrow_up:' if x > 0 else ':arrow_down:' if x < 0 else ':blank:')
+            else:
+                score_df['rank_chg_emoji'] = ':blank:'
+                score_df['current'] = 0
 
-        return scores
+        return score_df
 
     def display_points(self) -> List[dict]:
         """Displays points for all players"""
         self.log.debug('Generating scores...')
-        scores = self.get_score(in_game=True)  # type: List[Dict[str, Union[str, int]]]
-        points_df = pd.DataFrame(scores)
-        self.log.debug(f'Retrieved {points_df.shape[0]} players\' scores')
-        if points_df.shape[0] == 0:
+        scores_df = self.get_score(in_game=True)  # type: pd.DataFrame
+        self.log.debug(f'Retrieved {scores_df.shape[0]} players\' scores')
+        if scores_df.shape[0] == 0:
             return [
                 BKitB.make_block_section('No one has scored yet. Check back later!')
             ]
         # Apply fun emojis
         poops = ['poop_wtf', 'poop', 'poop_ugh', 'poop_tugh', 'poopfire', 'poopstar']
-
-        if points_df['diddles'].sum() == 0:
-            points_df.loc[:, 'rank'] = [f':{poops[randrange(0, len(poops))]}:' for _ in range(points_df.shape[0])]
-        else:
-            # Start off with the basics
-            points_df.loc[:, 'rank'] = [f':{poops[randrange(0, len(poops))]}:' for _ in range(points_df.shape[0])]
-            points_df['points_rank'] = points_df.diddles.rank(method='dense', ascending=False)
-            first_place = points_df['points_rank'].min()
+        scores_df.loc[:, 'rank'] = [f':{poops[randrange(0, len(poops))]}:' for _ in range(scores_df.shape[0])]
+        if scores_df['current'].sum() != 0:
+            # Determine the emojis for 1st, 2nd and 3rd place
+            first_place = scores_df['current_rank'].min()
             second_place = first_place + 1
             third_place = second_place + 1
-            is_zero = (points_df.diddles == 0)
-            points_df.loc[(points_df.points_rank == first_place) & (~is_zero), 'rank'] = ':first_place_medal:'
-            points_df.loc[(points_df.points_rank == second_place) & (~is_zero), 'rank'] = ':second_place_medal:'
-            points_df.loc[(points_df.points_rank == third_place) & (~is_zero), 'rank'] = ':third_place_medal:'
+            is_zero = (scores_df.current == 0)
+            scores_df.loc[(scores_df.current_rank == first_place) & (~is_zero), 'rank'] = ':first_place_medal:'
+            scores_df.loc[(scores_df.current_rank == second_place) & (~is_zero), 'rank'] = ':second_place_medal:'
+            scores_df.loc[(scores_df.current_rank == third_place) & (~is_zero), 'rank'] = ':third_place_medal:'
 
         # Set order of the columns
-        points_df = points_df[['rank', 'name', 'diddles', 'overall']]
-        points_df = points_df.sort_values(['diddles', 'overall'], ascending=False)
+        scores_df = scores_df[['rank_chg_emoji', 'rank', 'name', 'current', 'overall']]
+        scores_df = scores_df.sort_values(['current', 'overall'], ascending=False)
 
         scores_list = []
-        for i, r in points_df.iterrows():
-            line = f"{r['rank']} `{r['name'][:20].title():_<25}`:diddlecoin:`" \
-                   f"{r['diddles']:<3} ({r['overall']:<4}overall)`"
+        for i, r in scores_df.iterrows():
+            line = f"{r['rank_chg_emoji']}{r['rank']} `{r['display_name'][:20].title():_<20}`:diddlecoin:`" \
+                   f"{r['current']:>4} ({r['overall']:>4} overall)`"
             scores_list.append(line)
+
         return [
             BKitB.make_context_section([BKitB.markdown_section('*Current Scores*')]),
             BKitB.make_block_divider(),

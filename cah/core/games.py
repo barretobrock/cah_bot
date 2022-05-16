@@ -503,7 +503,7 @@ class Game:
             self.log.debug('Pick assignment unsuccessful. Avoiding updating player.')
             return f'*`{player.display_name}`*\'s pick voided. You already picked.'
         else:
-            self.log.debug(f'Pick assignment unsuccessful. Other reason.')
+            self.log.debug('Pick assignment unsuccessful. Other reason.')
             return 'Pick not registered.'
 
     def players_left_to_pick(self) -> List[str]:
