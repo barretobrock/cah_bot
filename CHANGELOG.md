@@ -15,6 +15,10 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.9] - 2022-05-15
+#### Fixed
+ - Resovle attribute error on empty event dict
+ 
 ### [2.0.8] - 2022-05-15
 #### Added
  - Table transfer script
