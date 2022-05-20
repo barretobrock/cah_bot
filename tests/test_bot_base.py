@@ -6,7 +6,10 @@ from tests.common import (
     make_patcher,
     random_string
 )
-from tests.mocks.db_objects import mock_get_score
+from tests.mocks.db_objects import (
+    mock_get_score,
+    mock_get_rounds_df
+)
 
 
 class TestCAHBot(TestCase):
@@ -22,6 +25,8 @@ class TestCAHBot(TestCase):
         # Load how to return things from the various ORM paths
         self.mock_session.query.return_value.join.return_value.filter.return_value.group_by.return_value\
             .all.side_effect = self._side_effect_query_stmt_decider
+        self.mock_session.query.return_value.join.return_value.filter.return_value.all.side_effect =\
+            self._side_effect_query_stmt_decider
         self.mock_creds = make_patcher(self, 'cah.bot_base.SimpleNamespace')
         self.mock_slack_base = make_patcher(self, 'cah.bot_base.SlackBotBase')
         self.mock_forms_init = make_patcher(self, 'cah.bot_base.Forms.__init__')
@@ -50,6 +55,9 @@ class TestCAHBot(TestCase):
         elif select_cols == ['player_id', 'display_name', 'prev']:
             # Getting the previous round's score
             return self.mock_previous_score.copy()
+        elif select_cols == ['player_id', 'game_round_key', 'is_judge', 'score']:
+            # Getting the table of rounds for the game
+            return mock_get_rounds_df(n_rounds=10, n_players=8)
         else:
             raise ValueError(f'Unaccounted query condition for these selections: {select_cols}')
 

@@ -575,7 +575,7 @@ class CAHBot(Forms):
             else:
                 score_df['rank_chg_emoji'] = ':blank:'
                 score_df['current'] = 0
-                score_df[f'current_rank'] = score_df['overall'].rank(ascending=False, method='first')
+                score_df['current_rank'] = score_df['overall'].rank(ascending=False, method='first')
 
         return score_df
 
@@ -641,10 +641,11 @@ class CAHBot(Forms):
                 score_df.loc[(score_df.current_rank == r) & (~is_zero), 'rank_emoji'] = f':cah-rank-{r}:'
         # Determine if the recent winner is on a streak
         score_df['streak'] = ''
-        player_id, n_streak = self.determine_streak()
-        if n_streak > 0:
-            # Streak!
-            score_df.loc[score_df.player_id == player_id, 'streak'] = ':steak:' * n_streak
+        if self.current_game is not None:
+            player_id, n_streak = self.determine_streak()
+            if n_streak > 0:
+                # Streak!
+                score_df.loc[score_df.player_id == player_id, 'streak'] = ':steak:' * n_streak
         # Set order of the columns
         score_df = score_df[['rank_chg_emoji', 'rank_emoji', 'current_rank', 'display_name',
                              'current', 'overall', 'streak']]

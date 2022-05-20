@@ -4,6 +4,8 @@ from typing import (
     List,
     Tuple
 )
+import pandas as pd
+import numpy as np
 from cah.model import (
     TablePlayer,
     TablePlayerRound
@@ -63,3 +65,33 @@ def mock_get_score(n_players: int = 10, lims_overall: Tuple[int, int] = (0, 30),
         mock_previous.append(x)
 
     return mock_overall, mock_current, mock_previous
+
+
+def mock_get_rounds_df(n_rounds: int = 10, n_players: int = 10) -> pd.DataFrame:
+    """Returns a dataframe of the previous rounds"""
+    start_round = 12
+    player_ids = random.sample(range(1, 20), n_players)
+    winner_id = random.choice(player_ids)
+    # Player ids are the columns in this dataframe
+    df = pd.DataFrame()
+    judge_pos = 0
+    for i in range(start_round, n_rounds + start_round):
+        round_list = []
+        for p in player_ids:
+            round_list.append({
+                'player_id': p,
+                'game_round_key': i,
+                'is_judge': player_ids[judge_pos] == p,
+                'score': 0
+            })
+
+        # Determine winner
+        df = pd.concat([df, pd.DataFrame(round_list)])
+        if judge_pos < len(player_ids) - 1:
+            judge_pos += 1
+        else:
+            judge_pos = 0
+
+    df.loc[(df['player_id'] == winner_id) & (df['is_judge'] == False) & (df['game_round_key']), 'score'] = 1
+
+    return df
