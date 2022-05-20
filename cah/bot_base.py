@@ -6,6 +6,7 @@ from typing import (
     List,
     Optional,
     Dict,
+    Tuple,
     TYPE_CHECKING
 )
 from types import SimpleNamespace
@@ -182,7 +183,6 @@ class CAHBot(Forms):
             formp1 = self.build_new_game_form_p1(deck_names)
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p1',
                                                 blocks=formp1)
-
         elif action_id == 'new-game-deck':
             # Set the deck for the new game and then send the second form
             self.log.debug('Processing second part of new game process.')
@@ -556,26 +556,73 @@ class CAHBot(Forms):
                 prev_round = session.query(
                     TablePlayer.player_id,
                     TablePlayer.display_name,
-                    func.sum(TablePlayerRound.score).label('prev_round'),
+                    func.sum(TablePlayerRound.score).label('prev'),
                 ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
                     TablePlayerRound.game_key == self.current_game.game_id,
                     TablePlayerRound.game_round_key < self.current_game.game_round_id - 1
                 ).group_by(TablePlayer.player_id).all()
                 prev_round_df = pd.DataFrame(prev_round)
                 if prev_round_df.empty:
-                    score_df['prev_round'] = score_df['current']
+                    score_df['prev'] = score_df['current']
                 else:
                     score_df = score_df.merge(prev_round_df, on=['player_id', 'display_name'], how='left')
-                score_df['current_rank'] = score_df['current'].rank(ascending=False, method='first')
-                score_df['prev_rank'] = score_df['prev_round'].rank(ascending=False, method='first')
+                for stage in ['current', 'prev']:
+                    score_df[f'{stage}_rank'] = score_df[[stage, 'overall']].apply(tuple, axis=1).\
+                        rank(ascending=False, method='first')
                 score_df['rank_chg'] = score_df['prev_rank'] - score_df['current_rank']
                 score_df['rank_chg_emoji'] = score_df['rank_chg'].apply(
-                    lambda x: ':arrow_up:' if x > 0 else ':arrow_down:' if x < 0 else ':blank:')
+                    lambda x: ':green-triangle-up:' if x > 0 else ':red-triangle-down:' if x < 0 else ':blank:')
             else:
                 score_df['rank_chg_emoji'] = ':blank:'
                 score_df['current'] = 0
+                score_df[f'current_rank'] = score_df['overall'].rank(ascending=False, method='first')
 
         return score_df
+
+    def determine_streak(self) -> Tuple[int, int]:
+        self.log.debug('Determining if there\'s currently a streak')
+        with self.eng.session_mgr() as session:
+            all_rounds = session.query(
+                TablePlayer.player_id,
+                TablePlayerRound.game_round_key,
+                TablePlayerRound.is_judge,
+                TablePlayerRound.score
+            ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
+                TablePlayerRound.game_key == 8
+            ).all()
+            rounds_df = pd.DataFrame(all_rounds)
+        self.log.debug(f'Pulled {rounds_df.shape[0]} rows of data for current game.')
+        # Get previous round, determine who won
+        n_streak = 0
+        streaker_id = None
+        for r in range(self.current_game.game_round_id - 1, rounds_df.game_round_key.min() - 1, -1):
+            self.log.debug(f'Working round {r}...')
+            winner = rounds_df.loc[(rounds_df.game_round_key == r) & (rounds_df.score > 0), 'player_id']
+            if winner.empty:
+                self.log.debug('Result: No winner was found (empty result)')
+                break
+            if streaker_id is None:
+                streaker_id = winner.item()
+            elif winner.item() == streaker_id:
+                self.log.debug('Same winner found as previously. Incrementing streak.')
+                # Same streaker
+                n_streak += 1
+            elif winner.item() != streaker_id:
+                # Check if streaker was judge for this round
+                self.log.debug('Winner was not the same. Checking if judge.')
+                res = rounds_df.loc[(rounds_df.game_round_key == r) &
+                                    (rounds_df.player_id == streaker_id), 'score']
+                print(f'Item: {res.item()}')
+                if pd.isna(res.item()):
+                    # They were the judge. Continue, as they might have scored in the round
+                    # before to preserve their streak
+                    self.log.debug('Streaker was judge this round. Continuing streak count.')
+                    continue
+                else:
+                    # They weren't the judge, so this ends their streak. Break out of the loop
+                    self.log.debug('Streaker was not the judge this round. Breaking out of loop.')
+                    break
+        return streaker_id, n_streak
 
     def display_points(self) -> List[dict]:
         """Displays points for all players"""
@@ -586,25 +633,31 @@ class CAHBot(Forms):
             return [
                 BKitB.make_block_section('No one has scored yet. Check back later!')
             ]
-        score_df.loc[:, 'rank'] = [':blank:' for _ in range(score_df.shape[0])]
+        score_df.loc[:, 'rank_emoji'] = [':blank:' for _ in range(score_df.shape[0])]
         if score_df['current'].sum() != 0:
             # Determine the emojis for 1st, 2nd and 3rd place
-            first_place = score_df['current_rank'].min()
-            second_place = first_place + 1
-            third_place = second_place + 1
             is_zero = (score_df.current == 0)
-            score_df.loc[(score_df.current_rank == first_place) & (~is_zero), 'rank'] = ':first_place_medal:'
-            score_df.loc[(score_df.current_rank == second_place) & (~is_zero), 'rank'] = ':second_place_medal:'
-            score_df.loc[(score_df.current_rank == third_place) & (~is_zero), 'rank'] = ':third_place_medal:'
-
+            for r in range(1, 6):
+                score_df.loc[(score_df.current_rank == r) & (~is_zero), 'rank_emoji'] = f':cah-rank-{r}:'
+        # Determine if the recent winner is on a streak
+        score_df['streak'] = ''
+        player_id, n_streak = self.determine_streak()
+        if n_streak > 0:
+            # Streak!
+            score_df.loc[score_df.player_id == player_id, 'streak'] = ':steak:' * n_streak
         # Set order of the columns
-        score_df = score_df[['rank_chg_emoji', 'rank', 'display_name', 'current', 'overall']]
-        score_df = score_df.sort_values(['current', 'overall'], ascending=False)
+        score_df = score_df[['rank_chg_emoji', 'rank_emoji', 'current_rank', 'display_name',
+                             'current', 'overall', 'streak']]
+        score_df = score_df.sort_values('current_rank', ascending=True)
 
         scores_list = []
         for i, r in score_df.iterrows():
-            line = f"{r['rank_chg_emoji']}{r['rank']} `{r['display_name'][:20].title():_<20}`:diddlecoin:`" \
-                   f"{r['current']:>4} ({r['overall']:>4} overall)`"
+            dname = f"{r['display_name'][:10].title():_<15}"
+            emos = f"{r['rank_chg_emoji'] + r['rank_emoji']}"
+            c_rank = f"{r['current_rank']:>2.0f}"
+            scores = f"*`{r['current']:>4}`*`({r['overall']:>4})`"
+            streak = f"{r['streak']}"
+            line = f"{emos}*`{c_rank}`*` {dname}`:diddlecoin:{scores}{streak}"
             scores_list.append(line)
 
         return [

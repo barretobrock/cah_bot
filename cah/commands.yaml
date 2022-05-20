@@ -40,7 +40,7 @@ commands:
         ^about$:
             tags:
                 - debug
-            desc: Bootup time of Viktor's current instance, his current version and last update date
+            desc: Bootup time of Wizzy's current instance, zir current version and last update date
             response-cmd:
                 callable: get_bootup_msg
         ^m(ain\s?menu|m):

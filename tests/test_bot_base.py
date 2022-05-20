@@ -29,7 +29,6 @@ class TestCAHBot(TestCase):
         self.mock_game = MagicMock(name='Game')
         if self.cahbot is None:
             self.cahbot = CAHBot(eng=self.mock_eng, bot_cred_entry=self.mock_creds, parent_log=self.log)
-        self.mock_overall_score, self.mock_current_score, self.mock_previous_score = mock_get_score(n_players=8)
 
     def test_init(self):
         # Assert greater than 10 entries
@@ -43,14 +42,13 @@ class TestCAHBot(TestCase):
         # Check the most recent call; if the arguments in query match what's below, return the designated result
         select_cols = [x.__dict__.get('key') for x in self.mock_session.query.call_args.args]
         if select_cols == ['player_id', 'display_name', 'overall']:
-            # Getting the overall
+            # Getting the overall score
             return self.mock_overall_score.copy()
         elif select_cols == ['player_id', 'display_name', 'current']:
-            # This is from _get_data_check_info
+            # Getting the current score
             return self.mock_current_score.copy()
-        elif select_cols == ['player_id', 'display_name', 'prev_round']:
-            # This id from the update_data_check_metrics method. It's to simulate pulling in a wide date range
-            # of daily snapshots and aggregate them according to different time windows (mtd, ytd, etc.)
+        elif select_cols == ['player_id', 'display_name', 'prev']:
+            # Getting the previous round's score
             return self.mock_previous_score.copy()
         else:
             raise ValueError(f'Unaccounted query condition for these selections: {select_cols}')
@@ -58,6 +56,8 @@ class TestCAHBot(TestCase):
     def test_display_points(self):
         """Tests the display_poinst method"""
         # In-game score retrieval
+        self.log.debug('Testing in-game score displaying under expected conditions')
+        self.mock_overall_score, self.mock_current_score, self.mock_previous_score = mock_get_score(n_players=8)
         self.cahbot.current_game = self.mock_game
         resp = self.cahbot.display_points()
         self.assertIsInstance(resp, list)
@@ -65,10 +65,21 @@ class TestCAHBot(TestCase):
         self.mock_eng.session_mgr.assert_called()
 
         # Score retrieval without a current game
+        self.log.debug('Testing display outside of current game')
         self.cahbot.current_game = None
         resp = self.cahbot.display_points()
         self.assertIsInstance(resp, list)
         self.assertEqual(3, len(resp))
+
+        # Check that ranks are handled properly
+        self.log.debug('Testing ranking for similar scores')
+        self.mock_overall_score, self.mock_current_score, self.mock_previous_score = mock_get_score(
+            n_players=10, lims_overall=(0, 20), lims_current=(0, 1))
+        self.cahbot.current_game = self.mock_game
+        resp = self.cahbot.display_points()
+        self.assertIsInstance(resp, list)
+        self.assertEqual(3, len(resp))
+        self.mock_eng.session_mgr.assert_called()
 
 
 if __name__ == '__main__':

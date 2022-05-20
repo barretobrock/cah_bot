@@ -1,7 +1,7 @@
 from random import choice
 from string import (
     ascii_uppercase,
-    printable
+    ascii_letters
 )
 
 
@@ -14,4 +14,4 @@ def random_user(is_bot: bool = False) -> str:
 
 def random_display_name() -> str:
     """Generates a random user display_name"""
-    return ''.join(choice(printable) for _ in range(30))
+    return ''.join(choice(ascii_letters) for _ in range(30))

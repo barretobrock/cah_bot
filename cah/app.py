@@ -1,7 +1,6 @@
 import json
 import signal
 import requests
-from random import choice
 from flask import (
     Flask,
     request,
@@ -69,23 +68,9 @@ def handle_action():
     Bot.process_incoming_action(user, channel, action_dict=action, event_dict=event_data)
 
     # Respond to the initial message and update it
-    responses = [
-        'Thanks, shithead!',
-        'Great job everyone! I\'m so proud of you and your accomplishments! :hugging_face:',
-        'Just like this api call I handled, you are worthy of what you desire :hugging_face:',
-        'Wow, you\'re quite the overachiever!',
-        'Good job, you did a thing and you excelled at it!',
-        'Look at you, doing things _well_ and shit!',
-        'Hey, just wanted to say you\'re a real pal for doing that thing for me!',
-        'Omnomnomnomnom Wizzy likey handling API calls! _dont make this weird_',
-        'Thanks, I guess...'
-    ]
     update_dict = {
-        'replace_original': True,
-        'text': choice(responses)
+        'delete_original': True
     }
-    if event_data.get('container', {'is_ephemeral': False}).get('is_ephemeral', False):
-        update_dict['response_type'] = 'ephemeral'
     response_url = event_data.get('response_url')
     if response_url is not None:
         # Update original message

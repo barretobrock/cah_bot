@@ -15,6 +15,16 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.0.11] - 2022-05-20
+#### Added
+ - Improved testing on display_points
+ - Recent streak determination in display_points
+#### Changed
+ - Made output of `display_points` better for mobile (narrower)
+ - Turned off message replacement in favor of message deletion.
+#### Fixed
+ - Player ranks now work properly, players are now sorted by rank
+ 
 ### [2.0.10] - 2022-05-16
 #### Added
  - display_points tests
