@@ -1,4 +1,7 @@
-from unittest import TestCase, main
+from unittest import (
+    TestCase,
+    main
+)
 from unittest.mock import MagicMock
 from pukr import get_logger
 from cah.bot_base import CAHBot
