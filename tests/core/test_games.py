@@ -49,18 +49,22 @@ class TestGames(TestCase):
         self.mock_gq.assert_called()
         self.assertEqual(GameStatus.INITIATED, self.game.status)
         self.mock_eng.set_active_players.assert_called()
+        self.assertEqual(len(self.player_hashes), len(self.game.players.player_dict.keys()))
+        self.assertFalse(self.game.is_existing_game)
+        self.assertIsNone(self.game.current_question_card)
+        self.mock_deck.shuffle_deck.assert_called()
 
     def test_is_ping_winner(self):
         self.game.is_ping_winner = True
-        self.mock_eng.set_setting.assert_called_once_with(SettingType.IS_PING_WINNER, True)
+        self.mock_eng.set_setting.assert_called_with(SettingType.IS_PING_WINNER, True)
 
     def test_is_ping_judge(self):
         self.game.is_ping_judge = True
-        self.mock_eng.set_setting.assert_called_once_with(SettingType.IS_PING_JUDGE, True)
+        self.mock_eng.set_setting.assert_called_with(SettingType.IS_PING_JUDGE, True)
 
     def test_decknuke_penalty(self):
         self.game.decknuke_penalty = -3
-        self.mock_eng.set_setting.assert_called_once_with(SettingType.DECKNUKE_PENALTY, -3)
+        self.mock_eng.set_setting.assert_called_with(SettingType.DECKNUKE_PENALTY, -3)
 
     def test_game_round_number(self):
         game_tbl = TableGame(deck_key=5, status=GameStatus.PLAYER_DECISION)
@@ -74,6 +78,7 @@ class TestGames(TestCase):
     def test_init_with_existing_game(self):
         """Tests initialization when a previous, unfinished game is detected."""
         pass
+        # Ensure judge is the same
 
     def test_process_picks(self):
         """Tests the process_picks method"""

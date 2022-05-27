@@ -4,7 +4,6 @@ from typing import (
     List,
     Optional,
     Tuple,
-    Union,
     Dict,
     TYPE_CHECKING
 )
@@ -14,17 +13,25 @@ from random import (
     choice
 )
 import numpy as np
-from slacktools import (
-    BlockKitBuilder as bkb,
-    SlackBotBase
+from sqlalchemy.sql import (
+    and_
 )
 from slack.errors import SlackApiError
 from loguru import logger
+from slacktools import (
+    BlockKitBuilder as BKitB,
+    SlackBotBase
+)
 from cah.model import (
     GameStatus,
+    RipType,
     SettingType,
+    TableAnswerCard,
     TableGame,
-    TableGameRound
+    TableGameRound,
+    TablePlayer,
+    TablePlayerRound,
+    TableQuestionCard
 )
 from cah.db_eng import WizzyPSQLClient
 from cah.settings import auto_config
@@ -33,117 +40,142 @@ from cah.core.players import (
     Players,
     Judge
 )
-from cah.core.cards import OutOfCardsException
+from cah.core.game_queries import (
+    GameQueries,
+    PickItemType
+)
+from cah.core.selections import (
+    Choice,
+    Pick
+)
 if TYPE_CHECKING:
-    from cah.core.cards import (
-        QuestionCard,
-        Pick
-    )
     from cah.core.deck import Deck
 
 
 # Define statuses where game is not active
-game_not_active = [GameStatus.INITIATED, GameStatus.ENDED]
+GAME_NOT_ACTIVE = [GameStatus.INITIATED, GameStatus.ENDED]
 # Status when ready to transition into new round
-new_round_ready = [GameStatus.INITIATED, GameStatus.END_ROUND]
+NEW_ROUND_READY = [GameStatus.INITIATED, GameStatus.END_ROUND]
 
 DECK_SIZE = 5
+
+
+class OutOfCardsException(Exception):
+    pass
 
 
 class Game:
     """Holds data for current game"""
 
-    DECKNUKE_RIPS = [
-        'LOLOLOLOLOL HOW DAT DECKNUKE WORK FOR YA NOW??',
-        'WADDUP DECKNUKE',
-        'they just smashed that decknuke button. let\'s see how it works out for them cotton',
-        '“Enola” is just alone bakwards, which is what this decknuker is',
-        'This mf putin in a Deck Nuke',
-        'You decknuked and won. Congratulations on being bad at this game.',
-        ':alphabet-yellow-w::alphabet-yellow-a::alphabet-yellow-d::alphabet-yellow-d::alphabet-yellow-u:'
-        ':alphabet-yellow-p::blank::alphabet-yellow-d::alphabet-yellow-e::alphabet-yellow-c::alphabet-yellow-k:'
-        ':alphabet-yellow-n::alphabet-yellow-u::alphabet-yellow-k::alphabet-yellow-e:',
-    ]
-
     def __init__(self, player_hashes: List[str], deck: 'Deck', st: SlackBotBase, eng: WizzyPSQLClient,
-                 parent_log: logger):
+                 parent_log: logger, game_id: int = None):
         self.st = st
         self.eng = eng
         self.judge_order_divider = ':shiny_arrow:'
         self.log = parent_log.bind(child_name=self.__class__.__name__)
+        self.gq = GameQueries(eng=eng, log=self.log)
         self.log.debug(f'Building out new game with deck: {deck.name}...')
 
         # Database table links
-        # Create a new game
-        self.status = GameStatus.INITIATED
-        with self.eng.session_mgr() as session:
-            game_tbl = TableGame()  # type: TableGame
-            session.add(game_tbl)
-            # We have to commit to get an id
-            session.commit()
-            # Refresh the object to retrieve the id
-            session.refresh(game_tbl)
-            session.expunge(game_tbl)
-        self.game_tbl = game_tbl
-        self.game_id = self.game_tbl.game_id
+        self.is_existing_game = game_id is not None
+        if self.is_existing_game:
+            self.game_id = game_id
+            self.log.debug(f'A preexisting game id was provided ({game_id}). Building a game from that.')
+            with self.eng.session_mgr() as session:
+                self.game_tbl = session.query(TableGame).filter(TableGame.game_id == game_id).one_or_none()
+                self.status = self.game_tbl.status
+                self.game_round_tbl = session.query(TableGameRound).filter(and_(
+                    TableGameRound.game_key == self.game_tbl.game_id,
+                )).order_by(TableGameRound.game_round_id.desc()).limit(1).one_or_none()
+                self.game_round_id = self.game_round_tbl.game_round_id
+                self.round_start_time = self.game_round_tbl.start_time
+                session.expunge_all()
+        else:
+            self.log.debug('Starting a new game...')
+            # Create a new game
+            self._status = GameStatus.INITIATED
+            game_tbl = TableGame(deck_key=deck.deck_id, status=self._status)
+            # Add the object to the database & refresh to get ids
+            self.game_tbl = self.eng.refresh_table_object(game_tbl)  # type: TableGame
+            # These ones will be set when new_round() is called
+            self.game_round_tbl = None  # type: Optional[TableGameRound]
+            self.game_round_id = None  # type: Optional[int]
+            self.game_id = self.game_tbl.game_id
 
+        # Load settings
         self._is_ping_judge = self.eng.get_setting(SettingType.IS_PING_JUDGE)
         self._is_ping_winner = self.eng.get_setting(SettingType.IS_PING_WINNER)
         self._decknuke_penalty = self.eng.get_setting(SettingType.DECKNUKE_PENALTY)
-
-        # This one will be set when new_round() is called
-        self.game_round_tbl = None  # type: Optional[TableGameRound]
-        self.game_round_id = None   # type: Optional[int]
-
+        # Load players
         self.log.debug(f'Setting {len(player_hashes)} players as active for this game.')
-
         self.eng.set_active_players(player_hashes)
         self.players = Players(player_hash_list=player_hashes, slack_api=self.st, eng=self.eng,
-                               parent_log=self.log)  # type: Players
-        self.log.debug('Shuffling players and setting judge order')
-        _judge = self.players.judge_order[0]
-        self.judge = Judge(player_hash=_judge, eng=self.eng, log=self.log)      # type: Judge
+                               parent_log=self.log, is_existing=self.is_existing_game)  # type: Players
+        if self.is_existing_game:
+            # Get the current round's judge
+            with self.eng.session_mgr() as session:
+                _judge: TablePlayer
+                _judge = session.query(TablePlayer).\
+                    join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).\
+                    filter(and_(
+                        TablePlayerRound.game_round_key == self.game_round_id,
+                        TablePlayerRound.is_judge
+                    )).one_or_none()
+                if _judge is None:
+                    self.log.warning('Judge wasn\'t found. Selecting at random.')
+                _judge_hash = _judge.slack_user_hash
+        else:
+            _judge_hash = self.players.judge_order[0]
+        self.judge = Judge(player_hash=_judge_hash, eng=self.eng, log=self.log)      # type: Judge
         self.prev_judge = None          # type: Optional[Judge]
         self.game_start_time = self.round_start_time = self.game_tbl.start_time
 
         self.deck = deck
 
-        self.round_picks = []
-        self.round_msg_ts = None  # Stores the timestamp of the question card message for the round
-        self.prev_question_card = None      # type: Optional[QuestionCard]
-        self.current_question_card = None   # type: Optional[QuestionCard]
-
+        self.current_question_card = None  # type: Optional[TableQuestionCard]
         self.deck.shuffle_deck()
 
     @property
-    def is_ping_judge(self):
+    def status(self) -> GameStatus:
+        return self._status
+
+    @status.setter
+    def status(self, value: GameStatus):
+        self._status = value
+        with self.eng.session_mgr() as session:
+            session.query(TableGame).filter(TableGame.game_id == self.game_id).update({
+                'status': self._status
+            })
+
+    @property
+    def is_ping_judge(self) -> bool:
         return self._is_ping_judge
 
     @is_ping_judge.setter
-    def is_ping_judge(self, value):
+    def is_ping_judge(self, value: bool):
         self._is_ping_judge = value
         self.eng.set_setting(SettingType.IS_PING_JUDGE, self._is_ping_judge)
 
     @property
-    def decknuke_penalty(self):
+    def decknuke_penalty(self) -> int:
         return self._decknuke_penalty
 
     @decknuke_penalty.setter
-    def decknuke_penalty(self, value):
+    def decknuke_penalty(self, value: int):
         self._decknuke_penalty = value
         self.eng.set_setting(SettingType.DECKNUKE_PENALTY, self._decknuke_penalty)
 
     @property
-    def is_ping_winner(self):
+    def is_ping_winner(self) -> bool:
         return self._is_ping_winner
 
     @is_ping_winner.setter
-    def is_ping_winner(self, value):
+    def is_ping_winner(self, value: bool):
         self._is_ping_winner = value
         self.eng.set_setting(SettingType.IS_PING_WINNER, self._is_ping_winner)
 
     @property
-    def round_number(self) -> int:
+    def game_round_number(self) -> int:
         """Retrieves the round number from the db"""
         with self.eng.session_mgr() as session:
             tbl = session.query(TableGame).filter(TableGame.game_id == self.game_id).one_or_none()
@@ -151,30 +183,38 @@ class Game:
                 return 0
             return len(tbl.rounds)
 
-    def refresh_game_tbl(self):
-        """Refreshes the game table by pulling 'down' any updates"""
-        self.game_tbl = self.eng.refresh_table_object(self.game_tbl)
-
-    def refresh_game_round_tbl(self):
-        """Attempts to retrieve the game tbl."""
-        self.game_round_tbl = self.eng.refresh_table_object(self.game_round_tbl)
-
     def get_judge_order(self) -> str:
         """Determines order of judges """
         active_players = self.eng.get_active_players()
         order = f' {self.judge_order_divider} '.join([f'`{x.display_name}`' for x in active_players])
         return f'Judge order: {order}'
 
+    def reinstate_round(self):
+        """Reinstates an existing round after a reboot"""
+        with self.eng.session_mgr() as session:
+            self.current_question_card = session.query(TableQuestionCard). \
+                join(TableGameRound, TableGameRound.question_card_key == TableQuestionCard.question_card_id). \
+                filter(and_(
+                    TableGameRound.game_round_id == self.game_round_id
+                )).one_or_none()
+            session.expunge(self.current_question_card)
+        self.log.debug('Existing game loading process is now complete. '
+                       'Setting the existing game toggle to False.')
+        self.is_existing_game = False
+
+        round_number = self.game_round_number
+        self.log.debug(f'Game round {round_number} continues...')
+
     def new_round(self, notification_block: List[Dict] = None) -> Optional[List[dict]]:
         """Starts a new round"""
         self.log.debug('Working on new round...')
-        if self.status not in new_round_ready:
+        if self.status not in NEW_ROUND_READY:
             self.log.error(f'Status wasn\'t right for a new round: {self.status.name}')
             # Avoid starting a new round when one has already been started
             raise ValueError(f'Cannot transition to new round due to current status '
                              f'(`{self.status.name}`)')
 
-        if self.round_number > 0:
+        if self.game_round_number > 0:
             self.log.debug('Ending previous round first...')
             # Not the first round...
             self.end_round()
@@ -184,7 +224,7 @@ class Game:
             self.log.debug('No more questions available. Ending game')
             # No more questions, game hath ended
             self.end_game()
-            return [bkb.make_block_section(f'No more question cards! Game over! {":party-dead:" * 3}')]
+            return [BKitB.make_block_section(f'No more question cards! Game over! {":party-dead:" * 3}')]
 
         if notification_block is None:
             notification_block = []
@@ -194,21 +234,18 @@ class Game:
 
         # Determine number of cards to deal to each player & deal
         # either full deck or replacement cards for previous question
-        if self.round_number > 1:
-            self.prev_question_card = self.current_question_card
         # Deal question card
         self.current_question_card = self.deck.deal_question_card()
-        self.game_round_tbl.question_card_key = self.current_question_card.id
-        self.eng.refresh_table_object(self.game_round_tbl)
+        self.game_round_tbl.question_card_key = self.current_question_card.question_card_id
+        # Send new round to db, pull that data back in to capture id
+        self.game_round_tbl = self.eng.refresh_table_object(self.game_round_tbl)
 
         self.game_round_id = self.game_round_tbl.game_round_id
-        round_number = self.round_number
+
+        round_number = self.game_round_number
 
         lines = '=' * 32
         self.log.debug(f'\n{lines}\n\t\tROUND {round_number} STARTED ({self.game_round_id})\n{lines}')
-
-        # Reset the round timestamp (used to keep track of the main round message in channel)
-        self.round_msg_ts = None
 
         # Prep player list for new round
         self.players.new_round(game_id=self.game_id, game_round_id=self.game_round_id)
@@ -239,7 +276,7 @@ class Game:
     def end_game(self):
         """Ends the game"""
         self.log.debug('End game process started')
-        if self.status is game_not_active:
+        if self.status is GAME_NOT_ACTIVE:
             # Avoid starting a new round when one has already been started
             raise ValueError(f'No active game to end - status: (`{self.status.name}`)')
         self.end_round()
@@ -252,18 +289,21 @@ class Game:
     def handle_render_hands(self):
         # Get the required number of answers for the current question
         self.log.debug('Rendering hands process beginning.')
-        req_ans = self.current_question_card.required_answers
+        req_ans = self.current_question_card.responses_required
         question_block = self.make_question_block()
         try:
             self.players.render_hands(judge_hash=self.judge.player_hash, question_block=question_block,
                                       req_ans=req_ans)
         except OutOfCardsException:
             self.log.debug('Stopping game - ran out of cards!')
-            blocks = [bkb.make_block_section(f'The people have run out of answer cards! Game over! '
-                                             f'{":party-dead:" * 3}')]
+            blocks = [BKitB.make_block_section(f'The people have run out of answer cards! Game over! '
+                                               f'{":party-dead:" * 3}')]
             self.st.message_main_channel(blocks=blocks)
             self.end_game()
             return None
+
+    def handle_randpicks(self):
+        """Handles randpicking for players that have had it turned on"""
         # Determine randpick players and pick for them
         for player_hash, player in self.players.player_dict.items():
             if player_hash == self.judge.player_hash:
@@ -303,7 +343,7 @@ class Game:
         # Regenerate the honorific for the new judge
         self.determine_honorific()
 
-    def _deal_card(self):
+    def _deal_card(self) -> Optional[TableAnswerCard]:
         if len(self.deck.answers_card_list) == 0:
             self.log.debug('No more cards left to deal!!!!!')
             return None
@@ -314,19 +354,19 @@ class Game:
         for p_hash, p_obj in self.players.player_dict.items():
             if self.deck.num_answer_cards == 0:
                 break
-            if self.round_number > 1 and self.judge.player_hash == p_hash:
+            if self.game_round_number > 1 and self.judge.player_hash == p_hash:
                 # Skip judge if dealing after first round
                 continue
-            if p_obj.hand.get_num_cards() == DECK_SIZE:
+            if p_obj.get_nonreplaceable_cards() == DECK_SIZE:
                 continue
-            num_cards = DECK_SIZE - p_obj.hand.get_num_cards()
+            num_cards = DECK_SIZE - p_obj.get_nonreplaceable_cards()
             if num_cards > 0:
                 self.log.debug(f'Dealing {num_cards} cards to {p_obj.display_name}')
                 card_list = [self._deal_card() for _ in range(num_cards)]
                 self.players.take_dealt_cards(player_hash=p_hash, card_list=card_list)
-                self.log.debug(f'Player {p_obj.display_name} now has {p_obj.hand.get_num_cards()} cards')
+                self.log.debug(f'Player {p_obj.display_name} now has {p_obj.get_all_cards()} cards')
             else:
-                self.log.warning(f'Player {p_obj.display_name} now has {p_obj.hand.get_num_cards()} cards')
+                self.log.warning(f'Player {p_obj.display_name} now has {p_obj.get_all_cards()} cards')
 
     def decknuke(self, player_hash: str):
         player = self.players.player_dict[player_hash]
@@ -335,7 +375,7 @@ class Game:
             self.st.message_main_channel(f'Decknuke rejected. {player.player_tag} you is the judge baby. :shame:')
             return
         # Randpick a card for this user
-        if player.hand.get_num_cards() < self.current_question_card.required_answers:
+        if player.get_all_cards() < self.current_question_card.responses_required:
             self.st.message_main_channel(f'Decknuke rejected. {player.player_tag} you haz ranned '
                                          f'out of cahds. :shame:')
             self.end_game()
@@ -346,7 +386,7 @@ class Game:
         addl_txt = '...also, we\'re out of cards hehe..' if self.deck.num_answer_cards == 0 else ''
         self.st.message_main_channel(f'{player.player_tag} nuked their deck! :frogsiren: {addl_txt}')
         # Deal the player the unused new cards the number of cards played will be replaced after the round ends.
-        n_cards = DECK_SIZE - self.current_question_card.required_answers
+        n_cards = DECK_SIZE - self.current_question_card.responses_required
         card_list = [self._deal_card() for _ in range(n_cards)]
         self.players.take_dealt_cards(player_hash=player_hash, card_list=card_list)
 
@@ -362,25 +402,20 @@ class Game:
     def winner_selection(self) -> List[dict]:
         """Contains the logic that determines point distributions upon selection of a winner"""
         # Get the list of cards picked by each player
-        self.log.debug(f'Selecting winner at index: {self.judge.pick_idx}')
-        rps = self.round_picks
-        winning_pick = rps[self.judge.pick_idx]     # type: Pick
+        self.log.debug(f'Selecting winner at index: {self.judge.selected_choice_idx} ({self.judge.winner_hash})')
 
         # Winner selection
-        winner = self.players.player_dict.get(winning_pick.owner_hash)
+        winner = self.players.player_dict.get(self.judge.winner_hash)
         winner_was_none = winner is None  # This is used later in the method
         if winner_was_none:
             # Likely the player who won left the game. Add to their overall points
             self.log.debug('The winner selected seems to have left the game. Spinning their object up to '
                            'grant their points.')
-            winner_tbl = self.eng.get_player_from_hash(user_hash=winning_pick.owner_hash)
             # Load the Player object so we can make the same changes as an existing player
-            winner = Player(player_hash=winner_tbl.slack_user_hash, eng=self.eng, log=self.log)
+            winner = Player(player_hash=self.judge.winner_hash, eng=self.eng, log=self.log)
             # Attach the current round to the winner
             winner.game_id = self.game_id
             winner.round_id = self.game_round_id
-            # Attaching winning pick to winner's hand
-            winner.hand.pick = winning_pick
 
         self.log.debug(f'Winner selected as {winner.display_name}')
         # If decknuke occurred, distribute the points to others randomly
@@ -389,7 +424,7 @@ class Game:
             point_receivers_txt = self._points_redistributer(penalty)
             points_won = penalty
             impact_rpt = ':impact:' * 4
-            decknuke_txt = f'\n{impact_rpt}{choice(self.DECKNUKE_RIPS)}\n' \
+            decknuke_txt = f'\n{impact_rpt}{self.gq.get_rip(rip_type=RipType.DECKNUKE)}\n' \
                            f'Your points were redistributed such: {point_receivers_txt}'
             winner.is_nuked_hand_caught = True
         else:
@@ -398,28 +433,28 @@ class Game:
 
         # Mark card as chosen in db
         self.log.debug('Marking chosen card(s) in db.')
-        winner.hand.mark_chosen_pick()
+        winner.mark_chosen_pick()
 
         winner.add_points(points_won)
         if not winner_was_none:
             self.players.player_dict[winner.player_hash] = winner
         winner_details = winner.player_tag if self.is_ping_winner else f'*`{winner.display_name.title()}`*'
         winner_txt_blob = [
-            f":regional_indicator_q: *{self.current_question_card.txt}*",
-            f":tada:Winning card: {winner.hand.pick.render_pick_list_as_str()}",
+            f":regional_indicator_q: *{self.current_question_card.card_text}*",
+            f":tada:Winning card: {winner.render_picks_as_str()}",
             f"*`{points_won:+}`* :diddlecoin: to {winner_details}! "
-            f"New score: *`{winner.get_current_score(game_id=self.game_id)}`* :diddlecoin: "
+            f"New score: *`{winner.get_current_score()}`* :diddlecoin: "
             f"({winner.get_overall_score()} total){decknuke_txt}\n"
         ]
         last_section = [
-            bkb.make_context_section([
-                bkb.markdown_section(f'Round ended. Nice going, {self.judge.display_name}.')
+            BKitB.make_context_section([
+                BKitB.markdown_section(f'Round ended. Nice going, {self.judge.display_name}.')
             ])
         ]
 
         message_block = [
-            bkb.make_block_section(winner_txt_blob),
-            bkb.make_block_divider(),
+            BKitB.make_block_section(winner_txt_blob),
+            BKitB.make_block_divider(),
         ]
         return message_block + last_section
 
@@ -431,14 +466,13 @@ class Game:
         # Determine the eligible receivers of the extra points
         nonjudge_players = [v for k, v in self.players.player_dict.items()
                             if v.player_hash != self.judge.player_hash]
-        player_points_list = [x.get_current_score(game_id=self.game_id) for x in nonjudge_players]
+        player_points_list = [x.get_current_score() for x in nonjudge_players]
         eligible_receivers = [x for x in nonjudge_players]
         # Some people have earned points already. Make sure those with the highest points aren't eligible
         max_points = max(player_points_list)
         min_points = min(player_points_list)
         if max_points - min_points > 3:
-            eligible_receivers = [x for x in nonjudge_players
-                                  if x.get_current_score(game_id=self.game_id) < max_points]
+            eligible_receivers = [x for x in nonjudge_players if x.get_current_score() < max_points]
         for pt in range(0, penalty * -1):
             player: Player
             if len(eligible_receivers) > 1:
@@ -469,7 +503,7 @@ class Game:
         """Replaces the Block UI form with another message"""
         player = self.players.player_dict[player_hash]
         blk = [
-            bkb.make_block_section(f'Your pick(s): {player.hand.pick.render_pick_list_as_str()}')
+            BKitB.make_block_section(f'Your pick(s): {player.render_picks_as_str()}')
         ]
         replace_blocks = player.pick_blocks
         for chan, ts in replace_blocks.items():
@@ -491,7 +525,7 @@ class Game:
         """Takes in an int and assigns it to the player who wrote it"""
         player = self.players.player_dict[player_hash]
         self.log.debug(f'Received pick request from player {player.display_name}: {picks}')
-        success = player.hand.pick_card(picks)
+        success = player.pick_card(picks)
         if success:
             # Replace the pick messages
             self.log.debug('Pick assignment successful. Updating player.')
@@ -499,8 +533,8 @@ class Game:
             self.players.player_dict[player_hash] = player
             self.replace_block_forms(player_hash)
             return f'*`{player.display_name}`*\'s pick has been registered.'
-        elif not success and not player.hand.pick.is_empty():
-            self.log.debug('Pick assignment unsuccessful. Avoiding updating player.')
+        elif not success and player.is_picked:
+            self.log.debug('Pick assignment unsuccessful. Player likely already picked.')
             return f'*`{player.display_name}`*\'s pick voided. You already picked.'
         else:
             self.log.debug('Pick assignment unsuccessful. Other reason.')
@@ -511,7 +545,7 @@ class Game:
         self.log.debug('Determining players remaining to pick')
         remaining = []
         for p_hash, p_obj in self.players.player_dict.items():
-            if p_obj.hand.pick.is_empty() and p_hash != self.judge.player_hash:
+            if not p_obj.is_picked and p_hash != self.judge.player_hash:
                 remaining.append(p_obj.display_name)
         return remaining
 
@@ -527,83 +561,45 @@ class Game:
 
     def process_picks(self, player_hash: str, message: str) -> Optional:
         """Processes the card selection made by the user"""
-        self.log.debug(f'Received pick message: {message}')
-        # We're in the right status and the user isn't a judge. Let's break this down further
-        card_subset = None  # For when player wants to pick from a subset
-        msg_split = message.split()
-
-        # Set the player as the user first, but see if the user is actually picking for someone else
+        # Try to load details from the pick message
+        # Get the player
+        self.log.debug(f'Processing pick from {player_hash}.')
         player = self.players.player_dict[player_hash]
-        if any(['<@' in x for x in msg_split]):
-            # Player has tagged someone. See if they tagged themselves or another person
-            if not any([player.player_tag in x for x in msg_split]):
-                # Tagged someone else. Get that other tag & use it to change the player.
-                ptag = next((x for x in msg_split if '<@' in x))
-                player = self.players.player_dict[ptag.upper()]
+        self.log.debug(f'...({player.display_name})...')
+        # Handle processing the pick from the message
+        pick = Pick(player_hash=player_hash, message=message,
+                    n_required=self.current_question_card.responses_required, total_cards=player.get_all_cards())
 
-        # Make sure the player referenced isn't the judge
-        if player.player_hash == self.judge.player_hash:
-            self.st.message_main_channel(f'{player.player_tag} is the judge this round. Judges can\'t pick!')
+        if pick.player_hash == self.judge.player_hash:
+            # Make sure the player referenced isn't the judge
+            self.log.debug('Ignoring pick... This player is the judge.')
+            self.st.message_main_channel(f'{self.judge.player_tag} is the judge this round. Judges can\'t pick!')
             return None
-        elif player.is_picked:
+        elif player_hash != pick.player_hash:
+            # Reload player - a pick was called in for someone other than the command sender
+            self.log.debug('Replacing player variable, as pick was called in for another player')
+            player = self.players.player_dict[pick.player_hash]
+
+        if player.is_picked:
+            # Player already picked
+            self.log.debug('Ignoring pick... Player has already picked.')
             self.st.message_main_channel(f'{player.player_tag} you already pickled this round')
-
-        # Player is set, now determine what we need to do
-        if 'randpick' in message:
-            # Random picking section
-            n_cards = len(player.hand.cards)
-            req_ans = self.current_question_card.required_answers
-            if len(msg_split) > 1:
-                # Randpick possibly includes further instructions
-                after_randpick = msg_split[1]
-                if '<@' not in after_randpick:
-                    # This was not a tag;
-                    if after_randpick.isnumeric():
-                        card_subset = list(map(int, list(after_randpick)))
-                    elif ',' in after_randpick:
-                        card_subset = list(map(int, after_randpick.split(',')))
-                    else:
-                        # Pick not understood; doesn't match expected syntax
-                        self.st.message_main_channel(
-                            f'<@{player_hash}> I didn\'t understand your randpick message (`{message}`). '
-                            f'Pick voided.')
-                        return None
-                else:
-                    # Was a tag. We've already applied the tag earlier
-                    pass
-            else:
-                # Just 'randpick'
-                pass
-            # Determine how we're gonna randpick
-            if card_subset is not None:
-                # Player wants to randomly choose from a subset of cards
-                # Check that the subset is at least the same number as the required cards
-                if len(card_subset) >= req_ans:
-                    picks = [x - 1 for x in np.random.choice(card_subset, req_ans, False).tolist()]
-                else:
-                    self.st.message_main_channel(f'<@{player_hash}> your subset of picks is too small. '
-                                                 f'At least (`{req_ans}`) picks required. Pick voided.')
-                    return None
-            else:
-                # Randomly choose over all of the player's cards
-                picks = np.random.choice(n_cards, req_ans, False).tolist()
-
-        else:
-            # Performing a standard pick; process the pick from the message
-            picks = self._get_pick(player_hash, message)
-
-        if picks is None:
             return None
-        elif any([x > len(player.hand.cards) - 1 or x < 0 for x in picks]):
+        pick.handle_pick(total_cards=player.get_all_cards())
+
+        if pick.picks is None:
+            self.log.debug('Picks object was still NoneType at this point.')
+            return None
+        elif any([x > player.get_all_cards() - 1 or x < 0 for x in pick.picks]):
             self.st.message_main_channel(f'<@{player_hash}> I think you picked outside the range of suggestions. '
-                                         f'Your picks: `{picks}`.')
+                                         f'Your picks: `{pick.picks}`.')
             return None
-        messages = [self.assign_player_pick(player.player_hash, picks)]
+        messages = [self.assign_player_pick(player.player_hash, pick.picks)]
 
         if player.is_dm_cards and 'randpick' in message:
             # Ping player their randomly selected picks if they've chosen to be DMed cards
             self.st.private_message(player.player_hash, f'Your randomly selected pick(s): '
-                                                        f'{player.hand.pick.render_pick_list_as_str()}')
+                                                        f'{player.render_picks_as_str()}')
 
         # See who else has yet to decide
         remaining = self.players_left_to_pick()
@@ -616,79 +612,35 @@ class Game:
             messages.append(judge_msg)
             self.status = GameStatus.JUDGE_DECISION
             # Update the "remaining picks" message
-            self.st.update_message(auto_config.MAIN_CHANNEL, self.round_msg_ts, message='we gone')
+            self.st.update_message(auto_config.MAIN_CHANNEL, self.game_round_tbl.message_timestamp,
+                                   message='Pickling complete!')
             self._display_picks(notifications=messages)
             # Handle auto randchoose players
             self.log.debug(f'All players made their picks. Checking if judge is arc: {self.judge.is_arc}')
-            if self.judge.is_arc:
-                # Judge only
-                self.choose_card(self.judge.player_hash, 'randchoose')
         else:
             # Make the remaining players more visible
             remaining_txt = ' '.join([f'`{x}`' for x in remaining])
             messages.append(f'*`{len(remaining)}`* players remaining to decide: {remaining_txt}')
-            msg_block = [bkb.make_context_section([bkb.markdown_section(x) for x in messages])]
-            if self.round_msg_ts is None:
+            msg_block = [BKitB.make_context_section([BKitB.markdown_section(x) for x in messages])]
+            if self.game_round_tbl.message_timestamp is None:
                 # Announcing the picks for the first time; capture the timestamp so
                 #   we can update that same message later
-                self.round_msg_ts = self.st.send_message(auto_config.MAIN_CHANNEL,
-                                                         message='Message about current game!',
-                                                         ret_ts=True, blocks=msg_block)
+                round_msg_ts = self.st.send_message(auto_config.MAIN_CHANNEL,
+                                                    message='Message about current game!',
+                                                    ret_ts=True, blocks=msg_block)
+                self.game_round_tbl.message_timestamp = round_msg_ts
+                self.game_round_tbl = self.eng.refresh_table_object(self.game_round_tbl)
             else:
                 # Update the message we've already got
-                self.st.update_message(auto_config.MAIN_CHANNEL, self.round_msg_ts, blocks=msg_block)
-
-    def _get_pick(self, player_hash: str, message: str, judge_decide: bool = False) -> \
-            Union[int, Optional[List[int]]]:
-        """Processes a number from a message"""
-        self.log.debug(f'Extracting pick from message: {message}')
-
-        def isolate_pick(pick_txt: str) -> Optional[List[int]]:
-            if ',' in pick_txt:
-                return [int(x) for x in pick_txt.split(',') if x.isnumeric()]
-            elif pick_txt.isnumeric():
-                return [int(x) for x in list(pick_txt)]
-            return None
-
-        # Process the message
-        msg_split = message.split()
-        picks = None
-        if len(msg_split) == 2:
-            # Our pick was something like 'pick 4', 'pick 42' or 'pick 3,2'
-            pick_part = msg_split[1]
-            picks = isolate_pick(pick_part)
-        elif len(msg_split) > 2:
-            # Our pick was something like 'pick 4 2' or 'pick 3, 2'
-            pick_part = ''.join(msg_split[1:])
-            picks = isolate_pick(pick_part)
-
-        if picks is None:
-            self.st.message_main_channel(f'<@{player_hash}> - I didn\'t understand your pick. '
-                                         f'You entered: `{message}` \nTry something like `p 12` or `pick 2`')
-        elif judge_decide:
-            if len(picks) == 1:
-                # Expected number of picks for judge
-                return picks[0] - 1
-            else:
-                self.st.message_main_channel(f'<@{player_hash}> - You\'re the judge. '
-                                             f'You should be choosing only one set. Try again!')
-        else:
-            # Confirm that the number of picks matches the required number of answers
-            req_ans = self.current_question_card.required_answers
-            if len(set(picks)) == req_ans:
-                # Set picks to 0-based index and send onward
-                return [x - 1 for x in picks]
-            else:
-                self.st.message_main_channel(f'<@{player_hash}> - You chose {len(picks)} things, '
-                                             f'but the current question requires {req_ans}.')
-        return None
+                self.st.update_message(auto_config.MAIN_CHANNEL, self.game_round_tbl.message_timestamp,
+                                       blocks=msg_block)
 
     def _display_picks(self, notifications: List[str] = None):
         """Shows a random order of the picks"""
         if notifications is not None:
             public_response_block = [
-                bkb.make_context_section([bkb.markdown_section(x) for x in notifications]),
-                bkb.make_block_divider()
+                BKitB.make_context_section([BKitB.markdown_section(x) for x in notifications]),
+                BKitB.make_block_divider()
             ]
         else:
             public_response_block = []
@@ -712,32 +664,38 @@ class Game:
     def display_picks(self) -> Tuple[List[dict], List[dict]]:
         """Shows the player's picks in random order"""
         self.log.debug('Rendering picks...')
-        picks = [player.hand.pick for _, player in self.players.player_dict.items()
-                 if not player.hand.pick.is_empty()]
-        shuffle(picks)
-        self.round_picks = picks
+        picks: Dict[str, List[PickItemType]]
+        picks = self.gq.get_player_picks(game_round_id=self.game_round_id)
+        player_hashes = list(picks.keys())
+        shuffle(player_hashes)
 
         judge_card_blocks = []
         public_card_blocks = []
         randbtn_list = []  # Just like above, but bear a 'rand' prefix to differentiate. These can be subset.
-        for i, round_pick in enumerate(self.round_picks):
+        for i, p_hash in enumerate(player_hashes):
+            # Load choice order in player table
+            self.players.player_dict[p_hash].choice_order = i
             num = i + 1
+            pick = picks.get(p_hash)
+            pick_txt = [x.get('card_text') for x in pick]
             # Make a block specifically for the judge (with buttons)
-            card_btn_dict = bkb.make_action_button(f'{num}', f'choose-{num}', action_id=f'game-choose-{num}')
-            pick_txt = f'*{num}*: {"|".join([f" *`{x}`* " for x in round_pick.pick_txt_list])}'
-            judge_card_blocks.append(bkb.make_block_section(pick_txt, accessory=card_btn_dict))
+            card_address = f'{num}.{p_hash}'
+            card_btn_dict = BKitB.make_action_button(f'{num}', f'choose-{card_address}',
+                                                     action_id=f'game-choose-{card_address}')
+            pick_txt = f'*{num}*: {"|".join([f" *`{x}`* " for x in pick_txt])}'
+            judge_card_blocks.append(BKitB.make_block_section(pick_txt, accessory=card_btn_dict))
             # Make a "public" block that just shows the choices in the channel
-            public_card_blocks.append(bkb.make_block_section(pick_txt))
-            randbtn_list.append({'txt': f'{num}', 'value': f'randchoose-{num}'})
+            public_card_blocks.append(BKitB.make_block_section(pick_txt))
+            randbtn_list.append({'txt': f'{num}', 'value': f'randchoose-{card_address}'})
 
         rand_options = [{'txt': 'All choices', 'value': 'randchoose-all'}] + randbtn_list
 
         return public_card_blocks, judge_card_blocks + [
-            bkb.make_block_divider(),
-            bkb.make_block_multiselect('Randchoose (all or subset)', 'Select choices', rand_options,
-                                       action_id='game-randchoose'),
-            bkb.make_block_section('Force Close', accessory=bkb.make_action_button('Close', 'none',
-                                                                                   action_id='close'))
+            BKitB.make_block_divider(),
+            BKitB.make_block_multiselect('Randchoose (all or subset)', 'Select choices', rand_options,
+                                         action_id='game-randchoose'),
+            BKitB.make_block_section('Force Close', accessory=BKitB.make_action_button('Close', 'none',
+                                                                                       action_id='close'))
         ]
 
     def make_question_block(self) -> List[dict]:
@@ -745,86 +703,48 @@ class Game:
         bot_moji = ':math:' if self.judge.is_arc else ''
 
         return [
-            bkb.make_block_section(
-                f'Round *`{self.round_number}`* - *{self.judge.honorific} '
+            BKitB.make_block_section(
+                f'Round *`{self.game_round_number}`* - *{self.judge.honorific} '
                 f'Judge {self.judge.display_name.title()}* {bot_moji} presiding.'
             ),
-            bkb.make_block_section(
-                f'*:regional_indicator_q:: {self.current_question_card.txt}*'
+            BKitB.make_block_section(
+                f'*:regional_indicator_q:: {self.current_question_card.card_text}*'
             ),
-            bkb.make_block_divider()
+            BKitB.make_block_divider()
         ]
 
     def choose_card(self, player_hash: str, message: str) -> Optional:
         """For the judge to choose the winning card and
         for other players to vote on the card they think should win"""
-        self.log.debug(f'Choose command used: {message}')
+
         if player_hash in auto_config.ADMINS and 'blueberry pie' in message:
             # Overrides the block below to allow admin to make a choice during testing or special circumstances
+            self.log.info('Process overridden w/ admin command to randchoose for judge.')
             player_hash = self.judge.player_hash
             message = 'randchoose'
 
-        used_randchoose = 'randchoose' in message
+        if player_hash != self.judge.player_hash:
+            self.log.debug(f'Nonjudge user tried to choose: {player_hash}')
+            self.st.message_main_channel(f'<@{player_hash}>, you\'re not the judge!')
+            return None
 
-        # Whether the player used randchoose over all the cards (disqualifies from voting)
-        if used_randchoose:
-            pick, used_all = self._randchoose_handling(message)
-            if pick is None:
-                # The randchoose method wasn't able to parse anything useful from the message
-                self.log.error('Pick returned None: randchoose seemed to fail to pick something.')
-                return None
-        else:
-            self.log.debug('Extracting judge\'s pick from message')
-            pick = self._get_pick(player_hash, message, judge_decide=True)
+        max_position = len(self.players.player_dict) - 2
+        chce = Choice(player_hash=player_hash, message=message, max_position=max_position)
 
-        if pick > len(self.players.player_dict) - 2 or pick < 0:
-            self.log.debug(f'Chosen pick ({pick}) was outside of spec.')
+        if chce.choice > max_position or chce.choice < 0:
+            self.log.debug(f'Choice ({chce.choice}) was outside of spec.')
             # Pick is rendered as an array index here.
             # Pick can either be:
             #   -less than total players minus judge, minus 1 more to account for array
             #   -greater than -1
             self.st.message_main_channel(f'I think you picked outside the range of suggestions. '
-                                         f'Your pick: {pick}')
+                                         f'Your choice: {chce.choice}')
             return None
         else:
-            if player_hash == self.judge.player_hash:
-                # Record the judge's pick
-                if self.judge.pick_idx is None:
-                    self.log.debug(f'Setting judge\'s pick as {pick}:')
-                    self.judge.pick_idx = pick
-                else:
-                    self.st.message_main_channel('Judge\'s pick voided. You\'ve already picked this round.')
+            # Record the judge's pick
+            if self.judge.selected_choice_idx is None:
+                self.log.debug(f'Setting judge\'s choice as {chce.choice}:')
+                self.judge.selected_choice_idx = chce.choice
+                self.judge.get_winner_from_choice_order()
             else:
-                self.log.debug(f'Nonjudge user tried to choose: {player_hash}')
-                self.st.message_main_channel(f'<@{player_hash}>, you\'re not the judge!')
-
-    def _randchoose_handling(self, message: str) -> Optional[Tuple[int, bool]]:
-        """Contains all the logic for handling a randchoose command"""
-        self.log.debug(f'Randchoose command used: {message}')
-        used_all = False
-        if len(message.split(' ')) > 1:
-            randchoose_instructions = message.split(' ')[1]
-            # Use a subset of choices
-            card_subset = None
-            if randchoose_instructions.isnumeric():
-                card_subset = list(map(int, list(randchoose_instructions)))
-            elif ',' in randchoose_instructions:
-                card_subset = list(map(int, randchoose_instructions.split(',')))
-            if card_subset is not None:
-                # Pick from the card subset and subtract by 1 to bring it in line with 0-based index
-                pick = list(np.random.choice(card_subset, 1))[0] - 1
-            else:
-                # Card subset wasn't able to be parsed
-                self.st.message_main_channel('I wasn\'t able to parse the card subset you entered. '
-                                             'Try again!')
-                return None
-        else:
-            # Randomly choose from all cards
-            # available choices = total number of players - (judge + len factor)
-            used_all = True
-            available_choices = len(self.players.player_dict) - 2
-            if available_choices == 0:
-                pick = 0
-            else:
-                pick = list(np.random.choice(available_choices, 1))[0]
-        return pick, used_all
+                self.st.message_main_channel('Judge\'s pick voided. You\'ve already picked this round.')

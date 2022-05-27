@@ -5,11 +5,15 @@ from unittest import (
 from unittest.mock import MagicMock
 from pukr import get_logger
 from cah.bot_base import CAHBot
+from cah.model import (
+    GameStatus
+)
 from tests.common import (
     make_patcher,
     random_string
 )
 from tests.mocks.db_objects import (
+    mock_game_tbl,
     mock_get_score,
     mock_get_rounds_df
 )
@@ -36,6 +40,9 @@ class TestCAHBot(TestCase):
         self.mock_forms = make_patcher(self, 'cah.bot_base.Forms')
         self.mock_game = MagicMock(name='Game')
         if self.cahbot is None:
+            # We're simulating normal operation, so load query response to look like the previous game ended
+            self.mock_session.query.return_value.order_by.return_value.limit.return_value.one_or_none.\
+                return_value = mock_game_tbl(status=GameStatus.ENDED)
             self.cahbot = CAHBot(eng=self.mock_eng, bot_cred_entry=self.mock_creds, parent_log=self.log)
 
     def test_init(self):

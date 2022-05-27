@@ -23,7 +23,8 @@ from cah.model import (
     TablePlayerRound,
     TableQuestionCard,
     TableRip,
-    TableSetting
+    TableSetting,
+    TableTask
 )
 from cah.db_eng import WizzyPSQLClient
 from cah.settings import auto_config
@@ -47,7 +48,8 @@ class ETL:
         TablePlayerRound,
         TableQuestionCard,
         TableRip,
-        TableSetting
+        TableSetting,
+        TableTask
     ]
 
     def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True, incl_services: bool = True):
@@ -83,6 +85,7 @@ class ETL:
         self.log.debug('Working on settings...')
         bot_settings = []
         for bot_setting in list(SettingType):
+            val_int = val_str = None
             if bot_setting.name.startswith('IS_'):
                 # All current booleans will be True
                 value = 1
@@ -90,9 +93,17 @@ class ETL:
                 # Int
                 if 'DECKNUKE' in bot_setting.name:
                     value = -3
+                elif bot_setting == SettingType.JUDGE_ORDER_DIVIDER:
+                    value = ':shiny_arrow:'
+                elif bot_setting == SettingType.JUDGE_ORDER:
+                    value = ''
                 else:
                     value = 0
-            bot_settings.append(TableSetting(setting_type=bot_setting, setting_int=value))
+            if isinstance(value, int):
+                val_int = value
+            elif isinstance(value, str):
+                val_str = value
+            bot_settings.append(TableSetting(setting_type=bot_setting, setting_int=val_int, setting_str=val_str))
 
         with self.psql_client.session_mgr() as session:
             self.log.debug(f'Adding {len(bot_settings)} bot settings.')
@@ -215,7 +226,7 @@ class ETL:
 
 
 if __name__ == '__main__':
-    etl = ETL(tables=ETL.ALL_TABLES, env='prod', drop_all=True)
+    etl = ETL(tables=ETL.ALL_TABLES, env='dev', drop_all=True)
     etl.etl_bot_settings()
     etl.etl_decks()
     etl.etl_players()

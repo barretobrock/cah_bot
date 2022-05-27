@@ -7,24 +7,26 @@ from typing import (
     Dict
 )
 from random import shuffle
-from sqlalchemy.sql import (
-    func,
-    and_
-)
+from sqlalchemy.sql import and_
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 from loguru import logger
-from slacktools import SlackTools
+from slacktools import (
+    SlackTools,
+    BlockKitBuilder as BKitB
+)
 from cah.model import (
-    TableHonorific,
+    SettingType,
+    TableAnswerCard,
     TablePlayer,
     TablePlayerRound
 )
 from cah.db_eng import WizzyPSQLClient
 from cah.settings import auto_config
-from cah.core.cards import (
-    AnswerCard,
-    Hand
-)
 from cah.core.common_methods import refresh_players_in_channel
+from cah.core.player_queries import (
+    PlayerHandCardType,
+    PlayerQueries
+)
 
 
 class Player:
@@ -34,6 +36,7 @@ class Player:
         self.player_hash = player_hash
         self.player_tag = f'<@{self.player_hash}>'
         self.log = log.bind(child_name=self.__class__.__name__)
+        self.pq = PlayerQueries(eng=eng, log=self.log)
         self.eng = eng
 
         player_table = self._get_player_tbl()
@@ -50,19 +53,19 @@ class Player:
         self._is_nuked_hand = False
         self._is_nuked_hand_caught = False
         self._is_picked = False
+        self._choice_order = None  # type: Optional[int]
 
         self.game_id = None
         self.game_round_id = None
 
         self.pick_blocks = {}   # Provides a means for us to update a block kit ui upon a successful pick
-        self.hand = Hand(owner=player_hash, eng=self.eng)
 
     @property
-    def is_arp(self):
+    def is_arp(self) -> bool:
         return self._is_arp
 
     @is_arp.setter
-    def is_arp(self, value):
+    def is_arp(self, value: bool):
         self._is_arp = value
         round_tbl = self._get_playerround_tbl()
         if round_tbl is not None and not round_tbl.is_picked:
@@ -72,11 +75,11 @@ class Player:
         self._set_player_tbl(TablePlayer.is_auto_randpick, self._is_arp)
 
     @property
-    def is_arc(self):
+    def is_arc(self) -> bool:
         return self._is_arc
 
     @is_arc.setter
-    def is_arc(self, value):
+    def is_arc(self, value: bool):
         self.log.debug(f'Setting ARC to {value}')
         self._is_arc = value
         round_tbl = self._get_playerround_tbl()
@@ -86,21 +89,21 @@ class Player:
         self._set_player_tbl(TablePlayer.is_auto_randchoose, self._is_arc)
 
     @property
-    def is_dm_cards(self):
+    def is_dm_cards(self) -> bool:
         return self._is_dm_cards
 
     @is_dm_cards.setter
-    def is_dm_cards(self, value):
+    def is_dm_cards(self, value: bool):
         self.log.debug(f'Setting DM cards to {value}')
         self._is_dm_cards = value
         self._set_player_tbl(TablePlayer.is_dm_cards, self._is_dm_cards)
 
     @property
-    def is_picked(self):
+    def is_picked(self) -> bool:
         return self._is_picked
 
     @is_picked.setter
-    def is_picked(self, value):
+    def is_picked(self, value: bool):
         self.log.debug(f'Setting is_picked to {value}')
         self._is_picked = value
         round_tbl = self._get_playerround_tbl()
@@ -109,120 +112,188 @@ class Player:
             self._set_player_round_tbl(TablePlayerRound.is_picked, self._is_picked)
 
     @property
-    def honorific(self):
+    def honorific(self) -> str:
         return self._honorific
 
     @honorific.setter
-    def honorific(self, value):
+    def honorific(self, value: str):
         self._honorific = value
         self._set_player_tbl(TablePlayer.honorific, self._honorific)
 
     @property
-    def is_judge(self):
+    def choice_order(self) -> int:
+        return self._choice_order
+
+    @choice_order.setter
+    def choice_order(self, value: int):
+        self._choice_order = value
+        self._set_player_tbl(TablePlayer.choice_order, self._choice_order)
+
+    @property
+    def is_judge(self) -> bool:
         return self._is_judge
 
     @is_judge.setter
-    def is_judge(self, value):
+    def is_judge(self, value: bool):
         self._is_judge = value
         self._set_player_round_tbl(TablePlayerRound.is_judge, self._is_judge)
 
     @property
-    def is_nuked_hand(self):
+    def is_nuked_hand(self) -> bool:
         return self._is_nuked_hand
 
     @is_nuked_hand.setter
-    def is_nuked_hand(self, value):
+    def is_nuked_hand(self, value: bool):
         self._is_nuked_hand = value
         self._set_player_round_tbl(TablePlayerRound.is_nuked_hand, self._is_nuked_hand)
 
     @property
-    def is_nuked_hand_caught(self):
+    def is_nuked_hand_caught(self) -> bool:
         return self._is_nuked_hand_caught
 
     @is_nuked_hand_caught.setter
-    def is_nuked_hand_caught(self, value):
+    def is_nuked_hand_caught(self, value: bool):
         self._is_nuked_hand_caught = value
         self._set_player_round_tbl(TablePlayerRound.is_nuked_hand_caught, self._is_nuked_hand_caught)
 
-    def _set_player_tbl(self, attr, value):
-        with self.eng.session_mgr() as session:
-            session.query(TablePlayer).filter(TablePlayer.slack_user_hash == self.player_hash).update({
-                attr: value
-            })
+    def _set_player_tbl(self, attr: InstrumentedAttribute, value: Optional[Union[int, bool, str]]):
+        self.pq.set_player_table_attr(player_hash=self.player_hash, attr=attr, value=value)
 
     def _get_player_tbl(self) -> Optional[TablePlayer]:
         """Attempts to retrieve the player's info from the players table.
         if it doesnt exist, it creates a new row for the player."""
-        with self.eng.session_mgr() as session:
-            tbl = session.query(TablePlayer).filter(TablePlayer.slack_user_hash == self.player_hash).one_or_none()
-            if tbl is not None:
-                session.expunge(tbl)
-        return tbl
+        return self.pq.get_player_table(player_hash=self.player_hash)
 
-    def _set_player_round_tbl(self, attr, value):
-        with self.eng.session_mgr() as session:
-            session.query(TablePlayerRound).filter(and_(
-                TablePlayerRound.game_key == self.game_id,
-                TablePlayerRound.game_round_key == self.game_round_id,
-                TablePlayerRound.player_key == self.player_table_id
-            )).update({
-                attr: value
-            })
+    def _set_player_round_tbl(self, attr: InstrumentedAttribute, value: Union[int, bool, str]):
+        self.pq.set_player_round_table(player_id=self.player_table_id, game_round_id=self.game_round_id,
+                                       game_id=self.game_id, attr=attr, value=value)
 
     def _get_playerround_tbl(self) -> TablePlayerRound:
         """Attempts to retrieve the player's info from the playerrounds table."""
-        with self.eng.session_mgr() as session:
-            tbl = session.query(TablePlayerRound).filter(and_(
-                TablePlayerRound.game_key == self.game_id,
-                TablePlayerRound.game_round_key == self.game_round_id,
-                TablePlayerRound.player_key == self.player_table_id
-            )).one_or_none()
-            if tbl is not None:
-                session.expunge(tbl)
-        return tbl
+        return self.pq.get_player_round_table(player_id=self.player_table_id, game_round_id=self.game_round_id,
+                                              game_id=self.game_id)
 
     def get_total_games_played(self) -> int:
-        with self.eng.session_mgr() as session:
-            return session.query(func.count(func.distinct(TablePlayerRound.game_key))).filter(
-                TablePlayerRound.player_key == self.player_table_id
-            ).scalar()
-
-    def get_total_score(self) -> int:
-        with self.eng.session_mgr() as session:
-            return session.query(
-                func.sum(TablePlayerRound.score)
-            ).filter(and_(
-                TablePlayerRound.player_key == self.player_table_id
-            )).scalar()
+        return self.pq.get_total_games_played(player_id=self.player_table_id)
 
     def get_total_decknukes_issued(self) -> int:
-        with self.eng.session_mgr() as session:
-            return session.query(func.count(TablePlayerRound.is_nuked_hand)).filter(and_(
-                TablePlayerRound.player_key == self.player_table_id,
-                TablePlayerRound.is_nuked_hand
-            )).scalar()
+        return self.pq.get_total_decknukes_issued(player_id=self.player_table_id)
 
     def get_total_decknukes_caught(self) -> int:
-        with self.eng.session_mgr() as session:
-            return session.query(func.count(TablePlayerRound.is_nuked_hand_caught)).filter(and_(
-                TablePlayerRound.player_key == self.player_table_id,
-                TablePlayerRound.is_nuked_hand_caught
-            )).scalar()
+        return self.pq.get_total_decknukes_caught(player_id=self.player_table_id)
 
     def get_full_name(self) -> str:
         return self._get_player_tbl().full_name
+
+    def get_all_cards(self) -> int:
+        """Marks all the cards in the hand as 'nuked' for a player who had chosen to 'decknuke' their cards"""
+        return self.pq.get_all_cards(player_id=self.player_table_id)
+
+    def get_nonreplaceable_cards(self) -> int:
+        """Gets the cards in the deck that meet the criteria for being replaced
+        (have been picked or have been nuked)"""
+        return self.pq.get_nonreplaceable_cards(player_id=self.player_table_id)
+
+    def nuke_cards(self):
+        """Marks all the cards in the hand as 'nuked' for a player who had chosen to 'decknuke' their cards"""
+        self.pq.set_nuke_cards(player_id=self.player_table_id)
+
+    def take_cards(self, cards: List[TableAnswerCard]):
+        """Takes a card into the player's hand"""
+        self.pq.set_cards_in_hand(player_id=self.player_table_id, cards=cards)
+
+    def get_hand(self) -> List:
+        return self.pq.get_player_hand(player_id=self.player_table_id)
+
+    def render_hand(self, max_selected: int = 1) -> List[Dict]:
+        """Renders the player's current hand to the player
+        Args:
+            max_selected: int, the maximum allowed number of definite selections (not randpicks) to make
+                if this equals 1, the multi select for definite selections will not be rendered,
+                otherwise it will take the place of the individual buttons
+        """
+        card_blocks = []
+        btn_list = []  # Button info to be made into a button group
+        randbtn_list = []  # Just like above, but bear a 'rand' prefix to differentiate. These can be subset.
+
+        cards = self.get_hand()
+        for i, card in enumerate(cards):
+            num = i + 1
+            # Make a dictionary to be used as an accessory to the card's text.
+            #   If we need to pick more than one card for the question, set this dictionary as None
+            #   so buttons don't get confusingly rendered next to the cards.
+            #   (one of these buttons == one answer, so Wizzy will deny its entry as it's under the threshold)
+            card_address = f'{num}.{self.player_table_id}.{card.hand_id}'
+            card_btn_dict = BKitB.make_action_button(f'{num}', f'pick-{card_address}',
+                                                     action_id=f'game-pick-{card_address}') \
+                if max_selected == 1 else None
+            card_blocks.append(BKitB.make_block_section(f'*{num}*: {card.card_text}', accessory=card_btn_dict))
+            # We'll still build this button list, as it's used below when we need to select multiple answers
+            btn_list.append({'txt': f'{num}', 'value': f'pick-{card_address}'})
+            randbtn_list.append({'txt': f'{num}', 'value': f'randpick-{card_address}'})
+
+        # This is kinda hacky, but add the divider here so that if we don't have a multiselect area to add,
+        #   we still have something to add to the return statement below to make the flow a bit better
+        definite_selection_area = [
+            BKitB.make_block_divider()
+        ]
+        if max_selected > 1:
+            desc = f'{max_selected} picks required for this question'
+            definite_selection_area += [
+                BKitB.make_block_multiselect(desc, f'Select {max_selected} picks', btn_list,
+                                             max_selected_items=max_selected, action_id='game-multipick'),
+                BKitB.make_block_divider()
+            ]
+
+        rand_options = [{'txt': 'All picks', 'value': 'randpick-all'}] + randbtn_list
+
+        return card_blocks + definite_selection_area + [
+            BKitB.make_block_multiselect('Randpick (all or subset)', 'Select picks', rand_options,
+                                         action_id='game-randpick'),
+            BKitB.make_block_section('Force Close', accessory=BKitB.make_action_button('Close', 'none',
+                                                                                       action_id='close'))
+        ]
+
+    def pick_card(self, pos_list: List[int]) -> bool:
+        """Picks cards at index(es)"""
+        if self.is_picked or self.is_nuked_hand:
+            # Already picked / nuked
+            self.log.debug('Player already picked or nuked this round.')
+            return False
+        cards = self.get_hand()
+        if not all([-1 < x < len(cards) for x in pos_list]):
+            self.log.error(f'The positions in pos_list {pos_list} didn\'t match with the cards length '
+                           f'({len(cards)})')
+            return False
+        # Assign picks
+        for i, p in enumerate(sorted(pos_list, reverse=True)):
+            card = cards[p]  # type: PlayerHandCardType
+            self.pq.set_picked_card(player_id=self.player_table_id, game_round_id=self.game_round_id,
+                                    slack_user_hash=self.player_hash, position=i, card=card)
+        return True
+
+    def render_picks_as_str(self) -> str:
+        """Grabs the player's picks and renders them in a pipe-delimited string in order that they were selected"""
+        pick_strs = self.pq.get_picks_as_str(player_id=self.player_table_id, game_round_id=self.game_round_id)
+        return f'`{"` | `".join(pick_strs)}`'
 
     def start_round(self, game_id: int, game_round_id: int):
         """Begins a new round"""
         self.game_id = game_id
         self.game_round_id = game_round_id
-        self.hand.pick.clear_picks()
+        # self.hand.pick.clear_picks()
+        # Reset round-specific variables
         self._is_nuked_hand = False
         self._is_nuked_hand_caught = False
         self._is_picked = False
-        with self.eng.session_mgr() as session:
-            session.add(TablePlayerRound(player_key=self.player_table_id, game_key=game_id,
-                                         game_round_key=game_round_id, is_arp=self.is_arp, is_arc=self.is_arc))
+        self._set_player_tbl(TablePlayer.choice_order, None)
+        self.pq.handle_player_new_round(player_id=self.player_table_id, game_round_id=game_round_id,
+                                        game_id=game_id, is_arc=self.is_arc, is_arp=self.is_arp)
+
+    def mark_chosen_pick(self):
+        """When a pick is chosen by a judge, this method handles marking those cards as chosen in the db
+        for better tracking"""
+        self.pq.mark_chosen_pick(player_id=self.player_table_id, game_round_id=self.game_round_id)
 
     def toggle_cards_dm(self):
         """Toggles whether or not to DM cards to player"""
@@ -240,43 +311,29 @@ class Player:
         """Adds points to the player's score"""
         self._set_player_round_tbl(TablePlayerRound.score, TablePlayerRound.score + points)
 
-    def get_current_score(self, game_id: int) -> int:
+    def get_current_score(self) -> int:
         """Retrieves the players current score"""
-        with self.eng.session_mgr() as session:
-            return session.query(
-                    func.sum(TablePlayerRound.score)
-                ).filter(and_(
-                    TablePlayerRound.player_key == self.player_table_id,
-                    TablePlayerRound.game_key == game_id
-                )).scalar()
+        return self.pq.get_current_score(game_id=self.game_id, player_id=self.player_table_id)
 
     def get_honorific(self) -> str:
-        pts = self.get_current_score(game_id=self.game_id)
+        """Retrieves a (potentially refreshed) honorific"""
+        pts = self.get_current_score()
+        honorific = self.pq.get_honorific(points=pts)
 
-        with self.eng.session_mgr() as session:
-            honorific = session.query(TableHonorific).filter(and_(
-                    pts >= TableHonorific.score_lower_lim,
-                    pts <= TableHonorific.score_upper_lim
-                )).order_by(func.random()).limit(1).one_or_none()
-            session.expunge(honorific)
-        if self.honorific != honorific.text:
-            self.honorific = honorific.text
+        if self.honorific != honorific:
+            self.log.debug('Player\'s honorific was updated.')
+            self.honorific = honorific
         return self.honorific
 
     def get_overall_score(self) -> int:
         """Retrieves the players current score"""
-        with self.eng.session_mgr() as session:
-            return session.query(
-                func.sum(TablePlayerRound.score)
-            ).filter(and_(
-                TablePlayerRound.player_key == self.player_table_id
-            )).scalar()
+        return self.pq.get_overall_score(player_id=self.player_table_id)
 
 
 class Players:
     """Methods for handling all players"""
     def __init__(self, player_hash_list: List[str], slack_api: SlackTools, eng: WizzyPSQLClient,
-                 parent_log: logger):
+                 parent_log: logger, is_existing: bool = False):
         """
         Args:
             player_hash_list: list of player slack hashes
@@ -289,9 +346,14 @@ class Players:
         self.player_dict = {
             k: Player(k, eng=eng, log=self.log) for k in player_hash_list
         }  # type: Dict[str, Player]
-        self.log.debug('Shuffling players and setting judge order')
-        self.judge_order = player_hash_list
-        shuffle(self.judge_order)
+
+        if not is_existing:
+            self.log.debug('Shuffling players and setting judge order')
+            self.judge_order = player_hash_list
+            shuffle(self.judge_order)
+            self.eng.set_setting(SettingType.JUDGE_ORDER, setting_val=','.join(self.judge_order))
+        else:
+            self.judge_order = self.eng.get_setting(SettingType.JUDGE_ORDER).split(',')
 
     def get_player_hashes(self) -> List[str]:
         """Collect user ids from a list of players"""
@@ -305,7 +367,7 @@ class Players:
 
     def get_players_that_havent_picked(self, name_only: bool = True) -> List[Union[str, Player]]:
         """Returns a list of players that have yet to pick for the round"""
-        players = [v for k, v in self.player_dict.items() if v.hand.pick.is_empty() and not v.is_judge]
+        players = [v for k, v in self.player_dict.items() if not v.is_picked and not v.is_judge]
         if name_only:
             return [x.display_name for x in players]
         else:
@@ -372,7 +434,7 @@ class Players:
         for p_hash, p_obj in self.player_dict.items():
             if p_hash == judge_hash or p_obj.is_arp:
                 continue
-            cards_block = p_obj.hand.render_hand(max_selected=req_ans)  # type: List[Dict]
+            cards_block = p_obj.render_hand(max_selected=req_ans)  # type: List[Dict]
             if p_obj.is_dm_cards:
                 msg_block = question_block + cards_block
                 dm_chan, ts = self.st.private_message(p_hash, message='Here are your cards!', ret_ts=True,
@@ -382,12 +444,9 @@ class Players:
                                                        message='Here are your cards!', blocks=cards_block)
             self.player_dict[p_hash].pick_blocks[auto_config.MAIN_CHANNEL] = pchan_ts
 
-    def take_dealt_cards(self, player_hash: str, card_list: List['AnswerCard']):
+    def take_dealt_cards(self, player_hash: str, card_list: List[TableAnswerCard]):
         """Deals out cards to players"""
-        for card in card_list:
-            if card is None:
-                continue
-            self.player_dict[player_hash].hand.take_card(card)
+        self.player_dict[player_hash].take_cards(card_list)
 
     def reset_player_pick_block(self, player_hash: str):
         """Resets the dictionary containing info about the messsage containing pick info.
@@ -398,7 +457,7 @@ class Players:
     def process_player_decknuke(self, player_hash: str):
         """Handles the player aspect of decknuking."""
         self.log.debug('Processing player decknuke')
-        self.player_dict[player_hash].hand.burn_cards()
+        self.player_dict[player_hash].nuke_cards()
         self.player_dict[player_hash].is_nuked_hand = True
 
 
@@ -406,4 +465,19 @@ class Judge(Player):
     """Player who chooses winning card"""
     def __init__(self, player_hash: str, eng: WizzyPSQLClient, log: logger):
         super().__init__(player_hash=player_hash, eng=eng, log=log)
-        self.pick_idx = None    # type: Optional[int]
+        self.selected_choice_idx = None  # type: Optional[int]
+        self.winner_id = None    # type: Optional[int]
+        self.winner_hash = None  # type: Optional[str]
+
+    def get_winner_from_choice_order(self):
+        """Obtains winner's player id from the choice"""
+        with self.eng.session_mgr() as session:
+            winner: TablePlayer
+            winner = session.query(TablePlayer).filter(and_(
+                TablePlayer.choice_order == self.selected_choice_idx,
+                TablePlayer.is_active
+            )).one()
+            if winner is not None:
+                self.log.debug(f'Selected winner: {winner}')
+                self.winner_id = winner.player_id
+                self.winner_hash = winner.slack_user_hash

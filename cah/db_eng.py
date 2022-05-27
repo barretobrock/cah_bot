@@ -7,6 +7,7 @@ from typing import (
     Union
 )
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 from loguru import logger
 from slacktools.db_engine import PSQLClient
 from cah.model import (
@@ -25,10 +26,11 @@ class WizzyPSQLClient(PSQLClient):
         _ = kwargs
         super().__init__(props=props, parent_log=parent_log)
 
-    def get_setting(self, setting: SettingType) -> Optional[Union[int, bool]]:
+    def get_setting(self, setting: SettingType) -> Optional[Union[int, bool, str]]:
         """Attempts to return a given setting"""
         self.log.debug(f'Received request for setting: {setting.name}')
         with self.session_mgr() as session:
+            result: TableSetting
             result = session.query(TableSetting).filter(TableSetting.setting_type == setting).one_or_none()
             if result is None:
                 self.log.debug('Setting was None.')
@@ -38,26 +40,45 @@ class WizzyPSQLClient(PSQLClient):
                 # Boolean
                 self.log.debug(f'Returning: {result.setting_int == 1}')
                 return result.setting_int == 1
-            self.log.debug(f'Returning: {result.setting_int}')
+            if result.setting_int is None:
+                # Return the string if the integer is None
+                self.log.debug(f'Returning str: {result.setting_str}')
+                return result.setting_str
+            self.log.debug(f'Returning int: {result.setting_int}')
             return result.setting_int
 
-    def set_setting(self, setting: SettingType, setting_val: Union[int, bool]):
+    def set_setting(self, setting: SettingType, setting_val: Union[int, bool, str]):
         """Attempts to set a given setting"""
         self.log.debug(f'Received request to set setting: {setting.name} to {setting_val}')
         with self.session_mgr() as session:
+            # Settings are more likely to be integer
+            setting_attr = TableSetting.setting_int
             if isinstance(setting_val, bool):
                 setting_val = int(setting_val)
+            elif isinstance(setting_val, str):
+                # Set the attribute to change to a string instead of an integer
+                setting_attr = TableSetting.setting_str
             session.query(TableSetting).filter(TableSetting.setting_type == setting).update(
-                {TableSetting.setting_int: setting_val}
+                {setting_attr: setting_val}
             )
 
     def get_player_from_hash(self, user_hash: str) -> Optional[TablePlayer]:
         """Takes in a slack user hash, outputs the expunged object, if any"""
-        self.log.debug(f'Received request to fetch player: {user_hash}')
+        return self._get_player_from(TablePlayer.slack_user_hash, user_hash)
+
+    def get_player_from_id(self, user_id: int) -> Optional[TablePlayer]:
+        """Takes in a slack user hash, outputs the expunged object, if any"""
+        return self._get_player_from(TablePlayer.player_id, user_id)
+
+    def _get_player_from(self,  attr: InstrumentedAttribute, value: Union[str, int]) -> Optional[TablePlayer]:
+        """Takes in a slack user hash or player id, outputs the expunged object, if any"""
+        self.log.debug(f'Received request to fetch player via {attr.key}: {value}')
         with self.session_mgr() as session:
-            user = session.query(TablePlayer).filter(TablePlayer.slack_user_hash == user_hash).one_or_none()
+            user = session.query(TablePlayer).filter(attr == value).one_or_none()
             if user is not None:
                 session.expunge(user)
+            else:
+                self.log.debug('User wasn\'t found in db with provided value. Returning None.')
         return user
 
     def get_active_players(self) -> List[TablePlayer]:

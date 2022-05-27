@@ -65,18 +65,15 @@ class PlayerQueries:
         return tbl
 
     def set_player_round_table(self, player_id: int, game_round_id: int, game_id: int,
-                               attr: InstrumentedAttribute, value: Optional[Union[int, bool, str]]) -> TablePlayer:
+                               attr: InstrumentedAttribute, value: Optional[Union[int, bool, str]]):
         with self.eng.session_mgr() as session:
-            tbl = session.query(TablePlayerRound).filter(and_(
+            session.query(TablePlayerRound).filter(and_(
                 TablePlayerRound.game_key == game_id,
                 TablePlayerRound.game_round_key == game_round_id,
                 TablePlayerRound.player_key == player_id
             )).update({
                 attr: value
             })
-            if tbl is not None:
-                session.expunge(tbl)
-        return tbl
 
     def get_total_games_played(self, player_id: int) -> int:
         with self.eng.session_mgr() as session:
@@ -174,7 +171,7 @@ class PlayerQueries:
                            f'{len(cards)} to try to add.')
             if len(available_slots) >= len(cards):
                 # Replace the first slot with a card
-                self.log.debug(f'Existing slot(s) were equal to or greater than dealt cards.')
+                self.log.debug('Existing slot(s) were equal to or greater than dealt cards.')
                 for i, card in enumerate(cards):
                     slot: TablePlayerHand
                     slot = available_slots[i]
@@ -201,21 +198,25 @@ class PlayerQueries:
         for better tracking"""
         with self.eng.session_mgr() as session:
             # Get card id of this round's picks by this user, mark them as chosen
-            session.query(TableAnswerCard).join(
+            answer_cards = session.query(TableAnswerCard).join(
                 TablePlayerPick, TableAnswerCard.answer_card_id == TablePlayerPick.answer_card_key).filter(and_(
                     TablePlayerPick.player_key == player_id,
                     TablePlayerPick.game_round_key == game_round_id,
-                )).update({
-                    TableAnswerCard.times_chosen: TableAnswerCard.times_chosen + 1
-                })
+                )).all()
+            for acard in answer_cards:
+                # Update the card
+                acard.times_chosen += 1
+                session.add(acard)
 
-    def set_picked_card(self, player_id: int, game_round_id: int, position: int, card: PlayerHandCardType):
+    def set_picked_card(self, player_id: int, game_round_id: int, slack_user_hash: str, position: int,
+                        card: PlayerHandCardType):
         """Handles the process of setting a picked card in various tables"""
         with self.eng.session_mgr() as session:
             # Move card to player_pick
             session.add(TablePlayerPick(
                 player_key=player_id,
                 game_round_key=game_round_id,
+                slack_user_hash=slack_user_hash,
                 card_order=position,
                 answer_card_key=card.answer_card_key
             ))
@@ -246,7 +247,7 @@ class PlayerQueries:
                 )).order_by(TablePlayerPick.card_order).all()
             return [p.card_text for p in picks]
 
-    def get_player_hand(self, player_id: int, game_round_id: int) -> PlayerHandType:
+    def get_player_hand(self, player_id: int) -> PlayerHandType:
         with self.eng.session_mgr() as session:
             cards = session.query(
                 TablePlayerHand.answer_card_key,
@@ -255,7 +256,6 @@ class PlayerQueries:
                 TablePlayerHand.hand_id
             ).join(TablePlayerHand, TableAnswerCard.answer_card_id == TablePlayerHand.answer_card_key).filter(and_(
                     TablePlayerHand.player_key == player_id,
-                    TablePlayerHand.game_round_key == game_round_id
                 )).order_by(TablePlayerHand.hand_id).all()
             session.expunge_all()
         return cards

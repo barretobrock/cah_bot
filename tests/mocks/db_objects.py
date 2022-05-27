@@ -4,9 +4,12 @@ from typing import (
     List,
     Tuple
 )
+from datetime import datetime
 import pandas as pd
 import numpy as np
 from cah.model import (
+    GameStatus,
+    TableGame,
     TablePlayer,
     TablePlayerRound
 )
@@ -27,6 +30,15 @@ def make_player(dm_cards: bool = True, arp: bool = False, arc: bool = False, act
         is_auto_randpick=arp,
         is_auto_randchoose=arc,
         is_active=active
+    )
+
+
+def mock_game_tbl(game_id: int = None, deck_key: int = None, status: GameStatus = None, end_time: datetime = None):
+    return TableGame(
+        game_id=game_id if game_id is not None else random.randint(1, 50),
+        deck_key=deck_key if deck_key is not None else random.randint(1, 12),
+        status=status if status is not None else GameStatus.INITIATED,
+        end_time=end_time
     )
 
 

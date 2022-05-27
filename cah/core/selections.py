@@ -130,21 +130,21 @@ class Pick(Selection):
 class Choice(Selection):
     choice = None  # type: int
 
-    def __init__(self, player_hash: str, message: str, all_submission_cnt: int):
+    def __init__(self, player_hash: str, message: str, max_position: int):
         """
 
         Args:
             player_hash:
             message:
-            all_submission_cnt: all submissions from non-judge players for the round
+            max_position: all submissions from non-judge players for the round
         """
         LOG.debug(f'Received choose message: {message}')
-        self.all_submission_cnt = all_submission_cnt
+        self.max_position = max_position
         self.player_hash = player_hash.upper()
         self.parse(message=message, make_random_selections_now=True)
-        if max(self.positions) > self.all_submission_cnt - 1 or min(self.positions) < 0:
+        if max(self.positions) > self.max_position or min(self.positions) < 0:
             LOG.warning(f'Pick was outside the accepted range: 0 <= {min(self.positions)} || '
-                        f'{max(self.positions)} > {self.all_submission_cnt - 1}')
+                        f'{max(self.positions)} > {self.max_position}')
         self.choice = self.positions[0]
 
     def handle_random_selection(self):
@@ -157,8 +157,8 @@ class Choice(Selection):
                     raise ValueError('The parsed subset list was empty. Selection avoided.')
             else:
                 # Picking from all available options
-                LOG.debug(f'Randomly selecting choice from all submissions ({self.all_submission_cnt})')
-                self.positions = np.random.choice(self.all_submission_cnt, 1, replace=False).tolist()
+                LOG.debug(f'Randomly selecting choice from all submissions ({self.max_position})')
+                self.positions = np.random.choice(self.max_position + 1, 1, replace=False).tolist()
 
     def __repr__(self) -> str:
         return f'<Choice(p_hash={self.player_hash}, choice={self.choice}, is_random={self.is_random},' \

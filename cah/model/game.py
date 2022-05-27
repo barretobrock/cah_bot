@@ -1,10 +1,13 @@
 import enum
+from datetime import datetime
 from sqlalchemy import (
     Column,
+    Enum,
     Integer,
     Boolean,
     TIMESTAMP,
-    ForeignKey
+    ForeignKey,
+    VARCHAR
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -27,6 +30,8 @@ class TableGame(Base):
     """game table - stores past game info"""
 
     game_id = Column(Integer, primary_key=True, autoincrement=True)
+    deck_key = Column(ForeignKey('cah.deck.deck_id'), nullable=False)
+    status = Column(Enum(GameStatus), nullable=False)
     rounds = relationship('TableGameRound', back_populates='game')
     start_time = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     last_update = Column(TIMESTAMP, onupdate=func.now(), server_default=func.now())
@@ -36,8 +41,13 @@ class TableGame(Base):
     def duration(self):
         return self.end_time - self.start_time if self.end_time is not None else self.last_update - self.start_time
 
-    def __init__(self):
-        pass
+    def __init__(self, deck_key: int, status: GameStatus, game_id: int = None, end_time: datetime = None):
+        self.deck_key = deck_key
+        self.status = status
+        if game_id is not None:
+            self.game_id = game_id
+        if end_time is not None:
+            self.end_time = end_time
 
     def __repr__(self) -> str:
         return f'<TableGame(id={self.game_id}, start_time={self.start_time:%F %T}, duration={self.duration})>'
@@ -50,6 +60,7 @@ class TableGameRound(Base):
     game_key = Column(Integer, ForeignKey('cah.game.game_id'), nullable=False)
     game = relationship('TableGame', back_populates='rounds', foreign_keys=[game_key])
     question_card_key = Column(Integer, ForeignKey('cah.question_card.question_card_id'), nullable=False)
+    message_timestamp = Column(VARCHAR(50))
     start_time = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     last_update = Column(TIMESTAMP, onupdate=func.now(), server_default=func.now())
     end_time = Column(TIMESTAMP, nullable=True)
@@ -58,8 +69,9 @@ class TableGameRound(Base):
     def duration(self):
         return self.end_time - self.start_time if self.end_time is not None else self.last_update - self.start_time
 
-    def __init__(self, game_key: int, question_card_key: int = None):
+    def __init__(self, game_key: int, message_timestamp: str = None, question_card_key: int = None):
         self.game_key = game_key
+        self.message_timestamp = message_timestamp
         self.question_card_key = question_card_key
 
     def __repr__(self) -> str:

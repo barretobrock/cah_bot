@@ -1,20 +1,24 @@
+from pathlib import Path
 from pukr import get_logger
 from slacktools.secretstore import SecretStore
 from slacktools.db_engine import PSQLClient
 from cah.model import (
+    GameStatus,
     TableAnswerCard,
     TableCahError,
     TableDeck,
     TableGame,
     TableGameRound,
-    TableHand,
     TableHonorific,
     TablePlayer,
+    TablePlayerHand,
     TablePlayerPick,
     TablePlayerRound,
     TableQuestionCard,
+    TableRip,
     TableSetting
 )
+from cah.logg import get_base_logger
 from cah.etl.etl_gs import ETL
 
 
@@ -31,27 +35,34 @@ src_props = credstore.get_entry(f'davaidb-{SOURCE_DB.lower()}').custom_propertie
 src_db = PSQLClient(src_props, parent_log=log)
 
 # Instantiate the process to recreate the schema and, if needed, drop all existing tables
-etl = ETL(tables=ETL.ALL_TABLES, env=TARGET_DB.lower(), drop_all=True, incl_services=False)
+etl = ETL(tables=ETL.ALL_TABLES, env=TARGET_DB.lower(), drop_all=False, incl_services=False)
 
 # Begin transferring data between databases
 tables = [
-    TableSetting,
-    TableHonorific,
-    TableDeck,
-    TableAnswerCard,
-    TableQuestionCard,
-    TableGame,
+    TableTasks,
+    # TableSetting,
+    # TableHonorific,
+    # TableRip,
+    # TableDeck,
+    # TableAnswerCard,
+    # TableQuestionCard,
+    # TableGame,
     TableGameRound,
     TablePlayer,
     TablePlayerPick,
     TablePlayerRound,
-    TableHand,
+    TablePlayerHand,
     TableCahError,
 ]
-with src_db.session_mgr() as src_session, tgt_db.session_mgr() as tgt_session:
-    for tbl in tables:
-        log.debug(f'Working on table {tbl.__tablename__}')
-        vals = src_session.query(tbl).all()
+
+for tbl in tables:
+    log.debug(f'Working on table {tbl.__tablename__}')
+    with src_db.session_mgr() as src_session, tgt_db.session_mgr() as tgt_session:
+        try:
+            vals = src_session.query(tbl).all()
+        except Exception as e:
+            log.error(f'{tbl.__name__} saw an error in copying info: {e}')
+            continue
         log.debug(f'Pulled {len(vals)} items... Expunging from source session.')
         src_session.expunge_all()
         log.debug('Beginning merge of rows into target session...')

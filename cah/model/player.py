@@ -22,6 +22,7 @@ class TablePlayer(Base):
     is_auto_randpick = Column(Boolean, default=False, nullable=False)
     is_auto_randchoose = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
+    choice_order = Column(Integer)
     rounds = relationship('TablePlayerRound', back_populates='player')
     avi_url = Column(VARCHAR(255), nullable=False)
 
