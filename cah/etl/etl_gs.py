@@ -1,3 +1,4 @@
+import re
 import sys
 from typing import List
 from sqlalchemy.sql import not_
@@ -8,6 +9,7 @@ from slacktools import (
 from slacktools.gsheet import GSheetAgent
 from cah.model import (
     Base,
+    RipType,
     SettingType,
     TableAnswerCard,
     TableDeck,
@@ -16,13 +18,15 @@ from cah.model import (
     TableGameRound,
     TableHonorific,
     TablePlayer,
+    TablePlayerHand,
+    TablePlayerPick,
     TablePlayerRound,
     TableQuestionCard,
+    TableRip,
     TableSetting
 )
 from cah.db_eng import WizzyPSQLClient
 from cah.settings import auto_config
-from cah.core.cards import QuestionCard
 from cah.core.common_methods import refresh_players_in_channel
 from cah.logg import logger
 
@@ -38,8 +42,11 @@ class ETL:
         TableGameRound,
         TableHonorific,
         TablePlayer,
+        TablePlayerHand,
+        TablePlayerPick,
         TablePlayerRound,
         TableQuestionCard,
+        TableRip,
         TableSetting
     ]
 
@@ -69,7 +76,7 @@ class ETL:
         cah_creds = credstore.get_key_and_make_ns(auto_config.BOT_NICKNAME)
         if incl_services:
             self.gsr = GSheetAgent(sec_store=credstore, sheet_key=cah_creds.spreadsheet_key)
-            self.st = SlackTools(credstore, auto_config.BOT_NICKNAME, self.log)
+            self.st = SlackTools(cah_creds, self.log, use_session=False)
             self.log.debug('Completed loading services')
 
     def etl_bot_settings(self):
@@ -82,7 +89,7 @@ class ETL:
             else:
                 # Int
                 if 'DECKNUKE' in bot_setting.name:
-                    value = 3
+                    value = -3
                 else:
                     value = 0
             bot_settings.append(TableSetting(setting_type=bot_setting, setting_int=value))
@@ -121,15 +128,46 @@ class ETL:
                 for txt in txt_list:
                     if col == 'questions':
                         # Generate a question card to leverage the response number prediction
-                        card = QuestionCard(txt=txt, card_id=0)
-                        card_objs.append(TableQuestionCard(card_text=card.txt, deck_key=deck.deck_id,
-                                                           responses_required=card.required_answers))
+                        req_ans = self.determine_required_answers(txt=txt)
+                        card_objs.append(TableQuestionCard(card_text=txt, deck_key=deck.deck_id,
+                                                           responses_required=req_ans))
                     else:
                         card_objs.append(TableAnswerCard(card_text=txt, deck_key=deck.deck_id))
             # Now load questions and answers into the tables
             with self.psql_client.session_mgr() as session:
                 session.add_all(card_objs)
             self.log.debug(f'For deck: {deck}, loaded {len(card_objs)} cards.')
+
+    @staticmethod
+    def determine_required_answers(txt: str) -> int:
+        """Determines the number of required answer cards for the question"""
+        blank_matcher = re.compile(r'(_+)', re.IGNORECASE)
+        match = blank_matcher.findall(txt)
+        if match is None:
+            return 1
+        elif len(match) == 0:
+            return 1
+        else:
+            return len(match)
+
+    def etl_rips(self):
+
+        DECKNUKE_RIPS = [
+            'LOLOLOLOLOL HOW DAT DECKNUKE WORK FOR YA NOW??',
+            'WADDUP DECKNUKE',
+            'they just smashed that decknuke button. let\'s see how it works out for them cotton',
+            '“Enola” is just alone bakwards, which is what this decknuker is',
+            'This mf putin in a Deck Nuke',
+            'You decknuked and won. Congratulations on being bad at this game.',
+            ':alphabet-yellow-w::alphabet-yellow-a::alphabet-yellow-d::alphabet-yellow-d::alphabet-yellow-u:'
+            ':alphabet-yellow-p::blank::alphabet-yellow-d::alphabet-yellow-e::alphabet-yellow-c::alphabet-yellow-k:'
+            ':alphabet-yellow-n::alphabet-yellow-u::alphabet-yellow-k::alphabet-yellow-e:',
+        ]
+        rip_objs = []
+        for rip in DECKNUKE_RIPS:
+            rip_objs.append(TableRip(rip_type=RipType.DECKNUKE, text=rip))
+        with self.psql_client.session_mgr() as session:
+            session.add_all(rip_objs)
 
     def etl_players(self):
         """ETL for possible players"""

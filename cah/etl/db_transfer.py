@@ -7,8 +7,10 @@ from cah.model import (
     TableDeck,
     TableGame,
     TableGameRound,
+    TableHand,
     TableHonorific,
     TablePlayer,
+    TablePlayerPick,
     TablePlayerRound,
     TableQuestionCard,
     TableSetting
@@ -41,7 +43,9 @@ tables = [
     TableGame,
     TableGameRound,
     TablePlayer,
+    TablePlayerPick,
     TablePlayerRound,
+    TableHand,
     TableCahError,
 ]
 with src_db.session_mgr() as src_session, tgt_db.session_mgr() as tgt_session:
