@@ -29,5 +29,6 @@ from .setting import (
     TableSetting
 )
 from .task import (
-    TableTask
+    TableTask,
+    TableTaskParameter
 )

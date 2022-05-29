@@ -24,7 +24,8 @@ from cah.model import (
     TableQuestionCard,
     TableRip,
     TableSetting,
-    TableTask
+    TableTask,
+    TableTaskParameter
 )
 from cah.db_eng import WizzyPSQLClient
 from cah.settings import auto_config
@@ -49,7 +50,8 @@ class ETL:
         TableQuestionCard,
         TableRip,
         TableSetting,
-        TableTask
+        TableTask,
+        TableTaskParameter
     ]
 
     def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True, incl_services: bool = True):

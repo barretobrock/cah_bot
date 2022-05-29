@@ -16,7 +16,9 @@ from cah.model import (
     TablePlayerRound,
     TableQuestionCard,
     TableRip,
-    TableSetting
+    TableSetting,
+    TableTask,
+    TableTaskParameter
 )
 from cah.logg import get_base_logger
 from cah.etl.etl_gs import ETL
@@ -39,7 +41,8 @@ etl = ETL(tables=ETL.ALL_TABLES, env=TARGET_DB.lower(), drop_all=False, incl_ser
 
 # Begin transferring data between databases
 tables = [
-    TableTasks,
+    TableTask,
+    TableTaskParameter,
     # TableSetting,
     # TableHonorific,
     # TableRip,
