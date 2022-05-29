@@ -164,7 +164,6 @@ class ETL:
             return len(match)
 
     def etl_rips(self):
-
         DECKNUKE_RIPS = [
             'LOLOLOLOLOL HOW DAT DECKNUKE WORK FOR YA NOW??',
             'WADDUP DECKNUKE',
@@ -173,8 +172,8 @@ class ETL:
             'This mf putin in a Deck Nuke',
             'You decknuked and won. Congratulations on being bad at this game.',
             ':alphabet-yellow-w::alphabet-yellow-a::alphabet-yellow-d::alphabet-yellow-d::alphabet-yellow-u:'
-            ':alphabet-yellow-p::blank::alphabet-yellow-d::alphabet-yellow-e::alphabet-yellow-c::alphabet-yellow-k:'
-            ':alphabet-yellow-n::alphabet-yellow-u::alphabet-yellow-k::alphabet-yellow-e:',
+            ':alphabet-yellow-p::blank::alphabet-yellow-d::alphabet-yellow-e::alphabet-yellow-c:'
+            ':alphabet-yellow-k::alphabet-yellow-n::alphabet-yellow-u::alphabet-yellow-k::alphabet-yellow-e:',
         ]
         rip_objs = []
         for rip in DECKNUKE_RIPS:
