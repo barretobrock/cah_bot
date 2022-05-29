@@ -13,6 +13,7 @@ from cah.db_eng import WizzyPSQLClient
 from cah.settings import auto_config
 from cah.logg import get_base_logger
 from cah.bot_base import CAHBot
+from cah.crons import cron
 
 # TODO:
 #  - add menu to control other users that are unresponsive (e.g., arparca)
@@ -30,6 +31,9 @@ cah_creds = credstore.get_key_and_make_ns(bot_name)
 
 logg.debug('Starting up app...')
 app = Flask(__name__)
+app.register_blueprint(cron, url_prefix='/cron')
+
+logg.debug('Initializing db engine...')
 eng = WizzyPSQLClient(props=conn_dict, parent_log=logg)
 
 logg.debug('Instantiating bot...')
