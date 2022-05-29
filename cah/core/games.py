@@ -88,7 +88,6 @@ class Game:
                     TableGameRound.game_key == self.game_tbl.game_id,
                 )).order_by(TableGameRound.game_round_id.desc()).limit(1).one_or_none()
                 self.game_round_id = self.game_round_tbl.game_round_id
-                self.round_start_time = self.game_round_tbl.start_time
                 session.expunge_all()
         else:
             self.log.debug('Starting a new game...')
@@ -128,7 +127,7 @@ class Game:
             _judge_hash = self.players.judge_order[0]
         self.judge = Judge(player_hash=_judge_hash, eng=self.eng, log=self.log)      # type: Judge
         self.prev_judge = None          # type: Optional[Judge]
-        self.game_start_time = self.round_start_time = self.game_tbl.start_time
+        self.game_start_time = self.game_tbl.start_time
 
         self.deck = deck
 
@@ -202,6 +201,8 @@ class Game:
                        'Setting the existing game toggle to False.')
         self.is_existing_game = False
 
+        self.players.reinstate_round_players(game_id=self.game_id, game_round_id=self.game_round_id)
+
         round_number = self.game_round_number
         self.log.debug(f'Game round {round_number} continues...')
 
@@ -226,11 +227,19 @@ class Game:
             self.end_game()
             return [BKitB.make_block_section(f'No more question cards! Game over! {":party-dead:" * 3}')]
 
+        # Scan names in the db vs. in the player object to ensure they're the same
+        self.log.debug('Confirming display name parity...')
+        for uid, player in self.players.player_dict.items():
+            tbl_display_name = player.pq.get_player_table(player_hash=uid).display_name
+            if player.display_name != tbl_display_name:
+                self.log.debug(f'Changing {player.display_name} to {tbl_display_name}')
+                # Set player display name to the name found in the database
+                self.players.player_dict[uid].display_name = tbl_display_name
+
         if notification_block is None:
             notification_block = []
 
         self.game_round_tbl = TableGameRound(game_key=self.game_id)
-        self.round_start_time = self.game_round_tbl.start_time
 
         # Determine number of cards to deal to each player & deal
         # either full deck or replacement cards for previous question
@@ -260,7 +269,24 @@ class Game:
                                         ":gavel::gavel::gavel: You're the judge this round! :gavel::gavel::gavel:")
         question_block = self.make_question_block()
         notification_block += question_block
+        self.log.debug('Sending question block to channel...')
         self.st.message_main_channel(blocks=notification_block)
+
+        # Next, send a message to the channel about players to pick...
+        self.log.debug('Sending pick reception block to channel...')
+        remaining = self.players_left_to_pick()
+        # Make the remaining players more visible
+        self.log.debug(f'{len(remaining)} remaining to decide.')
+        remaining_txt = ' '.join([f'`{x}`' for x in remaining])
+        messages = [f'*`{len(remaining)}`* players remaining to decide: {remaining_txt}']
+        msg_block = [BKitB.make_context_section([BKitB.markdown_section(x) for x in messages])]
+        round_msg_ts = self.st.send_message(auto_config.MAIN_CHANNEL,
+                                            message='A new round hath begun',
+                                            ret_ts=True, blocks=msg_block)
+        self.game_round_tbl.message_timestamp = round_msg_ts
+        self.game_round_tbl = self.eng.refresh_table_object(self.game_round_tbl)
+        # Last, render hands for the players
+        self.log.debug('Rendering player hands and sending them')
         self.handle_render_hands()
 
     def end_round(self):
@@ -305,6 +331,7 @@ class Game:
     def handle_randpicks(self):
         """Handles randpicking for players that have had it turned on"""
         # Determine randpick players and pick for them
+        self.log.debug('Handling randpicks for round')
         for player_hash, player in self.players.player_dict.items():
             if player_hash == self.judge.player_hash:
                 continue
@@ -417,7 +444,7 @@ class Game:
             winner.game_id = self.game_id
             winner.round_id = self.game_round_id
 
-        self.log.debug(f'Winner selected as {winner.display_name}')
+        self.log.debug(f'Winner selected as "{winner.display_name}"')
         # If decknuke occurred, distribute the points to others randomly
         if winner.is_nuked_hand:
             penalty = self.decknuke_penalty
@@ -617,8 +644,13 @@ class Game:
             self._display_picks(notifications=messages)
             # Handle auto randchoose players
             self.log.debug(f'All players made their picks. Checking if judge is arc: {self.judge.is_arc}')
+            if self.judge.is_arc:
+                self.choose_card(player_hash=self.judge.player_hash, message='randchoose')
+                if self.judge.selected_choice_idx is not None:
+                    self.round_wrap_up()
         else:
             # Make the remaining players more visible
+            self.log.debug(f'{len(remaining)} remaining to decide.')
             remaining_txt = ' '.join([f'`{x}`' for x in remaining])
             messages.append(f'*`{len(remaining)}`* players remaining to decide: {remaining_txt}')
             msg_block = [BKitB.make_context_section([BKitB.markdown_section(x) for x in messages])]
@@ -698,9 +730,9 @@ class Game:
                                                                                        action_id='close'))
         ]
 
-    def make_question_block(self) -> List[dict]:
+    def make_question_block(self, hide_arc: bool = True) -> List[dict]:
         """Generates the question block for the current round"""
-        bot_moji = ':math:' if self.judge.is_arc else ''
+        bot_moji = ':math:' if self.judge.is_arc and not hide_arc else ''
 
         return [
             BKitB.make_block_section(

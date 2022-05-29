@@ -355,6 +355,13 @@ class Players:
         else:
             self.judge_order = self.eng.get_setting(SettingType.JUDGE_ORDER).split(',')
 
+    def reinstate_round_players(self, game_id: int, game_round_id: int):
+        """Handles the player side of reinstating the game / round"""
+        # For each participating player, load the game id and game round id
+        for uid, player in self.player_dict.items():
+            self.player_dict[uid].game_id = game_id
+            self.player_dict[uid].game_round_id = game_round_id
+
     def get_player_hashes(self) -> List[str]:
         """Collect user ids from a list of players"""
         return [k for k, v in self.player_dict.items()]

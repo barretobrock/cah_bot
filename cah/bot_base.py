@@ -756,7 +756,7 @@ class CAHBot(Forms):
                 TableAnswerCard.card_text: new_text
             })
 
-    def display_status(self) -> Optional[List[dict]]:
+    def display_status(self, hide_identities: bool = True) -> Optional[List[dict]]:
         """Displays status of the game"""
 
         if self.current_game is None:
@@ -769,21 +769,28 @@ class CAHBot(Forms):
 
         if self.current_game.status not in [GameStatus.ENDED, GameStatus.INITIATED]:
             icon = ':orange_check:'
+
+            dmers = self.current_game.players.get_players_with_dm_cards(name_only=False)
+            arpers = self.current_game.players.get_players_with_arp(name_only=False)
+            arcers = self.current_game.players.get_players_with_arc(name_only=False)
+
             # Players that have card DMing enabled
-            dm_section = self._generate_avi_context_section(
-                self.current_game.players.get_players_with_dm_cards(name_only=False), f'{icon} *DM Cards*: ')
-            # Players that have auto randpick enabled
-            arp_section = self._generate_avi_context_section(
-                self.current_game.players.get_players_with_arp(name_only=False), f'{icon} *ARP*: ')
-            # Players that have auto randchoose enabled
-            arc_section = self._generate_avi_context_section(
-                self.current_game.players.get_players_with_arc(name_only=False), f'{icon} *ARC*: ')
+            dm_section = self._generate_avi_context_section(dmers, f'{icon} *DM Cards*: ')
+
+            if hide_identities:
+                arp_section = f'{icon} *ARP*: {len(arpers)}'
+                arc_section = f'{icon} *ARP*: {len(arcers)}'
+            else:
+                # Players that have auto randpick enabled
+                arp_section = self._generate_avi_context_section(arpers, f'{icon} *ARP*: ')
+                # Players that have auto randchoose enabled
+                arc_section = self._generate_avi_context_section(arcers, f'{icon} *ARC*: ')
 
             status_section = f'*Status*: *`{self.current_game.status.name.replace("_", " ").title()}`*\n' \
                              f'*Judge Ping*: `{self.current_game.is_ping_judge}`\t\t' \
                              f'*Weiner Ping*: `{self.current_game.is_ping_winner}`\n'
             game_section = f':stopwatch: *Round `{self.current_game.game_round_number}`*: ' \
-                           f'{self.st.get_time_elapsed(self.current_game.round_start_time)}\t\t' \
+                           f'{self.st.get_time_elapsed(self.current_game.game_round_tbl.start_time)}\t\t' \
                            f'*Game*: {self.st.get_time_elapsed(self.current_game.game_start_time)}\n' \
                            f':stack-of-cards: *Deck*: `{self.current_game.deck.name}` - ' \
                            f'`{len(self.current_game.deck.questions_card_list)}` question & ' \
