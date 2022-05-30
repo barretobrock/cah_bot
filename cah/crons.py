@@ -46,7 +46,7 @@ def cron_manager():
                     # Add to endpoints to trigger
                     mainapp.logg.debug('Found task that has never been triggered. Adding to list')
                     endpoints_to_call.append(task.endpoint)
-                diff = now - task.last_triggered
+                # diff = now - task.last_triggered
                 # TODO: Make this into a list of dicts:
                 #   task: [params]
     return make_response('', 200)

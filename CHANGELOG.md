@@ -15,6 +15,19 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.1.0] - 2022-05-20
+#### Added
+ - Tables to store all game info outside of runtime
+ - Setting to look for previous, unended game on bootup
+ - Pick/Choice handling objects 
+ - Task scheduling capability
+ - Cron endpoints
+#### Changed
+ - Players on ARP/ARC are now hidden for privacy
+ - Game / Player queries were broken out into their own files - this is mainly to better organize testing
+#### Removed
+ - Answer / Question card objects - these were redundant considering the related table objects
+ 
 ### [2.0.11] - 2022-05-20
 #### Added
  - Improved testing on display_points
