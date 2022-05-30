@@ -7,15 +7,13 @@ Set URLs so they can be accessed
 from datetime import datetime
 from flask import (
     Blueprint,
+    make_response
 )
-from sqlalchemy.sql import (
-    and_,
-    null,
-    or_
-)
+from sqlalchemy.sql import or_
 from cah.model import (
     GameStatus,
-    TableTask
+    TableTask,
+    TableTaskParameter
 )
 from cah.logg import get_base_logger
 import cah.app as mainapp
@@ -35,18 +33,23 @@ def cron_manager():
     endpoints_to_call = []
     now = datetime.now()
     with mainapp.eng.session_mgr() as session:
-        tasks = session.query(TableTask).filter(or_(
-            null(TableTask.until_timestamp),
-            TableTask.until_timestamp >= now
-        )).all()
-        if len(tasks) > 0:
-            for task in tasks:
+        results = session.query(TableTask, TableTaskParameter) \
+            .outerjoin(TableTaskParameter, TableTaskParameter.task_key == TableTask.task_id). \
+            filter(or_(
+                TableTask.until_timestamp.is_(None),
+                TableTask.until_timestamp >= now
+            )).all()
+        if len(results) > 0:
+            for task, parameters in results:
                 task: TableTask
                 if task.last_triggered is None:
                     # Add to endpoints to trigger
                     mainapp.logg.debug('Found task that has never been triggered. Adding to list')
                     endpoints_to_call.append(task.endpoint)
                 diff = now - task.last_triggered
+                # TODO: Make this into a list of dicts:
+                #   task: [params]
+    return make_response('', 200)
 
 
 @cron.route('/handle-randpick', methods=['POST'])
@@ -55,6 +58,7 @@ def handle_randpick():
     mainapp.logg.debug('Beginning randpick handling check...')
     if mainapp.Bot.current_game is not None:
         mainapp.Bot.current_game.handle_randpicks()
+    return make_response('', 200)
 
 
 @cron.route('/handle-randchoose', methods=['POST'])
@@ -66,6 +70,7 @@ def handle_randchoose():
         if game.judge.is_arc and game.judge.selected_choice_idx is not None:
             mainapp.logg.info('Game is awaiting a choice from ARC\'d judge. Handling that now.')
             mainapp.Bot.choose_card(game.judge.player_hash, 'randchoose')
+    return make_response('', 200)
 
 
 @cron.route('/force-choose', methods=['POST'])
@@ -78,3 +83,4 @@ def force_choose():
         if game.judge.selected_choice_idx is not None:
             mainapp.logg.info('Game is awaiting a choice from ARC\'d judge. Handling that now.')
             mainapp.Bot.choose_card(game.judge.player_hash, 'randchoose')
+    return make_response('', 200)
