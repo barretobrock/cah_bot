@@ -223,14 +223,13 @@ class Player:
             #   If we need to pick more than one card for the question, set this dictionary as None
             #   so buttons don't get confusingly rendered next to the cards.
             #   (one of these buttons == one answer, so Wizzy will deny its entry as it's under the threshold)
-            card_address = f'{num}.{self.player_table_id}.{card.hand_id}'
-            card_btn_dict = BKitB.make_action_button(f'{num}', f'pick-{card_address}',
-                                                     action_id=f'game-pick-{card_address}') \
+            card_btn_dict = BKitB.make_action_button(f'{num}', f'pick-{num}',
+                                                     action_id=f'game-pick-{num}') \
                 if max_selected == 1 else None
             card_blocks.append(BKitB.make_block_section(f'*{num}*: {card.card_text}', accessory=card_btn_dict))
             # We'll still build this button list, as it's used below when we need to select multiple answers
-            btn_list.append({'txt': f'{num}', 'value': f'pick-{card_address}'})
-            randbtn_list.append({'txt': f'{num}', 'value': f'randpick-{card_address}'})
+            btn_list.append({'txt': f'{num}', 'value': f'pick-{num}'})
+            randbtn_list.append({'txt': f'{num}', 'value': f'randpick-{num}'})
 
         # This is kinda hacky, but add the divider here so that if we don't have a multiselect area to add,
         #   we still have something to add to the return statement below to make the flow a bit better

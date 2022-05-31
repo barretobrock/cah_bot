@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "cah"
-version = '2.1.0'
+version = '2.1.1'
 description = "A slackbot for playing Cards Against Humanity on Slack."
 authors = ["bobrock <bobrock@tuta.io>"]
 license = "MIT"

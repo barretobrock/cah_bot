@@ -15,6 +15,10 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.1.1] - 2022-05-31
+#### Fixed
+ - Form addresses that ended up not being used, but were causing mass selections and errors when players made selections from the form
+
 ### [2.1.0] - 2022-05-20
 #### Added
  - Tables to store all game info outside of runtime

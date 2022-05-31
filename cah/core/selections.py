@@ -36,6 +36,7 @@ class Selection:
                 self.player_hash = self.extract_user_hash(message_fragment=item)
             elif re.sub(r'\W+', '', item).isnumeric():
                 val_list = self.extract_ints(item)
+                LOG.debug(f'Extracted integers from "{item}" and got (after subtracting by 1): {val_list}')
                 if self.is_random:
                     # Subsets were supplied with the randpick
                     if self.random_subset is None:

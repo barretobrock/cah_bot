@@ -711,14 +711,13 @@ class Game:
             pick = picks.get(p_hash)
             pick_txt = [x.get('card_text') for x in pick]
             # Make a block specifically for the judge (with buttons)
-            card_address = f'{num}.{p_hash}'
-            card_btn_dict = BKitB.make_action_button(f'{num}', f'choose-{card_address}',
-                                                     action_id=f'game-choose-{card_address}')
+            card_btn_dict = BKitB.make_action_button(f'{num}', f'choose-{num}',
+                                                     action_id=f'game-choose-{num}')
             pick_txt = f'*{num}*: {"|".join([f" *`{x}`* " for x in pick_txt])}'
             judge_card_blocks.append(BKitB.make_block_section(pick_txt, accessory=card_btn_dict))
             # Make a "public" block that just shows the choices in the channel
             public_card_blocks.append(BKitB.make_block_section(pick_txt))
-            randbtn_list.append({'txt': f'{num}', 'value': f'randchoose-{card_address}'})
+            randbtn_list.append({'txt': f'{num}', 'value': f'randchoose-{num}'})
 
         rand_options = [{'txt': 'All choices', 'value': 'randchoose-all'}] + randbtn_list
 
