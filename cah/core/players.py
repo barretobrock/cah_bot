@@ -266,7 +266,7 @@ class Player:
                            f'({len(cards)})')
             return False
         # Assign picks
-        for i, p in enumerate(sorted(pos_list, reverse=True)):
+        for i, p in enumerate(pos_list):
             card = cards[p]  # type: PlayerHandCardType
             self.pq.set_picked_card(player_id=self.player_table_id, game_round_id=self.game_round_id,
                                     slack_user_hash=self.player_hash, position=i, card=card)
@@ -286,7 +286,7 @@ class Player:
         self._is_nuked_hand = False
         self._is_nuked_hand_caught = False
         self._is_picked = False
-        self._set_player_tbl(TablePlayer.choice_order, None)
+        self._choice_order = None
         self.pq.handle_player_new_round(player_id=self.player_table_id, game_round_id=game_round_id,
                                         game_id=game_id, is_arc=self.is_arc, is_arp=self.is_arp)
 

@@ -29,7 +29,7 @@ class TablePlayer(Base):
     def __init__(self, slack_user_hash: str, display_name: str, avi_url: str, honorific: str = '',
                  is_dm_cards: bool = True, is_auto_randpick: bool = False, is_auto_randchoose: bool = False,
                  is_active: bool = True):
-        self.slack_user_hash = slack_user_hash,
+        self.slack_user_hash = slack_user_hash
         self.display_name = display_name
         self.avi_url = avi_url
         self.honorific = honorific

@@ -143,15 +143,15 @@ class TestSelections(TestCase):
             },
 
             # Choice outside of bounds
-            'choose 7': {'exp_choice': 6, 'total_cards': 6},
+            'choose 7': {'exp_choice': 6, 'max_position': 6},
             'choose 0': {'exp_choice': -1},
         }
         for msg, res_dict in cases.items():
             is_rand = res_dict.get('is_rand', False)
             exp_choice = res_dict.get('exp_choice')  # type: Optional[List[int]]
-            total_cards = res_dict.get('total_cards', 5)
+            max_position = res_dict.get('max_position', 4)
             subset = res_dict.get('subset')
-            chos = Choice(player_hash=command_sender_hash, message=msg, all_submission_cnt=total_cards)
+            chos = Choice(player_hash=command_sender_hash, message=msg, max_position=max_position)
 
             self.assertEqual(is_rand, chos.is_random)
             if not chos.is_random:
