@@ -624,7 +624,7 @@ class CAHBot(Forms):
 
         return score_df
 
-    def determine_streak(self) -> Tuple[int, int]:
+    def determine_streak(self) -> Tuple[Optional[int], int]:
         self.log.debug('Determining if there\'s currently a streak')
         with self.eng.session_mgr() as session:
             all_rounds = session.query(
@@ -633,13 +633,15 @@ class CAHBot(Forms):
                 TablePlayerRound.is_judge,
                 TablePlayerRound.score
             ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
-                TablePlayerRound.game_key == 8
+                TablePlayerRound.game_key == self.current_game.game_id
             ).all()
             rounds_df = pd.DataFrame(all_rounds)
         self.log.debug(f'Pulled {rounds_df.shape[0]} rows of data for current game.')
         # Get previous round, determine who won
         n_streak = 0
         streaker_id = None
+        if rounds_df.shape[0] == 0:
+            return streaker_id, n_streak
         for r in range(self.current_game.game_round_id - 1, rounds_df.game_round_key.min() - 1, -1):
             self.log.debug(f'Working round {r}...')
             winner = rounds_df.loc[(rounds_df.game_round_key == r) & (rounds_df.score > 0), 'player_id']

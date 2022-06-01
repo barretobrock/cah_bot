@@ -15,6 +15,11 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.1.2] - 2022-06-01
+#### Fixed
+ - Streak determination was causing a failure when `end-game` was called for a game that had no completed rounds
+ - New game form, due to that error above, was not rendering new game button, as the game object wasn't entirely removed. It will now show if the game object still exists, but is in the `ENDED` status.
+ 
 ### [2.1.1] - 2022-05-31
 #### Fixed
  - Form addresses that ended up not being used, but were causing mass selections and errors when players made selections from the form

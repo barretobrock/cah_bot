@@ -33,7 +33,7 @@ class Forms:
         """Generates and sends a main menu"""
         self.log.debug(f'Received menu command from {user} in {channel}. Building menu.')
         button_list = []
-        if game_obj is None:
+        if game_obj is None or game_obj.status in [GameStatus.ENDED]:
             # No game started, put the new game button at the beginning.
             button_list.append(
                 BKitB.make_action_button('New Game', value='newgame', action_id='new-game-start',
