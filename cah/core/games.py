@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import time
 from typing import (
     List,
     Optional,
@@ -286,6 +287,8 @@ class Game:
         self.game_round_tbl.message_timestamp = round_msg_ts
         self.game_round_tbl = self.eng.refresh_table_object(self.game_round_tbl)
         # Last, render hands for the players
+        self.log.debug('Waiting 5 seconds before rendering the players\' hands...')
+        time.sleep(5)
         self.log.debug('Rendering player hands and sending them')
         self.handle_render_hands()
 
