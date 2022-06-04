@@ -207,6 +207,19 @@ class CAHBot(Forms):
             formp2 = self.build_new_game_form_p2()
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p2',
                                                 blocks=formp2)
+        elif action_id == 'game-stats':
+            # TODO: Build out game stats
+            #   number of rounds, avg round time, decknukes, caught decknukes,
+            self.st.send_message(channel=channel, message='Game stats is currently in development! '
+                                                          'Check back later.', thread_ts=thread_ts)
+        elif action_id in ['my-stats', 'player-stats']:
+            # TODO: Build out player stats (see my-settings to borrow)
+            self.st.send_message(channel=channel, message='My/Player stats is currently in development! '
+                                                          'Check back later.', thread_ts=thread_ts)
+        elif action_id == 'arparc-player':
+            # TODO: Build out arp/arc of other player
+            self.st.send_message(channel=channel, message='ARPARC player is currently in development! '
+                                                          'Check back later.', thread_ts=thread_ts)
         elif action_id == 'new-game-users':
             self.new_game(deck=self.state_store['deck'], player_hashes=action_dict['selected_users'])
         elif action_id == 'status':

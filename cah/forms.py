@@ -32,34 +32,57 @@ class Forms:
     def build_main_menu(self, game_obj: 'Game', user: str, channel: str):
         """Generates and sends a main menu"""
         self.log.debug(f'Received menu command from {user} in {channel}. Building menu.')
-        button_list = []
-        if game_obj is None or game_obj.status in [GameStatus.ENDED]:
-            # No game started, put the new game button at the beginning.
-            button_list.append(
-                BKitB.make_action_button('New Game', value='newgame', action_id='new-game-start',
-                                         danger_style=False)
-            )
-        button_list += [
+        game_is_ongoing = game_obj is not None and game_obj.status not in [GameStatus.ENDED]
+
+        main_buttons = [
+            BKitB.make_action_button('New Game', value='newgame', action_id='new-game-start', danger_style=False),
+            BKitB.make_action_button('End Game', value='end-game', action_id='end-game', danger_style=True,
+                                     incl_confirm=True, confirm_title='Really end game?',
+                                     confirm_text='Are you sure you want to end the game?', ok_text='Ya',
+                                     deny_text='Na'),
+            BKitB.make_action_button('Close', value='close', action_id='close')
+        ]
+
+        game_info_buttons = [
             BKitB.make_action_button('Status', value='status', action_id='status'),
             BKitB.make_action_button('Scores', value='score', action_id='score'),
-            BKitB.make_action_button('My Settings', value='my-settings', action_id='my-settings'),
+            BKitB.make_action_button('Game Stats', value='game-stats', action_id='game-stats'),
         ]
-        if game_obj is not None and game_obj.status not in [GameStatus.ENDED]:
-            self.log.debug(f'Game is ongoing. status: {game_obj.status} - adding game elements.')
-            button_list += [
-                BKitB.make_action_button('Ping', value='ping', action_id='ping'),
-                BKitB.make_action_button('Add', value='add-player', action_id='add-player'),
-                BKitB.make_action_button('Kick', value='remove-player', action_id='remove-player'),
+
+        game_action_buttons = []
+        if game_is_ongoing:
+            game_action_buttons += [
+                BKitB.make_action_button('Ping Ppl', value='ping', action_id='ping'),
                 BKitB.make_action_button('Modify Question', value='mod-question',
                                          action_id='modify-question-form'),
-                BKitB.make_action_button('End Game', value='end-game', action_id='end-game', danger_style=True,
-                                         incl_confirm=True, confirm_title='Really end game?',
-                                         confirm_text='Are you sure you want to end the game?', ok_text='Ya',
-                                         deny_text='Na')
             ]
+
+        player_info_buttons = [
+            BKitB.make_action_button('My Stats', value='my-stats', action_id='my-stats'),
+            BKitB.make_action_button('Player Stats', value='player-stats', action_id='player-stats'),
+        ]
+
+        player_action_buttons = [
+            BKitB.make_action_button('My Settings', value='my-settings', action_id='my-settings'),
+            BKitB.make_action_button('ARP/ARC Player', value='arparc-player', action_id='arparc-player'),
+            BKitB.make_action_button('Add Player', value='add-player', action_id='add-player'),
+            BKitB.make_action_button('Kick Player', value='remove-player', action_id='remove-player',
+                                     incl_confirm=True, confirm_title='Really kick someone off the game??',
+                                     confirm_text='Are you sure you want to kick someone out of the game?',
+                                     ok_text='Ya', deny_text='Na'),
+        ]
+
         blocks = [
             BKitB.make_header('CAH Main Menu'),
-            BKitB.make_action_button_group(button_list)
+            BKitB.make_action_button_group(main_buttons),
+            BKitB.make_block_section('*Game Info*'),
+            BKitB.make_action_button_group(game_info_buttons),
+            BKitB.make_block_section('*Game Actions*'),
+            BKitB.make_action_button_group(game_action_buttons),
+            BKitB.make_block_section('*Player Info*'),
+            BKitB.make_action_button_group(player_info_buttons),
+            BKitB.make_block_section('*Player Actions*'),
+            BKitB.make_action_button_group(player_action_buttons),
         ]
         self.log.debug('Sending menu form as private channel message.')
         self.st.private_channel_message(user_id=user, channel=channel,
