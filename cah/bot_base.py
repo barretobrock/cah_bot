@@ -360,9 +360,26 @@ class CAHBot(Forms):
         return Deck(name=deck.name, eng=self.eng)
 
     def _toggle_bool_setting(self, setting: SettingType):
-        old_val = self.eng.get_setting(setting)
-        new_val = not old_val
-        self.eng.set_setting(setting, setting_val=new_val)
+        # Map of setting attribute names to their toggle methods
+        setting_map = {
+            setting.IS_PING_JUDGE: {'method': 'toggle_judge_ping', 'attr': 'is_ping_judge'},
+            setting.IS_PING_WINNER: {'method': 'toggle_winner_ping', 'attr': 'is_ping_winner'},
+        }
+        if self.current_game is not None:
+            self.log.debug('Toggling setting inside of active game.')
+            if setting in setting_map.keys():
+                method = setting_map[setting]['method']
+                attr = setting_map[setting]['attr']
+                getattr(self.current_game, method)()
+                new_val = getattr(self.current_game, attr)
+            else:
+                self.log.error(f'Unable to find setting ({setting}) in setting map. Returning None')
+                return None
+        else:
+            self.log.debug(f'Toggling setting ({setting}) outside of game...')
+            old_val = self.eng.get_setting(setting)
+            new_val = not old_val
+            self.eng.set_setting(setting, setting_val=new_val)
         self.st.message_main_channel(f'`{setting.name}` set to: `{new_val}`')
 
     def toggle_judge_ping(self):
