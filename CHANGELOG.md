@@ -15,6 +15,13 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.1.3] - 2022-06-03
+#### Added
+ - GH-6: Improve main menu structure
+#### Fixed
+ - #2 - Player picks showing up before prompt
+ - #8 - Toggling judge ping not picked up in game
+ 
 ### [2.1.2] - 2022-06-01
 #### Fixed
  - Streak determination was causing a failure when `end-game` was called for a game that had no completed rounds
