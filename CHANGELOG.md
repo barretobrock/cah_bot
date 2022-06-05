@@ -15,6 +15,10 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.1.5] - 2022-06-04
+#### Added
+ - [GH-7](../../issues/7) - Ping command pings judge when in right status
+ 
 ### [2.1.4] - 2022-06-04
 #### Fixed
  - [GH-9](../../issues/9) - Inconsistencies when restarting cah instance with a live game
