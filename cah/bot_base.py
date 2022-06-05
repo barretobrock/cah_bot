@@ -325,7 +325,7 @@ class CAHBot(Forms):
                                  parent_log=self.log)
         # Get order of judges
         self.log.debug('Getting judge order')
-        response_list.append(self.current_game.get_judge_order())
+        response_list.append(f'Judge order: {self.current_game.get_judge_order()}')
         # Kick off the new round, message details to the group
         self.log.debug('Beginning new round')
         self.new_round(notifications=response_list)
@@ -524,7 +524,7 @@ class CAHBot(Forms):
                 join(TableGame, TableGame.deck_key == TableDeck.deck_id).filter(
                 TableGame.game_id == game_id
             ).one_or_none()
-            deck = Deck(tbl_deck.name, eng=self.eng)
+            deck = Deck(tbl_deck.name, eng=self.eng, game_id=game_id)
             # Build list of players who played last
             players = session.query(TablePlayer). \
                 join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
@@ -827,8 +827,7 @@ class CAHBot(Forms):
                            f':stack-of-cards: *Deck*: `{self.current_game.deck.name}` - ' \
                            f'`{len(self.current_game.deck.questions_card_list)}` question & ' \
                            f'`{len(self.current_game.deck.answers_card_list)}` answer cards remain\n' \
-                           f':conga_parrot: *Player Order*: ' \
-                           f'{" ".join(self.current_game.players.get_player_names(monospace=True))}'
+                           f':conga_parrot: *Judge Order*: {self.current_game.get_judge_order()}'
 
             status_block += [
                 BKitB.make_context_section([

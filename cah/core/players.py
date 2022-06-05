@@ -331,6 +331,9 @@ class Player:
 
 class Players:
     """Methods for handling all players"""
+    judge_order: List[str]
+    player_dict = Dict[str, Player]
+
     def __init__(self, player_hash_list: List[str], slack_api: SlackTools, eng: WizzyPSQLClient,
                  parent_log: logger, is_existing: bool = False):
         """
@@ -344,7 +347,7 @@ class Players:
         self.eng = eng
         self.player_dict = {
             k: Player(k, eng=eng, log=self.log) for k in player_hash_list
-        }  # type: Dict[str, Player]
+        }
 
         if not is_existing:
             self.log.debug('Shuffling players and setting judge order')
@@ -356,8 +359,19 @@ class Players:
 
     def reinstate_round_players(self, game_id: int, game_round_id: int):
         """Handles the player side of reinstating the game / round"""
+        # Get all players for the round who have already picked
+        with self.eng.session_mgr() as session:
+            result = session.query(TablePlayerRound.player_key).\
+                join(TablePlayer, TablePlayerRound.player_key == TablePlayer.player_id).\
+                filter(and_(
+                    TablePlayerRound.game_round_key == game_round_id,
+                    TablePlayerRound.is_picked
+                )).all()
+            already_picked_players = [x.player_key for x in result]
         # For each participating player, load the game id and game round id
         for uid, player in self.player_dict.items():
+            if player.player_table_id in already_picked_players:
+                self.player_dict[uid]._is_picked = True
             self.player_dict[uid].game_id = game_id
             self.player_dict[uid].game_round_id = game_round_id
 
@@ -413,6 +427,7 @@ class Players:
         player.start_round(game_id=game_id, game_round_id=game_round_id)
         self.player_dict[player_hash] = player
         self.judge_order.append(player_hash)
+        self.eng.set_setting(SettingType.JUDGE_ORDER, setting_val=','.join(self.judge_order))
         self.log.debug(f'Player with name "{player.display_name}" added to game...')
         return f'*`{player.display_name}`* successfully added to game...'
 
@@ -425,6 +440,7 @@ class Players:
         player = self.player_dict.pop(player_hash)
         # Remove from judge order
         _ = self.judge_order.pop(self.judge_order.index(player_hash))
+        self.eng.set_setting(SettingType.JUDGE_ORDER, setting_val=','.join(self.judge_order))
 
         return f'*`{player.display_name}`* successfully removed from game...'
 

@@ -72,7 +72,7 @@ class Game:
                  parent_log: logger, game_id: int = None):
         self.st = st
         self.eng = eng
-        self.judge_order_divider = ':shiny_arrow:'
+        self.judge_order_divider = self.eng.get_setting(SettingType.JUDGE_ORDER_DIVIDER)
         self.log = parent_log.bind(child_name=self.__class__.__name__)
         self.gq = GameQueries(eng=eng, log=self.log)
         self.log.debug(f'Building out new game with deck: {deck.name}...')
@@ -185,9 +185,8 @@ class Game:
 
     def get_judge_order(self) -> str:
         """Determines order of judges """
-        active_players = self.eng.get_active_players()
-        order = f' {self.judge_order_divider} '.join([f'`{x.display_name}`' for x in active_players])
-        return f'Judge order: {order}'
+        return f' {self.judge_order_divider} '.join([f'`{self.players.player_dict[x].display_name}`'
+                                                     for x in self.players.judge_order])
 
     def reinstate_round(self):
         """Reinstates an existing round after a reboot"""
