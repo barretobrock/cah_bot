@@ -15,12 +15,16 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.1.4] - 2022-06-04
+#### Fixed
+ - [GH-9](barretobrock/cah_bot/issues/9) - Inconsistencies when restarting cah instance with a live game
+ 
 ### [2.1.3] - 2022-06-03
 #### Added
- - GH-6: Improve main menu structure
+ - [GH-6](../../issues/6) - Improve main menu structure
 #### Fixed
- - #2 - Player picks showing up before prompt
- - #8 - Toggling judge ping not picked up in game
+ - [GH-2](../../issues/2) - Player picks showing up before prompt
+ - [GH-8](../../issues/8) - Toggling judge ping not picked up in game
  
 ### [2.1.2] - 2022-06-01
 #### Fixed
