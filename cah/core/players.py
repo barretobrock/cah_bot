@@ -53,7 +53,7 @@ class Player:
         self._is_nuked_hand = False
         self._is_nuked_hand_caught = False
         self._is_picked = False
-        self._choice_order = None  # type: Optional[int]
+        self._choice_order = player_table.choice_order  # type: Optional[int]
 
         self.game_id = None
         self.game_round_id = None
@@ -359,21 +359,17 @@ class Players:
 
     def reinstate_round_players(self, game_id: int, game_round_id: int):
         """Handles the player side of reinstating the game / round"""
-        # Get all players for the round who have already picked
-        with self.eng.session_mgr() as session:
-            result = session.query(TablePlayerRound.player_key).\
-                join(TablePlayer, TablePlayerRound.player_key == TablePlayer.player_id).\
-                filter(and_(
-                    TablePlayerRound.game_round_key == game_round_id,
-                    TablePlayerRound.is_picked
-                )).all()
-            already_picked_players = [x.player_key for x in result]
         # For each participating player, load the game id and game round id
         for uid, player in self.player_dict.items():
-            if player.player_table_id in already_picked_players:
-                self.player_dict[uid]._is_picked = True
-            self.player_dict[uid].game_id = game_id
-            self.player_dict[uid].game_round_id = game_round_id
+            player.game_id = game_id
+            player.game_round_id = game_round_id
+            # Populate the player's object with info from the round table
+            player_round_tbl: TablePlayerRound
+            player_round_tbl = player._get_playerround_tbl()
+            player._is_judge = player_round_tbl.is_judge
+            player._is_nuked_hand = player_round_tbl.is_nuked_hand
+            player._is_nuked_hand_caught = player_round_tbl.is_nuked_hand_caught
+            player._is_picked = player_round_tbl.is_picked
 
     def get_player_hashes(self) -> List[str]:
         """Collect user ids from a list of players"""

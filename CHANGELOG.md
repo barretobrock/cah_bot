@@ -17,7 +17,8 @@ __BEGIN-CHANGELOG__
  
 ### [2.1.4] - 2022-06-04
 #### Fixed
- - [GH-9](barretobrock/cah_bot/issues/9) - Inconsistencies when restarting cah instance with a live game
+ - [GH-9](../../issues/9) - Inconsistencies when restarting cah instance with a live game
+ - Ensure other player round attributes are restored (nuked hands, picks)
  
 ### [2.1.3] - 2022-06-03
 #### Added
