@@ -569,13 +569,16 @@ class Game:
             self.log.debug('Pick assignment unsuccessful. Other reason.')
             return 'Pick not registered.'
 
-    def players_left_to_pick(self) -> List[str]:
+    def players_left_to_pick(self, as_name: bool = True) -> List[str]:
         """Returns a list of the players that have yet to pick a card"""
         self.log.debug('Determining players remaining to pick')
         remaining = []
         for p_hash, p_obj in self.players.player_dict.items():
             if not p_obj.is_picked and p_hash != self.judge.player_hash:
-                remaining.append(p_obj.display_name)
+                if as_name:
+                    remaining.append(p_obj.display_name)
+                else:
+                    remaining.append(p_hash)
         return remaining
 
     def toggle_judge_ping(self):

@@ -99,6 +99,28 @@ class TestCAHBot(TestCase):
         self.assertEqual(3, len(resp))
         self.mock_eng.session_mgr.assert_called()
 
+    def test_ping(self):
+        # In-game ping
+        self.mock_game.judge.player_hash = 'XXXX'
+        # ... During JUDGE_DECISION
+        self.mock_game.status = GameStatus.JUDGE_DECISION
+        self.cahbot.current_game = self.mock_game
+        resp = self.cahbot.ping_players_left_to_pick()
+        self.assertEqual('Hey <@XXXX> time to wake up and do your CAHvic doodie', resp)
+
+        # ... During PLAYER_DECISION
+        self.mock_game.status = GameStatus.PLAYER_DECISION
+        self.mock_game.players_left_to_pick.return_value = ['YYYY', 'ZZZZ']
+        self.cahbot.current_game = self.mock_game
+        resp = self.cahbot.ping_players_left_to_pick()
+        self.assertEqual('Hey <@YYYY> and <@ZZZZ> - get out there and make pickles! '
+                         ':pickle-sword::pickle-sword::pickle-sword:', resp)
+
+        # Pinging when no game exists
+        self.cahbot.current_game = None
+        resp = self.cahbot.ping_players_left_to_pick()
+        self.assertEqual('I can\'t really do this outside of a game WHAT DO YOU WANT FROM ME?!?!?!?!??!', resp)
+
 
 if __name__ == '__main__':
     main()

@@ -273,14 +273,8 @@ class CAHBot(Forms):
             if score_block is not None:
                 self.st.send_message(channel=channel, message='Scores', blocks=score_block)
         elif action_id == 'ping':
-            if self.current_game is not None:
-                if self.current_game.status == GameStatus.PLAYER_DECISION:
-                    ping_txt = self.ping_players_left_to_pick()
-                elif self.current_game.status == GameStatus.JUDGE_DECISION:
-                    ping_txt = f'Hey <@{self.current_game.judge.player_hash}> time to do your doodie'
-                else:
-                    ping_txt = 'Wrong status for a ping, bucko.'
-                self.st.send_message(channel=channel, message=ping_txt)
+            ping_txt = self.ping_players_left_to_pick()
+            self.st.send_message(channel=channel, message=ping_txt)
         elif action_id == 'end-game':
             self.end_game()
         else:
@@ -748,15 +742,18 @@ class CAHBot(Forms):
         """Generates a string to tag any players that have yet to pick"""
         if self.current_game is None:
             return 'I can\'t really do this outside of a game WHAT DO YOU WANT FROM ME?!?!?!?!??!'
-        self.log.debug('Determining players that haven\'t yet picked for pinging...')
-        remaining = []
-        for p_hash, p_obj in self.current_game.players.player_dict.items():
-            if not p_obj.is_picked and p_hash != self.current_game.judge.player_hash:
-                remaining.append(p_hash)
-        if len(remaining) > 0:
-            tagged = ' and '.join([f'<@{x}>' for x in remaining])
-            return f'Hey {tagged} - get out there and make pickles! :pickle-sword::pickle-sword::pickle-sword:'
-        return 'Looks like everyone\'s made picks?'
+        elif self.current_game.status == GameStatus.PLAYER_DECISION:
+            self.log.debug('Determining players that haven\'t yet picked for pinging...')
+            remaining = self.current_game.players_left_to_pick(as_name=False)
+            if len(remaining) > 0:
+                tagged = ' and '.join([f'<@{x}>' for x in remaining])
+                return f'Hey {tagged} - get out there and make pickles! :pickle-sword::pickle-sword::pickle-sword:'
+        elif self.current_game.status == GameStatus.JUDGE_DECISION:
+            self.log.debug('Pinging judge to make a choice')
+            return f'Hey <@{self.current_game.judge.player_hash}> time to wake up and do your CAHvic doodie'
+        else:
+            self.log.debug(f'Status wasn\'t right for pinging: {self.current_game.status}.')
+            return 'IDK - looks like the wrong status for a ping, bucko.'
 
     @staticmethod
     def _generate_avi_context_section(players: List['Player'], pretext: str):
