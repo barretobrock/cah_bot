@@ -146,10 +146,20 @@ class PlayerQueries:
     def set_nuke_cards(self, player_id: int):
         """Marks all the cards in the hand as 'nuked' for a player who had chosen to 'decknuke' their cards"""
         with self.eng.session_mgr() as session:
+            self.log.debug('Flagging player\'s hand as nuked')
             session.query(TablePlayerHand).filter(and_(
                 TablePlayerHand.player_key == player_id,
             )).update({
                 TablePlayerHand.is_nuked: True
+            })
+            self.log.debug('Pulling player\'s card ids')
+            player_cards = session.query(TablePlayerHand).filter(and_(
+                TablePlayerHand.player_key == player_id
+            )).all()
+            card_ids = [x.answer_card_key for x in player_cards]
+            self.log.debug(f'Incrementing count on {len(card_ids)} cards for times nuked.')
+            session.query(TableAnswerCard).filter(TableAnswerCard.answer_card_id.in_(card_ids)).update({
+                TableAnswerCard.times_burned: TableAnswerCard.times_burned + 1
             })
 
     def set_cards_in_hand(self, player_id: int, cards: List[TableAnswerCard]):
