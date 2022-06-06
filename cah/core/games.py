@@ -425,6 +425,8 @@ class Game:
         # Handle the announcement of winner and distribution of points
         self.st.message_main_channel(blocks=self.winner_selection())
         self.status = GameStatus.END_ROUND
+        self.log.debug('Waiting 5 seconds before rendering the next round\'s hands...')
+        time.sleep(5)
         # Start new round
         self.new_round()
 
