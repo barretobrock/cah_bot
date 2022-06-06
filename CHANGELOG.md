@@ -15,6 +15,11 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.1.6] - 2022-06-06
+#### Fixed
+- [GH-10](../../issues/10) - Decknukes not logged in `answer_card` table
+- [GH-11](../../issues/11) - Messages are out of order
+ 
 ### [2.1.5] - 2022-06-04
 #### Added
  - [GH-7](../../issues/7) - Ping command pings judge when in right status
