@@ -70,7 +70,7 @@ class GameQueries:
                 'card_text': pick.card_text,
                 'card_order': pick.card_order
             }
-            if pick.slack_user_hash in pick_dict.keys():
+            if pick.slack_user_hash in player_picks.keys():
                 # Add another pick to the dictionary
                 player_picks[pick.slack_user_hash].append(pick_dict)
             else:
