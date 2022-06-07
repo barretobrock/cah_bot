@@ -15,6 +15,10 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.1.7] - 2022-06-06
+#### Added
+- [GH-12](../../issues/12) - Format dates so they appear in the right timezones for users
+ 
 ### [2.1.6] - 2022-06-06
 #### Fixed
 - [GH-10](../../issues/10) - Decknukes not logged in `answer_card` table
