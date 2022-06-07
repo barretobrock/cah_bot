@@ -103,9 +103,14 @@ class CAHBot(Forms):
                 self.reinstate_game(game_id=last_game.game_id)
 
     def get_bootup_msg(self) -> List[Dict]:
+        now = datetime.now()
+        update_dtt = datetime.strptime(self.update_date, '%Y-%m-%d_%H:%M:%S')
         return [BKitB.make_context_section([
-            BKitB.markdown_section(f"*{self.bot_name}* *`{self.version}`* booted up at `{datetime.now():%F %T}`!"),
-            BKitB.markdown_section(f"(updated {self.update_date})")
+            BKitB.markdown_section(f"*{self.bot_name}* *`{self.version}`* booted up "
+                                   f"*`<!date^{int(round(now.timestamp()))}^{{date_short_pretty}} at "
+                                   f"{{time_secs}}|{now.astimezone():%F %T %Z}>`*"),
+            BKitB.markdown_section(f"(updated `<!date^{int(round(update_dtt.timestamp()))}^"
+                                   f"{{date_short_pretty}} at {{time_secs}}|{now.astimezone():%F %T %Z}>`)")
         ])]
 
     def search_help_block(self, message: str):
