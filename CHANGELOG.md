@@ -15,6 +15,10 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.1.8] - 2022-06-07
+#### Fixed
+- [GH-13](../../issues/13) - Multicard picks not rendering properly
+ 
 ### [2.1.7] - 2022-06-06
 #### Added
 - [GH-12](../../issues/12) - Format dates so they appear in the right timezones for users
