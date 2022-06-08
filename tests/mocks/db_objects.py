@@ -94,6 +94,7 @@ def mock_get_rounds_df(n_rounds: int = 10, n_players: int = 10) -> pd.DataFrame:
                 'player_id': p,
                 'game_round_key': i,
                 'is_judge': player_ids[judge_pos] == p,
+                'is_nuked_hand_caught': False,
                 'score': 0
             })
 

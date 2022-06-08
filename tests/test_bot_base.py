@@ -65,7 +65,7 @@ class TestCAHBot(TestCase):
         elif select_cols == ['player_id', 'display_name', 'prev']:
             # Getting the previous round's score
             return self.mock_previous_score.copy()
-        elif select_cols == ['player_id', 'game_round_key', 'is_judge', 'score']:
+        elif select_cols == ['player_id', 'game_round_key', 'is_judge', 'is_nuked_hand_caught', 'score']:
             # Getting the table of rounds for the game
             return mock_get_rounds_df(n_rounds=10, n_players=8)
         else:
