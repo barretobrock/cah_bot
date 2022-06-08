@@ -15,6 +15,11 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.1.9] - 2022-06-08
+#### Fixed
+ - [GH-14](../../issues/14) - Error on rendering scores after caught decknuke
+ - [GH-17](../../issues/17) - Player's choice order not being emptied for judges
+
 ### [2.1.8] - 2022-06-07
 #### Fixed
 - [GH-13](../../issues/13) - Multicard picks not rendering properly
