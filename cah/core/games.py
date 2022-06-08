@@ -285,6 +285,13 @@ class Game:
                                             ret_ts=True, blocks=msg_block)
         self.game_round_tbl.message_timestamp = round_msg_ts
         self.game_round_tbl = self.eng.refresh_table_object(self.game_round_tbl)
+
+        self.log.debug('Wiping all data for choice_order')
+        with self.eng.session_mgr() as session:
+            session.query(TablePlayer).update({
+                TablePlayer.choice_order: None
+            })
+
         # Last, render hands for the players
         self.log.debug('Waiting 5 seconds before rendering the players\' hands...')
         time.sleep(5)

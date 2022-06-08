@@ -486,6 +486,7 @@ class Judge(Player):
         self.selected_choice_idx = None  # type: Optional[int]
         self.winner_id = None    # type: Optional[int]
         self.winner_hash = None  # type: Optional[str]
+        self._choice_order = None
 
     def get_winner_from_choice_order(self):
         """Obtains winner's player id from the choice"""
