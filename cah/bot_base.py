@@ -660,6 +660,7 @@ class CAHBot(Forms):
                 TablePlayer.player_id,
                 TablePlayerRound.game_round_key,
                 TablePlayerRound.is_judge,
+                TablePlayerRound.is_nuked_hand_caught,
                 TablePlayerRound.score
             ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
                 TablePlayerRound.game_key == self.current_game.game_id
@@ -673,6 +674,11 @@ class CAHBot(Forms):
             return streaker_id, n_streak
         for r in range(self.current_game.game_round_id - 1, rounds_df.game_round_key.min() - 1, -1):
             self.log.debug(f'Working round {r}...')
+            # Determine if round had a caught nuke
+            caught_nukes_df = rounds_df.loc[(rounds_df.game_round_key == r) & rounds_df.is_nuked_hand_caught, :]
+            if not caught_nukes_df.empty:
+                self.log.debug(f'Stopping at round {r} - detected caught decknuke')
+                break
             winner = rounds_df.loc[(rounds_df.game_round_key == r) & (rounds_df.score > 0), 'player_id']
             if winner.empty:
                 self.log.debug('Result: No winner was found (empty result)')
@@ -688,7 +694,6 @@ class CAHBot(Forms):
                 self.log.debug('Winner was not the same. Checking if judge.')
                 res = rounds_df.loc[(rounds_df.game_round_key == r) &
                                     (rounds_df.player_id == streaker_id), 'score']
-                print(f'Item: {res.item()}')
                 if pd.isna(res.item()):
                     # They were the judge. Continue, as they might have scored in the round
                     # before to preserve their streak
