@@ -818,7 +818,7 @@ class CAHBot(Forms):
 
             if hide_identities:
                 arp_section = f'{icon} *ARP*: {len(arpers)}'
-                arc_section = f'{icon} *ARP*: {len(arcers)}'
+                arc_section = f'{icon} *ARC*: {len(arcers)}'
             else:
                 # Players that have auto randpick enabled
                 arp_section = self._generate_avi_context_section(arpers, f'{icon} *ARP*: ')
