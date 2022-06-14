@@ -438,7 +438,7 @@ class CAHBot(Forms):
                 if all([self.current_game.status == GameStatus.PLAYER_DECISION,
                         player.player_hash != self.current_game.judge.player_hash,
                         player.is_arp,
-                        player.hand.pick.is_empty()]):
+                        player.is_picked]):
                     # randpick for the player immediately if:
                     #   - game active
                     #   - players' decision status
