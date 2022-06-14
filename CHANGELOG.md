@@ -15,6 +15,11 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.1.10] - 2022-06-14
+#### Fixed
+ - [GH-20](../../issues/20) - Toggle ARP/ARC errors out
+ - [GH-21](../../issues/21) - Fix incorrect text in `display_status`
+ 
 ### [2.1.9] - 2022-06-08
 #### Fixed
  - [GH-14](../../issues/14) - Error on rendering scores after caught decknuke
