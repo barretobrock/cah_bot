@@ -15,6 +15,10 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.1.11] - 2022-06-15
+#### Fixed
+ - [GH-22](../../issues/22) - Rank change not always showing up
+ 
 ### [2.1.10] - 2022-06-14
 #### Fixed
  - [GH-20](../../issues/20) - Toggle ARP/ARC errors out
