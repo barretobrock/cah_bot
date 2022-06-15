@@ -37,6 +37,7 @@ from cah.core.games import (
     Game,
     GameStatus
 )
+from cah.core.bot_queries import BotQueries
 from cah.core.deck import Deck
 from cah.core.common_methods import refresh_players_in_channel
 if TYPE_CHECKING:
@@ -78,6 +79,7 @@ class CAHBot(Forms):
 
         # More game environment-specific initialization stuff
         self.current_game = None        # type: Optional[Game]
+        self.bq = BotQueries(eng=eng, log=self.log)
 
         if self.eng.get_setting(SettingType.IS_ANNOUNCE_STARTUP):
             self.log.debug('IS_ANNOUNCE_STARTUP was enabled, so sending message to main channel')
@@ -603,53 +605,39 @@ class CAHBot(Forms):
         """Queries db for players' scores"""
         # Get overall score
         is_current_game = in_game and self.current_game is not None
-        with self.eng.session_mgr() as session:
-            # Get overall score first
-            overall = session.query(
-                TablePlayer.player_id,
-                TablePlayer.display_name,
-                func.sum(TablePlayerRound.score).label('overall')
-            ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
-                TablePlayer.is_active
-            ).group_by(TablePlayer.player_id).all()
-            score_df = pd.DataFrame(overall)
+        score_df = self.bq.get_overall_score()
 
-            if is_current_game:
-                current = session.query(
-                    TablePlayer.player_id,
-                    TablePlayer.display_name,
-                    func.sum(TablePlayerRound.score).label('current'),
-                ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
-                    TablePlayerRound.game_key == self.current_game.game_id
-                ).group_by(TablePlayer.player_id).all()
-                current_df = pd.DataFrame(current)
-                score_df = score_df.merge(current_df, on=['player_id', 'display_name'], how='left')
+        if is_current_game:
+            current_df = self.bq.get_current_game_score(game_id=self.current_game.game_id)
+            score_df = score_df.merge(current_df, on=['player_id', 'display_name'], how='left')
 
-                # Determine rank trajectory
-                self.log.debug('Determining rank and trajectory...')
-                prev_round = session.query(
-                    TablePlayer.player_id,
-                    TablePlayer.display_name,
-                    func.sum(TablePlayerRound.score).label('prev'),
-                ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
-                    TablePlayerRound.game_key == self.current_game.game_id,
-                    TablePlayerRound.game_round_key < self.current_game.game_round_id - 1
-                ).group_by(TablePlayer.player_id).all()
-                prev_round_df = pd.DataFrame(prev_round)
-                if prev_round_df.empty:
-                    score_df['prev'] = score_df['current']
-                else:
-                    score_df = score_df.merge(prev_round_df, on=['player_id', 'display_name'], how='left')
-                for stage in ['current', 'prev']:
-                    score_df[f'{stage}_rank'] = score_df[[stage, 'overall']].apply(tuple, axis=1).\
-                        rank(ascending=False, method='first')
-                score_df['rank_chg'] = score_df['prev_rank'] - score_df['current_rank']
-                score_df['rank_chg_emoji'] = score_df['rank_chg'].apply(
-                    lambda x: ':green-triangle-up:' if x > 0 else ':red-triangle-down:' if x < 0 else ':blank:')
+            # Determine rank trajectory
+            self.log.debug('Determining rank and trajectory...')
+            prev_round_df = self.bq.get_game_score_at_round(game_id=self.current_game.game_id,
+                                                            game_round_id=self.current_game.game_round_id - 1)
+            if prev_round_df.empty:
+                score_df['prev'] = score_df['current']
             else:
-                score_df['rank_chg_emoji'] = ':blank:'
-                score_df['current'] = 0
-                score_df['current_rank'] = score_df['overall'].rank(ascending=False, method='first')
+                score_df = score_df.merge(prev_round_df, on=['player_id', 'display_name'], how='left')
+
+            prev_round_overall_df = self.bq.get_overall_score_at_round(
+                game_round_id=self.current_game.game_round_id - 1, col_name='overall_prev')
+            if prev_round_overall_df.empty:
+                score_df['overall_prev'] = score_df['prev']
+            else:
+                score_df = score_df.merge(prev_round_overall_df, on=['player_id', 'display_name'], how='left')
+            score_df['overall_current'] = score_df['overall']
+
+            for stage in ['current', 'prev']:
+                score_df[f'{stage}_rank'] = score_df[[stage, f'overall_{stage}']].apply(tuple, axis=1).\
+                    rank(ascending=False, method='first')
+            score_df['rank_chg'] = score_df['prev_rank'] - score_df['current_rank']
+            score_df['rank_chg_emoji'] = score_df['rank_chg'].apply(
+                lambda x: ':green-triangle-up:' if x > 0 else ':red-triangle-down:' if x < 0 else ':blank:')
+        else:
+            score_df['rank_chg_emoji'] = ':blank:'
+            score_df['current'] = 0
+            score_df['current_rank'] = score_df['overall'].rank(ascending=False, method='first')
 
         return score_df
 
