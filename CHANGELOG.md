@@ -15,6 +15,10 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.1.12] - 2022-06-16
+#### Changed
+- [GH-23](../../issues/23) - Combine queries in `display_points`
+ 
 ### [2.1.11] - 2022-06-15
 #### Fixed
  - [GH-22](../../issues/22) - Rank change not always showing up
