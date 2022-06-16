@@ -608,26 +608,12 @@ class CAHBot(Forms):
         score_df = self.bq.get_overall_score()
 
         if is_current_game:
-            current_df = self.bq.get_current_game_score(game_id=self.current_game.game_id)
+            current_df = self.bq.get_score_data_for_display_points(game_id=self.current_game.game_id,
+                                                                   game_round_id=self.current_game.game_round_id)
             score_df = score_df.merge(current_df, on=['player_id', 'display_name'], how='left')
 
             # Determine rank trajectory
             self.log.debug('Determining rank and trajectory...')
-            prev_round_df = self.bq.get_game_score_at_round(game_id=self.current_game.game_id,
-                                                            game_round_id=self.current_game.game_round_id - 1)
-            if prev_round_df.empty:
-                score_df['prev'] = score_df['current']
-            else:
-                score_df = score_df.merge(prev_round_df, on=['player_id', 'display_name'], how='left')
-
-            prev_round_overall_df = self.bq.get_overall_score_at_round(
-                game_round_id=self.current_game.game_round_id - 1, col_name='overall_prev')
-            if prev_round_overall_df.empty:
-                score_df['overall_prev'] = score_df['prev']
-            else:
-                score_df = score_df.merge(prev_round_overall_df, on=['player_id', 'display_name'], how='left')
-            score_df['overall_current'] = score_df['overall']
-
             for stage in ['current', 'prev']:
                 score_df[f'{stage}_rank'] = score_df[[stage, f'overall_{stage}']].apply(tuple, axis=1).\
                     rank(ascending=False, method='first')
@@ -643,17 +629,7 @@ class CAHBot(Forms):
 
     def determine_streak(self) -> Tuple[Optional[int], int]:
         self.log.debug('Determining if there\'s currently a streak')
-        with self.eng.session_mgr() as session:
-            all_rounds = session.query(
-                TablePlayer.player_id,
-                TablePlayerRound.game_round_key,
-                TablePlayerRound.is_judge,
-                TablePlayerRound.is_nuked_hand_caught,
-                TablePlayerRound.score
-            ).join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
-                TablePlayerRound.game_key == self.current_game.game_id
-            ).all()
-            rounds_df = pd.DataFrame(all_rounds)
+        rounds_df = self.bq.get_player_rounds_in_game(game_id=self.current_game.game_id)
         self.log.debug(f'Pulled {rounds_df.shape[0]} rows of data for current game.')
         # Get previous round, determine who won
         n_streak = 0
@@ -722,10 +698,10 @@ class CAHBot(Forms):
 
         scores_list = []
         for i, r in score_df.iterrows():
-            dname = f"{r['display_name'][:10].title():_<15}"
+            dname = f"{r['display_name'][:14].title():_<15}"
             emos = f"{r['rank_chg_emoji'] + r['rank_emoji']}"
             c_rank = f"{r['current_rank']:>2.0f}"
-            scores = f"*`{r['current']:>4}`*`({r['overall']:>4})`"
+            scores = f"*`{r['current']:>4.0f}`*`({r['overall']:>4.0f})`"
             streak = f"{r['streak']}"
             line = f"{emos}*`{c_rank}`*` {dname}`:diddlecoin:{scores}{streak}"
             scores_list.append(line)
