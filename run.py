@@ -1,14 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os
-os.environ['CAH_ENV'] = "PRODUCTION"
-from cah.app import app
-
-
-@app.route('/')
-def index():
-    return 'CAH'
-
+from cah.app import create_app
+from cah.settings.config import Production
 
 if __name__ == '__main__':
-    app.run(port=5004)
+    app = create_app(config_class=Production)
+    app.run(port=Production.PORT)

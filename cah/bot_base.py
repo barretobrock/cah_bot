@@ -123,15 +123,15 @@ class CAHBot(Forms):
 
     def get_bootup_msg(self) -> BlocksType:
         now = datetime.now()
-        bootup_time_txt = f"{DateFormatType.date_short_pretty} at {DateFormatType.time_secs}"
+        bootup_time_txt = f"{DateFormatType.date_short_pretty.value} at {DateFormatType.time_secs.value}"
         formatted_bootup_date = DateFormatter.localize_dates(now, bootup_time_txt)
 
         update_dtt = datetime.strptime(self.update_date, '%Y-%m-%d_%H:%M:%S')
-        update_time_txt = f"{DateFormatType.date_short_pretty} at {DateFormatType.time_secs}"
+        update_time_txt = f"{DateFormatType.date_short_pretty.value} at {DateFormatType.time_secs.value}"
         formatted_update_date = DateFormatter.localize_dates(update_dtt, update_time_txt)
         return [
             MarkdownContextBlock([
-                f"*{self.bot_name}* *`{self.version}`* booted up *`{formatted_bootup_date}`*",
+                f"*{self.bot_name}* *`{self.version}`* booted up {formatted_bootup_date}",
                 f"(updated `{formatted_update_date}`)"
             ])
         ]

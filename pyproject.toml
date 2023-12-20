@@ -27,6 +27,7 @@ psycopg2 = "^2"
 pykeepass = "^4"
 requests = "^2"
 slack_bolt = "^1"
+werkzeug = "^3"
 # Optional dependencies would go down here
 # example = { version = ">=1.7.0", optional = true }
 

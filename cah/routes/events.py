@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING
 
 from flask import (
     Blueprint,
+    current_app,
     request,
 )
 from slack_bolt import App
@@ -12,24 +13,30 @@ from cah.routes.helpers import (
     get_app_logger,
     get_wizzy_eng,
 )
+from cah.settings import Development
 
 if TYPE_CHECKING:
     from cah.model import TablePlayer
 
 bp_events = Blueprint('events', __name__)
 
-bolt_app = App()
-handler = SlackRequestHandler(bolt_app)
+
+Development.load_secrets()
+props = Development.SECRETS
+bolt_app = App(token=props['xoxb-token'], signing_secret=props['signing-secret'], process_before_response=True)
+handler = SlackRequestHandler(app=bolt_app)
 
 
 @bp_events.route('/api/events', methods=['GET', 'POST'])
 def handle_event():
     """Handles a slack event"""
-    return handler.handle(request)
+    return handler.handle(req=request)
 
 
 @bolt_app.event('message')
-def scan_message(event_data):
+def scan_message(ack):
+    ack()
+    event_data = request.json
     get_app_bot().process_event(event_data)
 
 

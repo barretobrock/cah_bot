@@ -15,24 +15,44 @@ sudo dpkg-reconfigure dash
 ```
 
 ## Installation
+
+### Python Script
 ```bash
 cd ~/venvs && python3 -m venv cah_bot
 source ~/venvs/cah_bot/bin/activate
 cd ~/extras && git clone https://github.com/barretobrock/cah_bot.git
-cd cah_bot && sh ppmgr.sh pull
-
+cd cah_bot && make pull
+```
+### Daemon installation
+```bash
 # Add service file to system
 sudo cp cah.service /lib/systemd/system/
 sudo chmod 644 /lib/systemd/system/cah.service
 sudo systemctl daemon-reload
 sudo systemctl enable cah.service
 ```
+### Postgres database setup
+NB! This assumes Postgres 15 is already installed on your server.
+
+Enter postgres with `sudo -u postgres psql`
+```postgresql
+-- Create user
+CREATE USER <user> WITH ENCRYPTED PASSWORD '<pwd>';
+-- Create database & schema
+CREATE DATABASE <db>;
+\c <db>
+CREATE SCHEMA <schema>;
+-- Grant perms to database
+GRANT ALL PRIVILEGES ON DATABASE <db> TO <usr>;
+ALTER DATABASE <db> OWNER TO <usr>;
+-- Grant create, usage to user for public schema for shared values
+GRANT USAGE, CREATE ON SCHEMA public TO <usr>;
+```
 
 ## Upgrade
 ```bash
-python3 -m pip install .
-# or if you're me and want to complicate things for the sake of automation
-sh ppmgr.sh pull
+make update
+make pull
 ```
 
 ## Run
@@ -58,6 +78,8 @@ To update, change the deps in `pyproject.toml`, then run `poetry update` to rebu
 
 ### Testing with responses
 For local testing with Slack responses, get a different terminal window open and initiate `ngrok` in it to test the webhook outside of the live endpoint
+Install `ngrok` via snap with `sudo snap install ngrok`.
+
 ```bash
 ngrok http 5004
 ```

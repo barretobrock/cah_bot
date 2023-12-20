@@ -23,8 +23,8 @@ from slacktools.block_kit.blocks import (
     ButtonSectionBlock,
     DividerBlock,
     MarkdownContextBlock,
+    MarkdownSectionBlock,
     MultiStaticSelectSectionBlock,
-    PlainTextSectionBlock,
 )
 from sqlalchemy.sql import and_
 
@@ -234,7 +234,7 @@ class Game:
             # No more questions, game hath ended
             self.end_game()
             return [
-                PlainTextSectionBlock(f'No more question cards! Game over! {":party-dead:" * 3}')
+                MarkdownSectionBlock(f'No more question cards! Game over! {":party-dead:" * 3}')
             ]
 
         # Scan names in the db vs. in the player object to ensure they're the same
@@ -342,7 +342,7 @@ class Game:
         except OutOfCardsException:
             self.log.debug('Stopping game - ran out of cards!')
             blocks = [
-                PlainTextSectionBlock(f'The people have run out of answer cards! Game over! {":party-dead:" * 3}')
+                MarkdownSectionBlock(f'The people have run out of answer cards! Game over! {":party-dead:" * 3}')
             ]
             self.st.message_main_channel(blocks=blocks)
             self.end_game()
@@ -500,7 +500,7 @@ class Game:
         ]
 
         message_block = [
-            PlainTextSectionBlock(winner_txt_blob),
+            MarkdownSectionBlock(winner_txt_blob),
             DividerBlock()
         ]
         return message_block + last_section
@@ -550,7 +550,7 @@ class Game:
         """Replaces the Block UI form with another message"""
         player = self.players.player_dict[player_hash]
         blk = [
-            PlainTextSectionBlock(f'Your pick(s): {player.render_picks_as_str()}')
+            MarkdownSectionBlock(f'Your pick(s): {player.render_picks_as_str()}')
         ]
         replace_blocks = player.pick_blocks
         for chan, ts in replace_blocks.items():
@@ -739,7 +739,7 @@ class Game:
                 ButtonSectionBlock(pick_txt, f'{num}', value=f'choose-{num}', action_id=f'game-choose-{num}')
             )
             # Make a "public" block that just shows the choices in the channel
-            public_card_blocks.append(PlainTextSectionBlock(pick_txt))
+            public_card_blocks.append(MarkdownSectionBlock(pick_txt))
             randbtn_list.append((f'{num}', f'randchoose-{num}'))
 
         rand_options = [('All choices', 'randchoose-all')] + randbtn_list
@@ -756,11 +756,11 @@ class Game:
         bot_moji = ':math:' if self.judge.is_arc and not hide_arc else ''
 
         return [
-            PlainTextSectionBlock(
+            MarkdownSectionBlock(
                 f'Round *`{self.game_round_number}`* - *{self.judge.honorific} '
                 f'Judge {self.judge.display_name.title()}* {bot_moji} presiding.'
             ),
-            PlainTextSectionBlock(f'*:regional_indicator_q:: {self.current_question_card.card_text}*'),
+            MarkdownSectionBlock(f'*:regional_indicator_q:: {self.current_question_card.card_text}*'),
             DividerBlock(),
         ]
 

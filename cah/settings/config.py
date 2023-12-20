@@ -53,13 +53,13 @@ class Common(object):
         secrets_path = ROOT.joinpath('secretprops.properties')
         if cls.ENV == 'production':
             secrets_path = KEY_DIR.joinpath('cah-secretprops.properties')
-        return read_secrets(secrets_path)
+        cls.SECRETS = read_secrets(secrets_path)
 
     @classmethod
     def build_db_engine(cls):
         """Builds database engine, sets SESSION"""
         if cls.SECRETS is None:
-            cls.SECRETS = cls.load_secrets()
+            cls.load_secrets()
         cls.SQLALCHEMY_DATABASE_URI = cls.SQLALCHEMY_DATABASE_URI.format(**cls.SECRETS)
         engine = create_engine(cls.SQLALCHEMY_DATABASE_URI, isolation_level='SERIALIZABLE')
         Base.metadata.bind = engine
@@ -73,6 +73,7 @@ class Development(Common):
     MAIN_CHANNEL = 'CQ1DG4WB1'
     TRIGGERS = ['wah', 'w!']
     DEBUG = True
+    USE_RELOADER = False
 
 
 class Production(Common):

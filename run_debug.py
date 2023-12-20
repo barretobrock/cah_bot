@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import os
-os.environ['CAH_ENV'] = "DEVELOPMENT"
-from cah.app import app
 
-
-@app.route('/')
-def index():
-    return 'CAH'
-
+from cah.settings.config import Development
 
 if __name__ == '__main__':
-    app.run(port=5004)
+    Development.build_db_engine()
+    os.environ['SLACK_BOT_TOKEN'] = Development.SECRETS.get('xoxb-token')
+    from cah.app import create_app
+
+    app = create_app(config_class=Development, props=Development.SECRETS)
+    app.run(port=Development.PORT, use_reloader=Development.USE_RELOADER)

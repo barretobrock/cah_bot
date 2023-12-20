@@ -31,7 +31,7 @@ from cah.model import (
     TableTask,
     TableTaskParameter,
 )
-from cah.settings import auto_config
+from cah.settings import Development
 
 
 class ETL:
@@ -58,11 +58,11 @@ class ETL:
     def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True, incl_services: bool = True):
         self.log = get_logger()
         self.log.debug('Obtaining credential file...')
-        credstore = SecretStore('secretprops-davaiops.kdbx')
+        Development.load_secrets()
+        props = Development.SECRETS
 
         self.log.debug('Opening up the database...')
-        db_props = credstore.get_entry(f'davaidb-{env}').custom_properties
-        self.psql_client = WizzyPSQLClient(props=db_props, parent_log=self.log)
+        self.psql_client = WizzyPSQLClient(props=props, parent_log=self.log)
 
         # Determine tables to drop
         self.log.debug(f'Working on tables: {tables} from db...')
@@ -78,10 +78,12 @@ class ETL:
         Base.metadata.create_all(self.psql_client.engine, tables=tbl_objs)
 
         self.log.debug('Authenticating credentials for services...')
-        cah_creds = credstore.get_key_and_make_ns(auto_config.BOT_NICKNAME)
+
         if incl_services:
+            credstore = SecretStore('secretprops-davaiops.kdbx')
+            cah_creds = credstore.get_key_and_make_ns(Development.BOT_NICKNAME)
             self.gsr = GSheetAgent(sec_store=credstore, sheet_key=cah_creds.spreadsheet_key)
-            self.st = SlackTools(cah_creds, use_session=False)
+            self.st = SlackTools(props=props, main_channel=Development.MAIN_CHANNEL, use_session=False)
             self.log.debug('Completed loading services')
 
     def etl_bot_settings(self):
@@ -140,6 +142,8 @@ class ETL:
                     (~df[col].isnull()) & (df[col].str.strip() != ''), col
                 ].str.strip().unique().tolist()
                 for txt in txt_list:
+                    if not isinstance(txt, str):
+                        continue
                     if col == 'questions':
                         # Generate a question card to leverage the response number prediction
                         req_ans = self.determine_required_answers(txt=txt)
@@ -191,7 +195,7 @@ class ETL:
 
         # Iterate through players in channel, set active if they're in the channel
         active_users = []
-        for user in self.st.get_channel_members('CMPV3K8AE'):
+        for user in self.st.get_channel_members(self.st.main_channel):
             if user.id in uids:
                 active_users.append(user.id)
         self.log.debug(f'Found {len(active_users)} in #cah. Setting others to inactive...')

@@ -4,7 +4,7 @@
 #       tags: <comma-separated-tags>
 #       desc: <description>
 #       # Response should be one of these:
-#       response-cmd:
+#       response_cmd:
 #           A dynamic command that's mapped to the dict on instantiation via attribute lookup
 #           callable: <name_of_callable>
 #           args:
@@ -22,7 +22,7 @@ commands:
                 - support
                 - main
             desc: Description of the main commands I respond to, along with other groups and tags to search my other commands
-            response-cmd:
+            response_cmd:
                 callable: generate_intro
         ^(search\s?help|shelp):
             tags:
@@ -33,15 +33,15 @@ commands:
                 - search help -t support
                 - search help -g game
                 - shelp -g player
-            response-cmd:
+            response_cmd:
                 callable: search_help_block
                 args:
-                    - message
+                    - cleaned_message
         ^about$:
             tags:
                 - debug
             desc: Bootup time of Wizzy's current instance, zir current version and last update date
-            response-cmd:
+            response_cmd:
                 callable: get_bootup_msg
         ^m(ain\s?menu|m):
             tags:
@@ -52,7 +52,7 @@ commands:
                 - mm
                 - main menu
                 - mainmenu
-            response-cmd:
+            response_cmd:
                 callable: prebuild_main_menu
                 args:
                     - user
@@ -61,39 +61,39 @@ commands:
             tags:
                 - game
             desc: Show the decks currently available
-            response-cmd:
+            response_cmd:
                 callable: show_decks
     group-game:
         ^new round:
             tags:
                 - game
             desc: For manually transitioning to another round when Wizzy fails to.
-            response-cmd:
+            response_cmd:
                 callable: new_round
         ^(points|score[s]?):
             tags:
                 - player
                 - game
             desc: Show points / score of all players
-            response-cmd:
+            response_cmd:
                 callable: display_points
         ^status:
             tags:
                 - game
             desc: Get current status of the game and other metadata
-            response-cmd:
+            response_cmd:
                 callable: display_status
         ^refresh players?:
             tags:
                 - player
             desc: Forces a refresh of the current players in the channel
-            response-cmd:
+            response_cmd:
                 callable: refresh_players
         ^end game$:
             tags:
                 - game
             desc: Ends the current game
-            response-cmd:
+            response_cmd:
                 callable: end_game
     group-settings:
         ^toggle (judge\s?|j)ping:
@@ -103,7 +103,7 @@ commands:
             examples:
                 - toggle judge ping
                 - toggle jping
-            response-cmd:
+            response_cmd:
                 callable: toggle_judge_ping
         ^toggle (w[ine]+r\s?|w)ping:
             tags:
@@ -113,7 +113,7 @@ commands:
                 - toggle winnerping
                 - toggle weiner ping
                 - toggle wping
-            response-cmd:
+            response_cmd:
                 callable: toggle_winner_ping
         ^toggle (auto\s?randpick|arp($|\s)):
             tags:
@@ -123,12 +123,12 @@ commands:
                 - toggle arp
                 - toggle autorandpick
                 - toggle arp @{other_user}
-            response-cmd:
+            response_cmd:
                 callable: toggle_auto_pick_or_choose
                 args:
                     - user
                     - channel
-                    - message
+                    - cleaned_message
                     - randpick
         ^toggle (auto\s?randchoose|arc($|\s)):
             tags:
@@ -138,12 +138,12 @@ commands:
                 - toggle arc
                 - toggle autorandchoose
                 - toggle arc @{other_user}
-            response-cmd:
+            response_cmd:
                 callable: toggle_auto_pick_or_choose
                 args:
                     - user
                     - channel
-                    - message
+                    - cleaned_message
                     - randchoose
         ^toggle ar[pc]ar[pc]a:
             tags:
@@ -153,12 +153,12 @@ commands:
                 - toggle arparca
                 - toggle arcarpa
                 - toggle arcarca
-            response-cmd:
+            response_cmd:
                 callable: toggle_auto_pick_or_choose
                 args:
                     - user
                     - channel
-                    - message
+                    - cleaned_message
                     - both
         ^toggle (c[har]+ds?\s?)?dm:
             tags:
@@ -167,7 +167,7 @@ commands:
             examples:
                 - toggle cahds dm
                 - toggle chadsdm
-            response-cmd:
+            response_cmd:
                 callable: toggle_card_dm
                 args:
                     - user
@@ -176,7 +176,7 @@ commands:
             tags:
                 - settings
             desc: Retrieves an overview of your settings
-            response-cmd:
+            response_cmd:
                 callable: get_my_settings
                 args:
                     - user
@@ -187,7 +187,7 @@ commands:
                 - player
                 - game
             desc: DMs you your cards immediately, if you have any.
-            response-cmd:
+            response_cmd:
                 callable: dm_cards_now
                 args:
                     - user
@@ -200,16 +200,16 @@ commands:
                 - p 2
                 - p 3,4
                 - p 34
-            response-cmd:
+            response_cmd:
                 callable: process_picks
                 args:
                     - user
-                    - message
+                    - cleaned_message
         ^decknuke:
             tags:
                 - player
             desc: Don't like any of your cards? They don't like you either. lol jk luv u. Use this and one of your cards gets picked randomly for you and in return you get a totally new hand! Ah, but nothing in life is without risk - you see, if the judge chooses your card, you will be punished.....
-            response-cmd:
+            response_cmd:
                 callable: decknuke
                 args:
                     - user
@@ -222,11 +222,11 @@ commands:
                 - randpick 234              //subset selections
                 - randpick 2,3,4
                 - randpick 234 @{other_user}
-            response-cmd:
+            response_cmd:
                 callable: process_picks
                 args:
                     - user
-                    - message
+                    - cleaned_message
         ^c(hoose)? \d:
             tags:
                 - judge
@@ -236,11 +236,11 @@ commands:
                 - c 2
                 - c 3,4
                 - c 34
-            response-cmd:
+            response_cmd:
                 callable: choose_card
                 args:
                     - user
-                    - message
+                    - cleaned_message
         ^randchoose:
             tags:
                 - judge
@@ -249,15 +249,15 @@ commands:
                 - randchoose                  //select from entire picklings
                 - randchoose 234              //subset selections
                 - randchoose 2,3,4
-            response-cmd:
+            response_cmd:
                 callable: choose_card
                 args:
                     - user
-                    - message
+                    - cleaned_message
         ^ping ppl:
             tags:
                 - player
                 - game
             desc: Ping (non-judge) players who haven't yet picked
-            response-cmd:
+            response_cmd:
                 callable: ping_players_left_to_pick
