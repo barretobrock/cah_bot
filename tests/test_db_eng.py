@@ -1,14 +1,16 @@
 from unittest import (
     TestCase,
-    main
+    main,
 )
 from unittest.mock import MagicMock
+
 from pukr import get_logger
-from cah.model import SettingType
+
 from cah.db_eng import WizzyPSQLClient
+from cah.model import SettingType
 from tests.common import (
     make_patcher,
-    random_string
+    random_string,
 )
 
 

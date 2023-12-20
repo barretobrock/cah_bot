@@ -2,10 +2,12 @@ from typing import (
     Dict,
     List,
     Optional,
-    TypedDict
+    TypedDict,
 )
+
 from loguru import logger
 from sqlalchemy.sql import func
+
 from cah.db_eng import WizzyPSQLClient
 from cah.model import (
     RipType,
@@ -13,7 +15,7 @@ from cah.model import (
     TableGameRound,
     TablePlayerPick,
     TableQuestionCard,
-    TableRip
+    TableRip,
 )
 
 

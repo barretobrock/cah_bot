@@ -1,12 +1,14 @@
 from typing import Tuple
+
 from sqlalchemy import (
-    Column,
     VARCHAR,
-    Integer,
     Boolean,
+    Column,
+    Integer,
 )
-from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import relationship
+
 # local imports
 from cah.model.base import Base
 

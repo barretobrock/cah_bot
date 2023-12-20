@@ -1,10 +1,12 @@
 import enum
+
 from sqlalchemy import (
+    VARCHAR,
     Column,
-    Integer,
     Enum,
-    VARCHAR
+    Integer,
 )
+
 # local imports
 from cah.model.base import Base
 

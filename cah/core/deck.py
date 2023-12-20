@@ -2,12 +2,14 @@ from random import shuffle
 from typing import (
     List,
     Type,
-    Union
+    Union,
 )
+
 from sqlalchemy.sql import (
     and_,
-    not_
+    not_,
 )
+
 from cah.db_eng import WizzyPSQLClient
 from cah.model import (
     TableAnswerCard,
@@ -15,7 +17,7 @@ from cah.model import (
     TableGameRound,
     TablePlayerHand,
     TablePlayerPick,
-    TableQuestionCard
+    TableQuestionCard,
 )
 
 

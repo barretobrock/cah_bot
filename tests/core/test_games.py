@@ -1,24 +1,27 @@
 import random
-from unittest import TestCase, main
-from unittest.mock import MagicMock
 from typing import (
     List,
-    Optional
+    Optional,
 )
+from unittest import (
+    TestCase,
+    main,
+)
+from unittest.mock import MagicMock
+
 from pukr import get_logger
+
+from cah.core.games import (
+    Game,
+    GameStatus,
+)
 from cah.model import (
     SettingType,
     TableGame,
     TableGameRound,
-    TableQuestionCard
+    TableQuestionCard,
 )
-from cah.core.games import (
-    Game,
-    GameStatus
-)
-from tests.common import (
-    make_patcher
-)
+from tests.common import make_patcher
 from tests.mocks.users import random_user
 
 
@@ -34,6 +37,7 @@ class TestGames(TestCase):
         self.mock_slack_base = MagicMock(name='SlackBotBase')
         self.mock_deck = MagicMock(name='Deck')
         self.mock_eng = MagicMock(name='PSQLClient')
+        self.mock_config = MagicMock(name='config')
         self.mock_session = self.mock_eng.session_mgr.return_value.__enter__.return_value
         self.player_hashes = [random_user() for x in range(6)]
 
@@ -42,7 +46,8 @@ class TestGames(TestCase):
             deck=self.mock_deck,
             st=self.mock_slack_base,
             eng=self.mock_eng,
-            parent_log=self.log
+            parent_log=self.log,
+            config=self.mock_config
         )
 
     def test_init(self):

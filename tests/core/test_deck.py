@@ -1,13 +1,18 @@
-from unittest import TestCase, main
-from unittest.mock import MagicMock
 from typing import Union
+from unittest import (
+    TestCase,
+    main,
+)
+from unittest.mock import MagicMock
+
 from pukr import get_logger
+
+from cah.core.deck import Deck
 from cah.model import (
     TableAnswerCard,
     TableDeck,
-    TableQuestionCard
+    TableQuestionCard,
 )
-from cah.core.deck import Deck
 
 
 class TestDeck(TestCase):

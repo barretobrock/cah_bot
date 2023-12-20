@@ -1,16 +1,18 @@
 from typing import (
     List,
     Optional,
-    Union
+    Union,
 )
+
 from loguru import logger
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import (
     and_,
     func,
     not_,
-    or_
+    or_,
 )
-from sqlalchemy.orm.attributes import InstrumentedAttribute
+
 from cah.db_eng import WizzyPSQLClient
 from cah.model import (
     TableAnswerCard,
@@ -18,7 +20,7 @@ from cah.model import (
     TablePlayer,
     TablePlayerHand,
     TablePlayerPick,
-    TablePlayerRound
+    TablePlayerRound,
 )
 
 

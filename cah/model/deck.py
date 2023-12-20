@@ -1,8 +1,9 @@
 from sqlalchemy import (
-    Column,
     VARCHAR,
-    Integer
+    Column,
+    Integer,
 )
+
 # local imports
 from cah.model.base import Base
 

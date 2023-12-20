@@ -3,32 +3,32 @@ from .card import (
     TableAnswerCard,
     TablePlayerHand,
     TablePlayerPick,
-    TableQuestionCard
+    TableQuestionCard,
 )
 from .deck import TableDeck
 from .error import (
     CahErrorType,
-    TableCahError
+    TableCahError,
 )
 from .game import (
     GameStatus,
     TableGame,
     TableGameRound,
-    TablePlayerRound
+    TablePlayerRound,
 )
 from .player import (
     TableHonorific,
-    TablePlayer
+    TablePlayer,
 )
 from .rips import (
     RipType,
-    TableRip
+    TableRip,
 )
 from .setting import (
     SettingType,
-    TableSetting
+    TableSetting,
 )
 from .task import (
     TableTask,
-    TableTaskParameter
+    TableTaskParameter,
 )

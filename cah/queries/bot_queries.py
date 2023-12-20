@@ -1,13 +1,14 @@
-import pandas as pd
 from loguru import logger
+import pandas as pd
 from sqlalchemy.sql import (
     and_,
     func,
 )
+
 from cah.db_eng import WizzyPSQLClient
 from cah.model import (
     TablePlayer,
-    TablePlayerRound
+    TablePlayerRound,
 )
 
 

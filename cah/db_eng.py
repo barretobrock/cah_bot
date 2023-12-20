@@ -4,52 +4,54 @@ from typing import (
     Dict,
     List,
     Optional,
-    Union
+    Union,
 )
-from sqlalchemy.orm import Session
-from sqlalchemy.orm.attributes import InstrumentedAttribute
+
 from loguru import logger
 from slacktools.db_engine import PSQLClient
+from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import InstrumentedAttribute
+
 from cah.model import (
-    SettingType,
     CahErrorType,
+    SettingType,
     TableCahError,
     TablePlayer,
-    TableSetting
+    TableSetting,
 )
 
 
 class WizzyPSQLClient(PSQLClient):
     """Creates Postgres connection engine"""
 
-    def __init__(self, props: Dict, parent_log: logger, **kwargs):
+    def __init__(self, props: Dict, **kwargs):
         _ = kwargs
-        super().__init__(props=props, parent_log=parent_log)
+        super().__init__(props=props)
 
     def get_setting(self, setting: SettingType) -> Optional[Union[int, bool, str]]:
         """Attempts to return a given setting"""
-        self.log.debug(f'Received request for setting: {setting.name}')
+        logger.debug(f'Received request for setting: {setting.name}')
         with self.session_mgr() as session:
             result: TableSetting
             result = session.query(TableSetting).filter(TableSetting.setting_type == setting).one_or_none()
             if result is None:
-                self.log.debug('Setting was None.')
+                logger.debug('Setting was None.')
                 return result
 
             if setting.name.startswith('IS_'):
                 # Boolean
-                self.log.debug(f'Returning: {result.setting_int == 1}')
+                logger.debug(f'Returning: {result.setting_int == 1}')
                 return result.setting_int == 1
             if result.setting_int is None:
                 # Return the string if the integer is None
-                self.log.debug(f'Returning str: {result.setting_str}')
+                logger.debug(f'Returning str: {result.setting_str}')
                 return result.setting_str
-            self.log.debug(f'Returning int: {result.setting_int}')
+            logger.debug(f'Returning int: {result.setting_int}')
             return result.setting_int
 
     def set_setting(self, setting: SettingType, setting_val: Union[int, bool, str]):
         """Attempts to set a given setting"""
-        self.log.debug(f'Received request to set setting: {setting.name} to {setting_val}')
+        logger.debug(f'Received request to set setting: {setting.name} to {setting_val}')
         with self.session_mgr() as session:
             # Settings are more likely to be integer
             setting_attr = TableSetting.setting_int
@@ -70,20 +72,21 @@ class WizzyPSQLClient(PSQLClient):
         """Takes in a slack user hash, outputs the expunged object, if any"""
         return self._get_player_from(TablePlayer.player_id, user_id)
 
-    def _get_player_from(self,  attr: InstrumentedAttribute, value: Union[str, int]) -> Optional[TablePlayer]:
+    def _get_player_from(self,  attr: Union[InstrumentedAttribute, int, str],
+                         value: Union[str, int]) -> Optional[TablePlayer]:
         """Takes in a slack user hash or player id, outputs the expunged object, if any"""
-        self.log.debug(f'Received request to fetch player via {attr.key}: {value}')
+        logger.debug(f'Received request to fetch player via {attr.key}: {value}')
         with self.session_mgr() as session:
             user = session.query(TablePlayer).filter(attr == value).one_or_none()
             if user is not None:
                 session.expunge(user)
             else:
-                self.log.debug('User wasn\'t found in db with provided value. Returning None.')
+                logger.debug('User wasn\'t found in db with provided value. Returning None.')
         return user
 
     def get_active_players(self) -> List[TablePlayer]:
         """Retrieves a list of active players"""
-        self.log.debug('Received request to fetch all active players')
+        logger.debug('Received request to fetch all active players')
         with self.session_mgr() as session:
             players = session.query(TablePlayer).filter(TablePlayer.is_active).all()
             session.expunge_all()
@@ -91,7 +94,7 @@ class WizzyPSQLClient(PSQLClient):
 
     def set_active_players(self, player_hashes: List[str]):
         """Retrieves a list of active players, sets them as active and anyone not in that list as inactive"""
-        self.log.debug(f'Received request to set {len(player_hashes)} players as active.')
+        logger.debug(f'Received request to set {len(player_hashes)} players as active.')
         with self.session_mgr() as session:
             players = session.query(TablePlayer).all()
             player: TablePlayer
@@ -114,7 +117,7 @@ class WizzyPSQLClient(PSQLClient):
             sess.expunge(tbl)
             return tbl
 
-        self.log.debug('Received request to refresh object...')
+        logger.debug('Received request to refresh object...')
         if session is None:
             with self.session_mgr() as session:
                 tbl_obj = _refresh(sess=session, tbl=tbl_obj)

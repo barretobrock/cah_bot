@@ -1,13 +1,14 @@
 import re
+
 from sqlalchemy import (
-    Column,
     TIMESTAMP,
     Boolean,
-    func
+    Column,
+    func,
 )
 from sqlalchemy.ext.declarative import (
     declarative_base,
-    declared_attr
+    declared_attr,
 )
 
 

@@ -1,12 +1,14 @@
 from datetime import datetime
+
 from sqlalchemy import (
+    TIMESTAMP,
+    VARCHAR,
     Column,
     ForeignKey,
     Integer,
-    TIMESTAMP,
-    VARCHAR
 )
 from sqlalchemy.sql import func
+
 # local imports
 from cah.model.base import Base
 

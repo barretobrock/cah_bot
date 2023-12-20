@@ -1,28 +1,43 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from datetime import datetime
+from random import (
+    choice,
+    shuffle,
+)
 import time
 from typing import (
+    TYPE_CHECKING,
+    Dict,
     List,
     Optional,
     Tuple,
-    Dict,
-    TYPE_CHECKING
 )
-from datetime import datetime
-from random import (
-    shuffle,
-    choice
-)
-import numpy as np
-from sqlalchemy.sql import (
-    and_
-)
-from slack.errors import SlackApiError
+
 from loguru import logger
-from slacktools import (
-    BlockKitBuilder as BKitB,
-    SlackBotBase
+import numpy as np
+from slack_sdk.errors import SlackApiError
+from slacktools import SlackBotBase
+from slacktools.block_kit.base import BlocksType
+from slacktools.block_kit.blocks import (
+    ButtonSectionBlock,
+    DividerBlock,
+    MarkdownContextBlock,
+    MultiStaticSelectSectionBlock,
+    PlainTextSectionBlock,
 )
+from sqlalchemy.sql import and_
+
+from cah.core.players import (
+    Judge,
+    Player,
+    Players,
+)
+from cah.core.selections import (
+    Choice,
+    Pick,
+)
+from cah.db_eng import WizzyPSQLClient
 from cah.model import (
     GameStatus,
     RipType,
@@ -32,23 +47,13 @@ from cah.model import (
     TableGameRound,
     TablePlayer,
     TablePlayerRound,
-    TableQuestionCard
+    TableQuestionCard,
 )
-from cah.db_eng import WizzyPSQLClient
-from cah.settings import auto_config
-from cah.core.players import (
-    Player,
-    Players,
-    Judge
-)
-from cah.core.game_queries import (
+from cah.queries.game_queries import (
     GameQueries,
-    PickItemType
+    PickItemType,
 )
-from cah.core.selections import (
-    Choice,
-    Pick
-)
+
 if TYPE_CHECKING:
     from cah.core.deck import Deck
 
@@ -69,9 +74,10 @@ class Game:
     """Holds data for current game"""
 
     def __init__(self, player_hashes: List[str], deck: 'Deck', st: SlackBotBase, eng: WizzyPSQLClient,
-                 parent_log: logger, game_id: int = None):
+                 parent_log: logger, config, game_id: int = None):
         self.st = st
         self.eng = eng
+        self.config = config
         self.judge_order_divider = self.eng.get_setting(SettingType.JUDGE_ORDER_DIVIDER)
         self.log = parent_log.bind(child_name=self.__class__.__name__)
         self.gq = GameQueries(eng=eng, log=self.log)
@@ -109,8 +115,10 @@ class Game:
         # Load players
         self.log.debug(f'Setting {len(player_hashes)} players as active for this game.')
         self.eng.set_active_players(player_hashes)
-        self.players = Players(player_hash_list=player_hashes, slack_api=self.st, eng=self.eng,
-                               parent_log=self.log, is_existing=self.is_existing_game)  # type: Players
+        self.players = Players(
+            player_hash_list=player_hashes, slack_api=self.st, eng=self.eng, parent_log=self.log,
+            config=self.config, is_existing=self.is_existing_game
+        )  # type: Players
         if self.is_existing_game:
             # Get the current round's judge
             with self.eng.session_mgr() as session:
@@ -206,7 +214,7 @@ class Game:
         round_number = self.game_round_number
         self.log.debug(f'Game round {round_number} continues...')
 
-    def new_round(self, notification_block: List[Dict] = None) -> Optional[List[dict]]:
+    def new_round(self, notification_block: List[Dict] = None) -> Optional[BlocksType]:
         """Starts a new round"""
         self.log.debug('Working on new round...')
         if self.status not in NEW_ROUND_READY:
@@ -225,7 +233,9 @@ class Game:
             self.log.debug('No more questions available. Ending game')
             # No more questions, game hath ended
             self.end_game()
-            return [BKitB.make_block_section(f'No more question cards! Game over! {":party-dead:" * 3}')]
+            return [
+                PlainTextSectionBlock(f'No more question cards! Game over! {":party-dead:" * 3}')
+            ]
 
         # Scan names in the db vs. in the player object to ensure they're the same
         self.log.debug('Confirming display name parity...')
@@ -265,7 +275,7 @@ class Game:
         self.deal_cards()
         self.status = GameStatus.PLAYER_DECISION
 
-        self.st.private_channel_message(self.judge.player_hash, auto_config.MAIN_CHANNEL,
+        self.st.private_channel_message(self.judge.player_hash, self.config.MAIN_CHANNEL,
                                         ":gavel::gavel::gavel: You're the judge this round! :gavel::gavel::gavel:")
         question_block = self.make_question_block()
         notification_block += question_block
@@ -279,8 +289,8 @@ class Game:
         self.log.debug(f'{len(remaining)} remaining to decide.')
         remaining_txt = ' '.join([f'`{x}`' for x in remaining])
         messages = [f'*`{len(remaining)}`* players remaining to decide: {remaining_txt}']
-        msg_block = [BKitB.make_context_section([BKitB.markdown_section(x) for x in messages])]
-        round_msg_ts = self.st.send_message(auto_config.MAIN_CHANNEL,
+        msg_block = [MarkdownContextBlock(messages)]
+        round_msg_ts = self.st.send_message(self.config.MAIN_CHANNEL,
                                             message='A new round hath begun',
                                             ret_ts=True, blocks=msg_block)
         self.game_round_tbl.message_timestamp = round_msg_ts
@@ -331,8 +341,9 @@ class Game:
                                       req_ans=req_ans)
         except OutOfCardsException:
             self.log.debug('Stopping game - ran out of cards!')
-            blocks = [BKitB.make_block_section(f'The people have run out of answer cards! Game over! '
-                                               f'{":party-dead:" * 3}')]
+            blocks = [
+                PlainTextSectionBlock(f'The people have run out of answer cards! Game over! {":party-dead:" * 3}')
+            ]
             self.st.message_main_channel(blocks=blocks)
             self.end_game()
             return None
@@ -437,7 +448,7 @@ class Game:
         # Start new round
         self.new_round()
 
-    def winner_selection(self) -> List[dict]:
+    def winner_selection(self) -> BlocksType:
         """Contains the logic that determines point distributions upon selection of a winner"""
         # Get the list of cards picked by each player
         self.log.debug(f'Selecting winner at index: {self.judge.selected_choice_idx} ({self.judge.winner_hash})')
@@ -485,14 +496,12 @@ class Game:
             f"({winner.get_overall_score()} total){decknuke_txt}\n"
         ]
         last_section = [
-            BKitB.make_context_section([
-                BKitB.markdown_section(f'Round ended. Nice going, {self.judge.display_name}.')
-            ])
+            MarkdownContextBlock(f'Round ended. Nice going, {self.judge.display_name}.')
         ]
 
         message_block = [
-            BKitB.make_block_section(winner_txt_blob),
-            BKitB.make_block_divider(),
+            PlainTextSectionBlock(winner_txt_blob),
+            DividerBlock()
         ]
         return message_block + last_section
 
@@ -541,7 +550,7 @@ class Game:
         """Replaces the Block UI form with another message"""
         player = self.players.player_dict[player_hash]
         blk = [
-            BKitB.make_block_section(f'Your pick(s): {player.render_picks_as_str()}')
+            PlainTextSectionBlock(f'Your pick(s): {player.render_picks_as_str()}')
         ]
         replace_blocks = player.pick_blocks
         for chan, ts in replace_blocks.items():
@@ -653,7 +662,7 @@ class Game:
             messages.append(judge_msg)
             self.status = GameStatus.JUDGE_DECISION
             # Update the "remaining picks" message
-            self.st.update_message(auto_config.MAIN_CHANNEL, self.game_round_tbl.message_timestamp,
+            self.st.update_message(self.config.MAIN_CHANNEL, self.game_round_tbl.message_timestamp,
                                    message='Pickling complete!')
             self._display_picks(notifications=messages)
             # Handle auto randchoose players
@@ -667,26 +676,26 @@ class Game:
             self.log.debug(f'{len(remaining)} remaining to decide.')
             remaining_txt = ' '.join([f'`{x}`' for x in remaining])
             messages.append(f'*`{len(remaining)}`* players remaining to decide: {remaining_txt}')
-            msg_block = [BKitB.make_context_section([BKitB.markdown_section(x) for x in messages])]
+            msg_block = [MarkdownContextBlock(messages)]
             if self.game_round_tbl.message_timestamp is None:
                 # Announcing the picks for the first time; capture the timestamp so
                 #   we can update that same message later
-                round_msg_ts = self.st.send_message(auto_config.MAIN_CHANNEL,
+                round_msg_ts = self.st.send_message(self.config.MAIN_CHANNEL,
                                                     message='Message about current game!',
                                                     ret_ts=True, blocks=msg_block)
                 self.game_round_tbl.message_timestamp = round_msg_ts
                 self.game_round_tbl = self.eng.refresh_table_object(self.game_round_tbl)
             else:
                 # Update the message we've already got
-                self.st.update_message(auto_config.MAIN_CHANNEL, self.game_round_tbl.message_timestamp,
+                self.st.update_message(self.config.MAIN_CHANNEL, self.game_round_tbl.message_timestamp,
                                        blocks=msg_block)
 
     def _display_picks(self, notifications: List[str] = None):
         """Shows a random order of the picks"""
         if notifications is not None:
             public_response_block = [
-                BKitB.make_context_section([BKitB.markdown_section(x) for x in notifications]),
-                BKitB.make_block_divider()
+                MarkdownContextBlock(notifications),
+                DividerBlock()
             ]
         else:
             public_response_block = []
@@ -700,14 +709,14 @@ class Game:
 
         # Handle sending judge messages
         # send as private in-channel message (though this sometimes goes unrendered)
-        _ = self.st.private_channel_message(self.judge.player_hash, auto_config.MAIN_CHANNEL,
+        _ = self.st.private_channel_message(self.judge.player_hash, self.config.MAIN_CHANNEL,
                                             message='', ret_ts=True, blocks=judge_response_block)
         if self.judge.is_dm_cards:
             # DM choices to player if they have card dming enabled
             _, _ = self.st.private_message(self.judge.player_hash, message='', ret_ts=True,
                                            blocks=judge_response_block)
 
-    def display_picks(self) -> Tuple[List[dict], List[dict]]:
+    def display_picks(self) -> Tuple[BlocksType, BlocksType]:
         """Shows the player's picks in random order"""
         self.log.debug('Rendering picks...')
         picks: Dict[str, List[PickItemType]]
@@ -725,44 +734,41 @@ class Game:
             pick = picks.get(p_hash)
             pick_txt = [x.get('card_text') for x in pick]
             # Make a block specifically for the judge (with buttons)
-            card_btn_dict = BKitB.make_action_button(f'{num}', f'choose-{num}',
-                                                     action_id=f'game-choose-{num}')
             pick_txt = f'*{num}*: {"|".join([f" *`{x}`* " for x in pick_txt])}'
-            judge_card_blocks.append(BKitB.make_block_section(pick_txt, accessory=card_btn_dict))
+            judge_card_blocks.append(
+                ButtonSectionBlock(pick_txt, f'{num}', value=f'choose-{num}', action_id=f'game-choose-{num}')
+            )
             # Make a "public" block that just shows the choices in the channel
-            public_card_blocks.append(BKitB.make_block_section(pick_txt))
-            randbtn_list.append({'txt': f'{num}', 'value': f'randchoose-{num}'})
+            public_card_blocks.append(PlainTextSectionBlock(pick_txt))
+            randbtn_list.append((f'{num}', f'randchoose-{num}'))
 
-        rand_options = [{'txt': 'All choices', 'value': 'randchoose-all'}] + randbtn_list
+        rand_options = [('All choices', 'randchoose-all')] + randbtn_list
 
         return public_card_blocks, judge_card_blocks + [
-            BKitB.make_block_divider(),
-            BKitB.make_block_multiselect('Randchoose (all or subset)', 'Select choices', rand_options,
-                                         action_id='game-randchoose'),
-            BKitB.make_block_section('Force Close', accessory=BKitB.make_action_button('Close', 'none',
-                                                                                       action_id='close'))
+            DividerBlock(),
+            MultiStaticSelectSectionBlock('Randchoose (all or subset)', placeholder='Selectionize!',
+                                          option_pairs=rand_options, action_id='game-randchoose'),
+            ButtonSectionBlock('Force Close', 'Close', value='none', action_id='close')
         ]
 
-    def make_question_block(self, hide_arc: bool = True) -> List[dict]:
+    def make_question_block(self, hide_arc: bool = True) -> BlocksType:
         """Generates the question block for the current round"""
         bot_moji = ':math:' if self.judge.is_arc and not hide_arc else ''
 
         return [
-            BKitB.make_block_section(
+            PlainTextSectionBlock(
                 f'Round *`{self.game_round_number}`* - *{self.judge.honorific} '
                 f'Judge {self.judge.display_name.title()}* {bot_moji} presiding.'
             ),
-            BKitB.make_block_section(
-                f'*:regional_indicator_q:: {self.current_question_card.card_text}*'
-            ),
-            BKitB.make_block_divider()
+            PlainTextSectionBlock(f'*:regional_indicator_q:: {self.current_question_card.card_text}*'),
+            DividerBlock(),
         ]
 
     def choose_card(self, player_hash: str, message: str) -> Optional:
         """For the judge to choose the winning card and
         for other players to vote on the card they think should win"""
 
-        if player_hash in auto_config.ADMINS and 'blueberry pie' in message:
+        if player_hash in self.config.ADMINS and 'blueberry pie' in message:
             # Overrides the block below to allow admin to make a choice during testing or special circumstances
             self.log.info('Process overridden w/ admin command to randchoose for judge.')
             player_hash = self.judge.player_hash

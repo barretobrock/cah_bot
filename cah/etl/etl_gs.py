@@ -1,19 +1,23 @@
 import re
-import sys
 from typing import List
-from sqlalchemy.sql import not_
+
+from pukr import get_logger
 from slacktools import (
     SecretStore,
-    SlackTools
+    SlackTools,
 )
 from slacktools.gsheet import GSheetAgent
+from sqlalchemy.sql import not_
+
+from cah.core.common_methods import refresh_players_in_channel
+from cah.db_eng import WizzyPSQLClient
 from cah.model import (
     Base,
     RipType,
     SettingType,
     TableAnswerCard,
-    TableDeck,
     TableCahError,
+    TableDeck,
     TableGame,
     TableGameRound,
     TableHonorific,
@@ -25,12 +29,9 @@ from cah.model import (
     TableRip,
     TableSetting,
     TableTask,
-    TableTaskParameter
+    TableTaskParameter,
 )
-from cah.db_eng import WizzyPSQLClient
 from cah.settings import auto_config
-from cah.core.common_methods import refresh_players_in_channel
-from cah.logg import logger
 
 
 class ETL:
@@ -55,7 +56,7 @@ class ETL:
     ]
 
     def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True, incl_services: bool = True):
-        self.log = logger.bind(sink=sys.stdout, level='DEBUG')
+        self.log = get_logger()
         self.log.debug('Obtaining credential file...')
         credstore = SecretStore('secretprops-davaiops.kdbx')
 
@@ -80,7 +81,7 @@ class ETL:
         cah_creds = credstore.get_key_and_make_ns(auto_config.BOT_NICKNAME)
         if incl_services:
             self.gsr = GSheetAgent(sec_store=credstore, sheet_key=cah_creds.spreadsheet_key)
-            self.st = SlackTools(cah_creds, self.log, use_session=False)
+            self.st = SlackTools(cah_creds, use_session=False)
             self.log.debug('Completed loading services')
 
     def etl_bot_settings(self):
@@ -191,8 +192,8 @@ class ETL:
         # Iterate through players in channel, set active if they're in the channel
         active_users = []
         for user in self.st.get_channel_members('CMPV3K8AE'):
-            if user['id'] in uids:
-                active_users.append(user['id'])
+            if user.id in uids:
+                active_users.append(user.id)
         self.log.debug(f'Found {len(active_users)} in #cah. Setting others to inactive...')
         with self.psql_client.session_mgr() as session:
             session.query(TablePlayer).filter(not_(TablePlayer.slack_user_hash.in_(active_users))).update({

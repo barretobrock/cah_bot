@@ -1,17 +1,19 @@
-import enum
 from datetime import datetime
+import enum
+
 from sqlalchemy import (
+    TIMESTAMP,
+    VARCHAR,
+    Boolean,
     Column,
     Enum,
-    Integer,
-    Boolean,
-    TIMESTAMP,
     ForeignKey,
-    VARCHAR
+    Integer,
 )
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from sqlalchemy.ext.hybrid import hybrid_property
+
 # local imports
 from cah.model.base import Base
 

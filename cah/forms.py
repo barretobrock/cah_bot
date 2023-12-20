@@ -1,134 +1,147 @@
 from typing import (
+    TYPE_CHECKING,
     List,
-    Dict,
-    TYPE_CHECKING
 )
+
 from loguru import logger
+from slacktools import SlackTools
+from slacktools.block_kit.base import BlocksType
+from slacktools.block_kit.blocks import (
+    ActionsBlock,
+    MultiUserSelectSectionBlock,
+    PlainTextHeaderBlock,
+    PlainTextInputBlock,
+    PlainTextSectionBlock,
+    StaticSelectSectionBlock,
+    UserSelectSectionBlock,
+)
+from slacktools.block_kit.elements.input import (
+    ButtonElement,
+    ConfirmElement,
+)
 from sqlalchemy.sql import (
     and_,
-    func
+    func,
 )
-from slacktools import (
-    BlockKitBuilder as BKitB,
-    SlackTools
-)
+
+from cah.db_eng import WizzyPSQLClient
 from cah.model import (
     GameStatus,
     TablePlayer,
-    TablePlayerRound
+    TablePlayerRound,
 )
-from cah.db_eng import WizzyPSQLClient
+
 if TYPE_CHECKING:
     from cah.core.games import Game
 
 
 class Forms:
     """Stores various Block Kit forms"""
-    def __init__(self, st: SlackTools, eng: WizzyPSQLClient, parent_log: logger):
-        self.log = parent_log.bind(child_name=self.__class__.__name__)
+    def __init__(self, st: SlackTools, eng: WizzyPSQLClient):
         self.st = st
         self.eng = eng
 
     def build_main_menu(self, game_obj: 'Game', user: str, channel: str):
         """Generates and sends a main menu"""
-        self.log.debug(f'Received menu command from {user} in {channel}. Building menu.')
+        logger.debug(f'Received menu command from {user} in {channel}. Building menu.')
         game_is_ongoing = game_obj is not None and game_obj.status not in [GameStatus.ENDED]
 
+        end_game_confirm = ConfirmElement('Really end game??',
+                                          'Awe youwu weawwy suwe youwu want to end :nervous-plead:?',
+                                          'Ya', 'Na')
         main_buttons = [
-            BKitB.make_action_button('New Game', value='newgame', action_id='new-game-start', danger_style=False),
-            BKitB.make_action_button('End Game', value='end-game', action_id='end-game', danger_style=True,
-                                     incl_confirm=True, confirm_title='Really end game?',
-                                     confirm_text='Are you sure you want to end the game?', ok_text='Ya',
-                                     deny_text='Na'),
-            BKitB.make_action_button('Close', value='close', action_id='close')
+            ButtonElement('New Game', value='newgame', action_id='new-game-start', style='primary'),
+            ButtonElement('End Game', value='end-game', action_id='end-game', style='danger',
+                          confirm=end_game_confirm),
+            ButtonElement('Close', value='close', action_id='close')
         ]
 
         game_info_buttons = [
-            BKitB.make_action_button('Status', value='status', action_id='status'),
-            BKitB.make_action_button('Scores', value='score', action_id='score'),
-            BKitB.make_action_button('Game Stats', value='game-stats', action_id='game-stats'),
+            ButtonElement('Status', value='status', action_id='status'),
+            ButtonElement('Scores', value='score', action_id='score'),
+            ButtonElement('Game Stats', value='game-stats', action_id='game-stats')
         ]
 
         game_action_buttons = []
         if game_is_ongoing:
             game_action_buttons += [
-                BKitB.make_action_button('Ping Ppl', value='ping', action_id='ping'),
-                BKitB.make_action_button('Modify Question', value='mod-question',
-                                         action_id='modify-question-form'),
+                ButtonElement('Ping Ppl', value='ping', action_id='ping'),
+                ButtonElement('Modify Question', value='mod-question', action_id='modify-question-form')
             ]
 
         player_info_buttons = [
-            BKitB.make_action_button('My Stats', value='my-stats', action_id='my-stats'),
-            BKitB.make_action_button('Player Stats', value='player-stats', action_id='player-stats'),
+            ButtonElement('My Stats', value='my-stats', action_id='my-stats'),
+            ButtonElement('Player Stats', value='player-stats', action_id='player-stats')
         ]
 
         player_action_buttons = [
-            BKitB.make_action_button('My Settings', value='my-settings', action_id='my-settings'),
-            BKitB.make_action_button('ARP/ARC Player', value='arparc-player', action_id='arparc-player'),
-            BKitB.make_action_button('Add Player', value='add-player', action_id='add-player'),
-            BKitB.make_action_button('Kick Player', value='remove-player', action_id='remove-player',
-                                     incl_confirm=True, confirm_title='Really kick someone off the game??',
-                                     confirm_text='Are you sure you want to kick someone out of the game?',
-                                     ok_text='Ya', deny_text='Na'),
+            ButtonElement('My Settings', value='my-settings', action_id='my-settings'),
+            ButtonElement('ARP/ARC Player', value='arparc-player', action_id='arparc-player'),
+            ButtonElement('Add Player', value='add-player', action_id='add-player'),
+            ButtonElement('Kick Player', value='remove-player', action_id='remove-player', confirm=ConfirmElement(
+                'Really kick someone off the game??', 'Are you sure you want to kick someone out of the game?',
+                'Ya', 'Na'
+            ))
         ]
 
         blocks = [
-            BKitB.make_header('CAH Main Menu'),
-            BKitB.make_action_button_group(main_buttons),
-            BKitB.make_block_section('*Game Info*'),
-            BKitB.make_action_button_group(game_info_buttons),
-            BKitB.make_block_section('*Game Actions*'),
-            BKitB.make_action_button_group(game_action_buttons),
-            BKitB.make_block_section('*Player Info*'),
-            BKitB.make_action_button_group(player_info_buttons),
-            BKitB.make_block_section('*Player Actions*'),
-            BKitB.make_action_button_group(player_action_buttons),
+            PlainTextHeaderBlock('CAH Main Menu'),
+            ActionsBlock(main_buttons),
+            # BKitB.make_action_button_group(main_buttons),
+            PlainTextSectionBlock('*Game Info*'),
+            ActionsBlock(game_info_buttons),
+            PlainTextSectionBlock('*Game Actions*'),
+            ActionsBlock(game_action_buttons),
+            PlainTextSectionBlock('*Player Info*'),
+            ActionsBlock(player_info_buttons),
+            PlainTextSectionBlock('*Player Actions*'),
+            ActionsBlock(player_action_buttons),
         ]
-        self.log.debug('Sending menu form as private channel message.')
+        logger.debug('Sending menu form as private channel message.')
         self.st.private_channel_message(user_id=user, channel=channel,
                                         message='Welcome to the CAH Global Incorporated main menu!',
                                         blocks=blocks)
 
     @staticmethod
-    def build_new_game_form_p1(decks: List[str]) -> List[Dict]:
+    def build_new_game_form_p1(decks: List[str]) -> BlocksType:
         """Builds a new game form with Block Kit"""
-        decks_list = [{'txt': x, 'value': f'deck_{x}'} for x in decks]
+        decks_list = [(x, f'deck_{x}') for x in decks]
+        return [StaticSelectSectionBlock('Select a deck :pickle-shy:', decks_list, placeholder='peek a deek',
+                                         action_id='new-game-deck')]
 
-        return [BKitB.make_static_select('Select a deck', option_list=decks_list, action_id='new-game-deck')]
-
-    def build_new_game_form_p2(self) -> List[Dict]:
+    def build_new_game_form_p2(self) -> BlocksType:
         """Builds the second part to the new game form with Block Kit"""
         # Grab a query of 'active' players to serve as the initial users populated in the menu
         with self.eng.session_mgr() as session:
             active_players = [x.slack_user_hash for x in
                               session.query(TablePlayer).filter(TablePlayer.is_active).all()]
-        self.log.debug(f'Built out {len(active_players)} active players.')
-
-        return [BKitB.make_multi_user_select('Select the players', initial_users=active_players,
-                                             action_id='new-game-users')]
+        logger.debug(f'Built out {len(active_players)} active players.')
+        return [MultiUserSelectSectionBlock('Select the players', 'Pweese sewect some peopwe',
+                                            action_id='new-game-users', initial_users=active_players)]
 
     @staticmethod
-    def build_add_user_form() -> List[Dict]:
+    def build_add_user_form() -> BlocksType:
         """Builds the second part to the new game form with Block Kit"""
-        return [BKitB.make_user_select('Select the player to add', action_id='add-player-done')]
+        return [UserSelectSectionBlock('Select the player to add', placeholder='Player go here now',
+                                       action_id='add-player-done')]
 
     @staticmethod
-    def modify_question_form(original_value: str) -> List[Dict]:
+    def modify_question_form(original_value: str) -> BlocksType:
         """Builds the second part to the new game form with Block Kit"""
         return [
-            BKitB.make_plaintext_input('Make your change to the question below', action_id='modify-question',
-                                       initial_value=original_value),
-            BKitB.make_action_button_group([BKitB.make_action_button('Cancel', 'cancel', 'cancel',
-                                                                     danger_style=True)])
+            PlainTextInputBlock('Make your change to the question below', action_id='modify-question',
+                                initial_value=original_value),
+            ActionsBlock([ButtonElement('Cancel', 'cancel', value='cancel', style='danger')]),
         ]
 
     @staticmethod
-    def build_remove_user_form() -> List[Dict]:
+    def build_remove_user_form() -> BlocksType:
         """Builds the second part to the new game form with Block Kit"""
-        return [BKitB.make_user_select('Select the player to remove', action_id='remove-player-done')]
+        return [UserSelectSectionBlock('Select the player to remove', 'Do it here!!!',
+                                       action_id='remove-player-done')]
 
     @staticmethod
-    def build_my_settings_form(eng: WizzyPSQLClient, user_id: str) -> List[Dict]:
+    def build_my_settings_form(eng: WizzyPSQLClient, user_id: str) -> BlocksType:
         """Builds a my details form"""
         # Lookup user
         player = eng.get_player_from_hash(user_hash=user_id)  # type: TablePlayer
@@ -153,8 +166,9 @@ class Forms:
         buttons = []
         for k, v in status_dict.items():
             title = f'Turn {k.upper()} {"off" if v["bool"] else "on"}'
-            buttons.append(BKitB.make_action_button(title, value=v['value'], action_id=v['value'],
-                                                    danger_style=not v['bool']))
+            buttons.append(
+                ButtonElement(title, action_id=v['value'], value=v['value'], style='danger' if not v['bool'] else None)
+            )
 
         honorific = f', {player.honorific}' if player.honorific is not None else ''
         with eng.session_mgr() as session:
@@ -186,6 +200,7 @@ class Forms:
             }
 
         return [
-            BKitB.make_header(f'Player details: {player.display_name.title()}{honorific}'),
-            BKitB.make_block_section([f'`{k:_<20}{v:_>5,}`' for k, v in stats_dict.items()])
-        ] + [BKitB.make_action_button_group([x]) for x in buttons]
+            PlainTextHeaderBlock(f'Player details: {player.display_name.title()}{honorific}'),
+            PlainTextSectionBlock([f'`{k:_<20}{v:_>5,}`' for k, v in stats_dict.items()]),
+            ActionsBlock(buttons)
+        ]

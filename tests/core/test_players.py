@@ -1,18 +1,23 @@
 import random
-from unittest import TestCase, main
-from unittest.mock import (
-    call,
-    MagicMock
+from unittest import (
+    TestCase,
+    main,
 )
+from unittest.mock import (
+    MagicMock,
+    call,
+)
+
 from pukr import get_logger
+
+from cah.core.players import Player
 from cah.model import (
     TableAnswerCard,
-    TablePlayer
+    TablePlayer,
 )
-from cah.core.players import Player
 from tests.common import (
     make_patcher,
-    random_string
+    random_string,
 )
 
 

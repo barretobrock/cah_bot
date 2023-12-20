@@ -1,9 +1,14 @@
-from unittest import TestCase, main
-from unittest.mock import (
-    patch,
-    MagicMock
+from unittest import (
+    TestCase,
+    main,
 )
+from unittest.mock import (
+    MagicMock,
+    patch,
+)
+
 from pukr import get_logger
+
 from tests.common import random_string
 
 

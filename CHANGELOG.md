@@ -15,6 +15,15 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.2.0] - 2023-12-18
+#### Added
+ - Support for slacktools 2.0.0
+ - Support for `slack_sdk`
+ - Re-added `psycopg2` dependency 
+ - `pre-commit` support
+#### Changed
+ - Break out routes into separate files
+ 
 ### [2.1.12] - 2022-06-16
 #### Changed
 - [GH-23](../../issues/23) - Combine queries in `display_points`

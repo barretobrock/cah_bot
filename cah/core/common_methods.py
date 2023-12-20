@@ -1,19 +1,22 @@
 from typing import Dict
+
 from loguru import logger
 from slacktools import SlackTools
-from cah.model import TablePlayer
+from slacktools.api.web.users import UserInfo
+
 from cah.db_eng import WizzyPSQLClient
+from cah.model import TablePlayer
 
 
-def process_player_slack_details(uid: str, profile_dict: Dict) -> Dict[str, str]:
+def process_player_slack_details(uid: str, user_info: UserInfo) -> Dict[str, str]:
     """This handles processing incoming slack details for a single user"""
-    display_name = profile_dict.get('display_name', '')
-    real_name = profile_dict.get('real_name', 'wtfevenisyourname')
+    display_name = user_info.profile.display_name
+    real_name = user_info.real_name
     display_name = real_name if display_name == '' else display_name
     return {
         'slack_user_hash': uid,
         'display_name': display_name,
-        'avi_url': profile_dict.get('avi32')
+        'avi_url': user_info.profile.image_32
     }
 
 
@@ -28,10 +31,11 @@ def refresh_players_in_channel(channel: str, eng: WizzyPSQLClient, st: SlackTool
     channel_users = st.get_channel_members(channel=channel, humans_only=True)
     usr_tbls = []
     # First, we scan all active users in channel for changes
-    for user_dict in channel_users:
-        uid = user_dict['id']
-        log.debug(f'Working on {uid}')
-        params = process_player_slack_details(uid=uid, profile_dict=user_dict)
+    user_info: UserInfo
+    for user_info in channel_users:
+        uid = user_info.id
+        log.debug(f'Working on {user_info.real_name}')
+        params = process_player_slack_details(uid=uid, user_info=user_info)
         if uid in current_uids:
             with eng.session_mgr() as session:
                 # Get player
@@ -51,5 +55,5 @@ def refresh_players_in_channel(channel: str, eng: WizzyPSQLClient, st: SlackTool
     if check_activity:
         # Then, we process users in the channel for activity
         log.debug('Setting users as active if they\'re members of the channel')
-        active_player_hashes = [x['id'] for x in channel_users]
+        active_player_hashes = [x.id for x in channel_users]
         eng.set_active_players(player_hashes=active_player_hashes)

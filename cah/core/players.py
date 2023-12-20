@@ -1,31 +1,38 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from random import shuffle
 from typing import (
+    Dict,
     List,
     Optional,
     Union,
-    Dict
 )
-from random import shuffle
-from sqlalchemy.sql import and_
-from sqlalchemy.orm.attributes import InstrumentedAttribute
+
 from loguru import logger
-from slacktools import (
-    SlackTools,
-    BlockKitBuilder as BKitB
+from slacktools import SlackTools
+from slacktools.block_kit.base import BlocksType
+from slacktools.block_kit.blocks import (
+    ButtonSectionBlock,
+    DividerBlock,
+    MultiStaticSelectSectionBlock,
+    SectionBlock,
 )
+from slacktools.block_kit.elements.display import PlainTextElement
+from slacktools.block_kit.elements.input import ButtonElement
+from sqlalchemy.orm.attributes import InstrumentedAttribute
+from sqlalchemy.sql import and_
+
+from cah.core.common_methods import refresh_players_in_channel
+from cah.db_eng import WizzyPSQLClient
 from cah.model import (
     SettingType,
     TableAnswerCard,
     TablePlayer,
-    TablePlayerRound
+    TablePlayerRound,
 )
-from cah.db_eng import WizzyPSQLClient
-from cah.settings import auto_config
-from cah.core.common_methods import refresh_players_in_channel
-from cah.core.player_queries import (
+from cah.queries.player_queries import (
     PlayerHandCardType,
-    PlayerQueries
+    PlayerQueries,
 )
 
 
@@ -67,7 +74,7 @@ class Player:
     @is_arp.setter
     def is_arp(self, value: bool):
         self._is_arp = value
-        round_tbl = self._get_playerround_tbl()
+        round_tbl = self.get_playerround_tbl()
         if round_tbl is not None and not round_tbl.is_picked:
             # They haven't yet picked, so they'd ARP this round too.
             #   Set that to make sure the data is logged properly
@@ -82,7 +89,7 @@ class Player:
     def is_arc(self, value: bool):
         self.log.debug(f'Setting ARC to {value}')
         self._is_arc = value
-        round_tbl = self._get_playerround_tbl()
+        round_tbl = self.get_playerround_tbl()
         if round_tbl is not None:
             # No check here, as once a judge picks, the round progresses immediately
             self._set_player_round_tbl(TablePlayerRound.is_arc, self._is_arc)
@@ -106,7 +113,7 @@ class Player:
     def is_picked(self, value: bool):
         self.log.debug(f'Setting is_picked to {value}')
         self._is_picked = value
-        round_tbl = self._get_playerround_tbl()
+        round_tbl = self.get_playerround_tbl()
         if round_tbl is not None:
             # No check here, as once a judge picks, the round progresses immediately
             self._set_player_round_tbl(TablePlayerRound.is_picked, self._is_picked)
@@ -156,7 +163,7 @@ class Player:
         self._is_nuked_hand_caught = value
         self._set_player_round_tbl(TablePlayerRound.is_nuked_hand_caught, self._is_nuked_hand_caught)
 
-    def _set_player_tbl(self, attr: InstrumentedAttribute, value: Optional[Union[int, bool, str]]):
+    def _set_player_tbl(self, attr: Union[InstrumentedAttribute, int, str], value: Optional[Union[int, bool, str]]):
         self.pq.set_player_table_attr(player_hash=self.player_hash, attr=attr, value=value)
 
     def _get_player_tbl(self) -> Optional[TablePlayer]:
@@ -164,11 +171,11 @@ class Player:
         if it doesnt exist, it creates a new row for the player."""
         return self.pq.get_player_table(player_hash=self.player_hash)
 
-    def _set_player_round_tbl(self, attr: InstrumentedAttribute, value: Union[int, bool, str]):
+    def _set_player_round_tbl(self, attr: Union[InstrumentedAttribute, bool, int], value: Union[int, bool, str]):
         self.pq.set_player_round_table(player_id=self.player_table_id, game_round_id=self.game_round_id,
                                        game_id=self.game_id, attr=attr, value=value)
 
-    def _get_playerround_tbl(self) -> TablePlayerRound:
+    def get_playerround_tbl(self) -> TablePlayerRound:
         """Attempts to retrieve the player's info from the playerrounds table."""
         return self.pq.get_player_round_table(player_id=self.player_table_id, game_round_id=self.game_round_id,
                                               game_id=self.game_id)
@@ -205,7 +212,7 @@ class Player:
     def get_hand(self) -> List:
         return self.pq.get_player_hand(player_id=self.player_table_id)
 
-    def render_hand(self, max_selected: int = 1) -> List[Dict]:
+    def render_hand(self, max_selected: int = 1) -> BlocksType:
         """Renders the player's current hand to the player
         Args:
             max_selected: int, the maximum allowed number of definite selections (not randpicks) to make
@@ -223,34 +230,34 @@ class Player:
             #   If we need to pick more than one card for the question, set this dictionary as None
             #   so buttons don't get confusingly rendered next to the cards.
             #   (one of these buttons == one answer, so Wizzy will deny its entry as it's under the threshold)
-            card_btn_dict = BKitB.make_action_button(f'{num}', f'pick-{num}',
-                                                     action_id=f'game-pick-{num}') \
-                if max_selected == 1 else None
-            card_blocks.append(BKitB.make_block_section(f'*{num}*: {card.card_text}', accessory=card_btn_dict))
+            card_btn = ButtonElement(f'{num}', value=f'pick-{num}',
+                                     action_id=f'game-pick-{num}') if max_selected == 1 else None
+            card_blocks.append(
+                SectionBlock(PlainTextElement(f'*{num}*: {card.card_text}'), accessory=card_btn)
+            )
             # We'll still build this button list, as it's used below when we need to select multiple answers
-            btn_list.append({'txt': f'{num}', 'value': f'pick-{num}'})
-            randbtn_list.append({'txt': f'{num}', 'value': f'randpick-{num}'})
+            btn_list.append((f'{num}', f'pick-{num}'))
+            randbtn_list.append((f'{num}', f'randpick-{num}'))
 
         # This is kinda hacky, but add the divider here so that if we don't have a multiselect area to add,
         #   we still have something to add to the return statement below to make the flow a bit better
         definite_selection_area = [
-            BKitB.make_block_divider()
+            DividerBlock()
         ]
         if max_selected > 1:
             desc = f'{max_selected} picks required for this question'
             definite_selection_area += [
-                BKitB.make_block_multiselect(desc, f'Select {max_selected} picks', btn_list,
-                                             max_selected_items=max_selected, action_id='game-multipick'),
-                BKitB.make_block_divider()
+                MultiStaticSelectSectionBlock(desc, btn_list, placeholder=f'Select {max_selected} picks',
+                                              action_id='game-multipick', max_selected=max_selected),
+                DividerBlock()
             ]
 
-        rand_options = [{'txt': 'All picks', 'value': 'randpick-all'}] + randbtn_list
+        rand_options = [('All picks', 'randpick-all')] + randbtn_list
 
         return card_blocks + definite_selection_area + [
-            BKitB.make_block_multiselect('Randpick (all or subset)', 'Select picks', rand_options,
-                                         action_id='game-randpick'),
-            BKitB.make_block_section('Force Close', accessory=BKitB.make_action_button('Close', 'none',
-                                                                                       action_id='close'))
+            MultiStaticSelectSectionBlock('Randpick (all or subset)', placeholder='Select picks',
+                                          option_pairs=rand_options, action_id='game-randpick'),
+            ButtonSectionBlock('Force Close', 'Close', 'none', action_id='close')
         ]
 
     def pick_card(self, pos_list: List[int]) -> bool:
@@ -335,7 +342,7 @@ class Players:
     player_dict = Dict[str, Player]
 
     def __init__(self, player_hash_list: List[str], slack_api: SlackTools, eng: WizzyPSQLClient,
-                 parent_log: logger, is_existing: bool = False):
+                 parent_log: logger, config, is_existing: bool = False):
         """
         Args:
             player_hash_list: list of player slack hashes
@@ -345,6 +352,7 @@ class Players:
         self.log = parent_log.bind(child_name=self.__class__.__name__)
         self.st = slack_api
         self.eng = eng
+        self.config = config
         self.player_dict = {
             k: Player(k, eng=eng, log=self.log) for k in player_hash_list
         }
@@ -365,7 +373,7 @@ class Players:
             player.game_round_id = game_round_id
             # Populate the player's object with info from the round table
             player_round_tbl: TablePlayerRound
-            player_round_tbl = player._get_playerround_tbl()
+            player_round_tbl = player.get_playerround_tbl()
             player._is_judge = player_round_tbl.is_judge
             player._is_nuked_hand = player_round_tbl.is_nuked_hand
             player._is_nuked_hand_caught = player_round_tbl.is_nuked_hand_caught
@@ -415,7 +423,7 @@ class Players:
         # Get the player's info
         self.log.debug('Beginning process to add player to game...')
         self.log.debug('Refreshing players in channel to scan for potential new players')
-        refresh_players_in_channel(channel=auto_config.MAIN_CHANNEL, eng=self.eng, st=self.st, log=self.log)
+        refresh_players_in_channel(channel=self.config.MAIN_CHANNEL, eng=self.eng, st=self.st, log=self.log)
 
         if self.player_dict.get(player_hash) is not None:
             return f'*`{self.player_dict[player_hash].display_name}`* already in game...'
@@ -458,9 +466,9 @@ class Players:
                 dm_chan, ts = self.st.private_message(p_hash, message='Here are your cards!', ret_ts=True,
                                                       blocks=msg_block)
                 self.player_dict[p_hash].pick_blocks[dm_chan] = ts
-            pchan_ts = self.st.private_channel_message(p_hash, auto_config.MAIN_CHANNEL, ret_ts=True,
+            pchan_ts = self.st.private_channel_message(p_hash, self.config.MAIN_CHANNEL, ret_ts=True,
                                                        message='Here are your cards!', blocks=cards_block)
-            self.player_dict[p_hash].pick_blocks[auto_config.MAIN_CHANNEL] = pchan_ts
+            self.player_dict[p_hash].pick_blocks[self.config.MAIN_CHANNEL] = pchan_ts
 
     def take_dealt_cards(self, player_hash: str, card_list: List[TableAnswerCard]):
         """Deals out cards to players"""

@@ -1,6 +1,8 @@
 from pukr import get_logger
-from slacktools.secretstore import SecretStore
 from slacktools.db_engine import PSQLClient
+from slacktools.secretstore import SecretStore
+
+from cah.etl.etl_gs import ETL
 from cah.model import (
     TableAnswerCard,
     TableCahError,
@@ -16,10 +18,8 @@ from cah.model import (
     TableRip,
     TableSetting,
     TableTask,
-    TableTaskParameter
+    TableTaskParameter,
 )
-from cah.etl.etl_gs import ETL
-
 
 TARGET_DB = 'PROD'
 SOURCE_DB = 'DEV'

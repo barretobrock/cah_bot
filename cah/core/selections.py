@@ -1,13 +1,13 @@
 import re
 from typing import (
     List,
-    Optional
+    Optional,
 )
+
 import numpy as np
-from cah.logg import get_base_logger
+from pukr import get_logger
 
-
-LOG = get_base_logger().bind(child_name='selections')
+LOG = get_logger()
 
 
 class Selection:

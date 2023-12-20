@@ -1,26 +1,45 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import sys
 from datetime import datetime
+import sys
 from typing import (
+    TYPE_CHECKING,
+    Dict,
     List,
     Optional,
-    Dict,
     Tuple,
-    TYPE_CHECKING
+    Union,
 )
-from types import SimpleNamespace
-from sqlalchemy.sql import (
-    func,
-)
+
+from loguru import logger
 import pandas as pd
-from slacktools import (
-    SlackBotBase,
-    BlockKitBuilder as BKitB
+from slacktools import SlackBotBase
+from slacktools.block_kit.base import BlocksType
+from slacktools.block_kit.blocks import (
+    ContextBlock,
+    DividerBlock,
+    MarkdownContextBlock,
+    MarkdownSectionBlock,
+)
+from slacktools.block_kit.elements.display import (
+    ImageElement,
+    MarkdownTextElement,
+)
+from slacktools.block_kit.elements.formatters import (
+    DateFormatter,
+    DateFormatType,
 )
 from slacktools.tools import build_commands
-from loguru import logger
+
 from cah import ROOT_PATH
+from cah.core.common_methods import refresh_players_in_channel
+from cah.core.deck import Deck
+from cah.core.games import (
+    Game,
+    GameStatus,
+)
+from cah.db_eng import WizzyPSQLClient
+from cah.forms import Forms
 from cah.model import (
     SettingType,
     TableAnswerCard,
@@ -28,45 +47,43 @@ from cah.model import (
     TableGame,
     TablePlayer,
     TablePlayerRound,
-    TableQuestionCard
+    TableQuestionCard,
 )
-from cah.settings import auto_config
-from cah.forms import Forms
-from cah.db_eng import WizzyPSQLClient
-from cah.core.games import (
-    Game,
-    GameStatus
-)
-from cah.core.bot_queries import BotQueries
-from cah.core.deck import Deck
-from cah.core.common_methods import refresh_players_in_channel
+from cah.queries.bot_queries import BotQueries
+
 if TYPE_CHECKING:
     from cah.core.players import Player
+    from cah.settings import (
+        Development,
+        Production,
+    )
 
 
 class CAHBot(Forms):
     """Bot for playing Cards Against Humanity on Slack"""
 
-    def __init__(self, eng: WizzyPSQLClient, bot_cred_entry: SimpleNamespace, parent_log: logger):
+    def __init__(self, eng: WizzyPSQLClient, props: Dict, parent_log: logger,
+                 config: Union['Development', 'Production']):
         """
         Args:
 
         """
-        self.bot_name = f'{auto_config.BOT_FIRST_NAME} {auto_config.BOT_LAST_NAME}'
+        self.bot_name = f'{config.BOT_FIRST_NAME} {config.BOT_LAST_NAME}'
         self.log = parent_log.bind(child_name=self.__class__.__name__)
         self.eng = eng
-        self.triggers = auto_config.TRIGGERS
-        self.channel_id = auto_config.MAIN_CHANNEL  # cah or cah-test
-        self.admin_user = auto_config.ADMINS
-        self.version = auto_config.VERSION
-        self.update_date = auto_config.UPDATE_DATE
+        self.config = config
+        self.triggers = config.TRIGGERS
+        self.channel_id = config.MAIN_CHANNEL  # cah or cah-test
+        self.admin_user = config.ADMINS
+        self.version = config.VERSION
+        self.update_date = config.UPDATE_DATE
 
         # Begin loading and organizing commands
         self.commands = build_commands(self, cmd_yaml_path=ROOT_PATH.parent.joinpath('commands.yaml'),
                                        log=self.log)
         # Initate the bot, which comes with common tools for interacting with Slack's API
-        self.st = SlackBotBase(bot_cred_entry=bot_cred_entry, triggers=self.triggers, main_channel=self.channel_id,
-                               parent_log=self.log, debug=False, use_session=False)
+        self.st = SlackBotBase(props=props, triggers=self.triggers, main_channel=self.channel_id,
+                               debug=False, use_session=False)
         # Pass in commands to SlackBotBase, where task delegation occurs
         self.log.debug('Patching in commands to SBB...')
         self.st.update_commands(commands=self.commands)
@@ -75,7 +92,7 @@ class CAHBot(Forms):
         self.bot = self.st.bot
         self.generate_intro()
 
-        super().__init__(st=self.st, eng=self.eng, parent_log=self.log)
+        super().__init__(st=self.st, eng=self.eng)
 
         # More game environment-specific initialization stuff
         self.current_game = None        # type: Optional[Game]
@@ -104,24 +121,28 @@ class CAHBot(Forms):
                 self.log.debug(f'Game id {last_game.game_id} was not ended. Reloading...')
                 self.reinstate_game(game_id=last_game.game_id)
 
-    def get_bootup_msg(self) -> List[Dict]:
+    def get_bootup_msg(self) -> BlocksType:
         now = datetime.now()
-        update_dtt = datetime.strptime(self.update_date, '%Y-%m-%d_%H:%M:%S')
-        return [BKitB.make_context_section([
-            BKitB.markdown_section(f"*{self.bot_name}* *`{self.version}`* booted up "
-                                   f"*`<!date^{int(round(now.timestamp()))}^{{date_short_pretty}} at "
-                                   f"{{time_secs}}|{now.astimezone():%F %T %Z}>`*"),
-            BKitB.markdown_section(f"(updated `<!date^{int(round(update_dtt.timestamp()))}^"
-                                   f"{{date_short_pretty}} at {{time_secs}}|{now.astimezone():%F %T %Z}>`)")
-        ])]
+        bootup_time_txt = f"{DateFormatType.date_short_pretty} at {DateFormatType.time_secs}"
+        formatted_bootup_date = DateFormatter.localize_dates(now, bootup_time_txt)
 
-    def search_help_block(self, message: str):
+        update_dtt = datetime.strptime(self.update_date, '%Y-%m-%d_%H:%M:%S')
+        update_time_txt = f"{DateFormatType.date_short_pretty} at {DateFormatType.time_secs}"
+        formatted_update_date = DateFormatter.localize_dates(update_dtt, update_time_txt)
+        return [
+            MarkdownContextBlock([
+                f"*{self.bot_name}* *`{self.version}`* booted up *`{formatted_bootup_date}`*",
+                f"(updated `{formatted_update_date}`)"
+            ])
+        ]
+
+    def search_help_block(self, message: str) -> Union[BlocksType, str]:
         """Takes in a message and filters command descriptions for output
         """
         self.log.debug(f'Got help search command: {message}')
         return self.st.search_help_block(message=message)
 
-    def generate_intro(self):
+    def generate_intro(self) -> BlocksType:
         """Generates the intro message and feeds it in to the 'help' command"""
         intro = f"Hi! I'm *{self.bot_name}* and I help you play Cards Against Humanity! \n" \
                 f"Be sure to call my attention first with *`{'`* or *`'.join(self.triggers)}`*\n " \
@@ -135,8 +156,7 @@ class CAHBot(Forms):
         """Runs just before instance is destroyed"""
         _ = args
         notify_block = [
-            BKitB.make_context_section([BKitB.markdown_section(f'{self.bot_name} died. '
-                                                               f':death-drops::party-dead::death-drops:')])
+            MarkdownContextBlock(f'{self.bot_name} died. Pour one out `010100100100100101010000`').asdict()
         ]
         if self.eng.get_setting(SettingType.IS_ANNOUNCE_SHUTDOWN):
             self.st.message_main_channel(blocks=notify_block)
@@ -150,7 +170,7 @@ class CAHBot(Forms):
 
     def process_event(self, event_dict: Dict):
         """Hands off the event data while also refreshing the session"""
-        self.st.parse_event(event_data=event_dict)
+        self.st.parse_message_event(event_dict)
 
     def process_incoming_action(self, user: str, channel: str, action_dict: Dict, event_dict: Dict,
                                 ) -> Optional:
@@ -323,7 +343,7 @@ class CAHBot(Forms):
         # Load the game, add players, shuffle the players
         self.log.debug('Instantiating game object')
         self.current_game = Game(player_hashes=player_hashes, deck=deck, st=self.st, eng=self.eng,
-                                 parent_log=self.log)
+                                 parent_log=self.log, config=self.config)
         # Get order of judges
         self.log.debug('Getting judge order')
         response_list.append(f'Judge order: {self.current_game.get_judge_order()}')
@@ -331,7 +351,7 @@ class CAHBot(Forms):
         self.log.debug('Beginning new round')
         self.new_round(notifications=response_list)
 
-    def refresh_players(self):
+    def refresh_players(self) -> str:
         """Refresh all channel members' details, including the players' names.
         While doing so, make sure they're members of the channel."""
         refresh_players_in_channel(channel='CMPV3K8AE', eng=self.eng, st=self.st, log=self.log)
@@ -533,7 +553,7 @@ class CAHBot(Forms):
             ).group_by(TablePlayer.player_id).all()
             player_hashes = [x.slack_user_hash for x in players]
         self.current_game = Game(player_hashes=player_hashes, deck=deck, st=self.st, eng=self.eng,
-                                 parent_log=self.log, game_id=game_id)
+                                 parent_log=self.log, config=self.config, game_id=game_id)
         self.current_game.reinstate_round()
 
     def new_round(self, notifications: List[str] = None) -> Optional:
@@ -546,8 +566,9 @@ class CAHBot(Forms):
 
         if notifications is not None:
             # Process incoming notifications into the block
-            notification_block.append(BKitB.make_context_section([BKitB.markdown_section(x)
-                                                                  for x in notifications]))
+            notification_block.append(
+                MarkdownContextBlock([x for x in notifications]).asdict()
+            )
 
         if self.current_game.status == GameStatus.ENDED:
             # Game ended because we ran out of questions
@@ -669,14 +690,14 @@ class CAHBot(Forms):
                     break
         return streaker_id, n_streak
 
-    def display_points(self) -> List[dict]:
+    def display_points(self) -> BlocksType:
         """Displays points for all players"""
         self.log.debug('Generating scores...')
         score_df = self.get_score(in_game=True)  # type: pd.DataFrame
         self.log.debug(f'Retrieved {score_df.shape[0]} players\' scores')
         if score_df.shape[0] == 0:
             return [
-                BKitB.make_block_section('No one has scored yet. Check back later!')
+                MarkdownSectionBlock('No one has scored yet. Check back later!')
             ]
         score_df.loc[:, 'rank_emoji'] = [':blank:' for _ in range(score_df.shape[0])]
         if score_df['current'].sum() != 0:
@@ -707,9 +728,9 @@ class CAHBot(Forms):
             scores_list.append(line)
 
         return [
-            BKitB.make_context_section([BKitB.markdown_section('*Current Scores*')]),
-            BKitB.make_block_divider(),
-            BKitB.make_block_section(scores_list)
+            MarkdownContextBlock('*Current Scores*'),
+            DividerBlock(),
+            MarkdownSectionBlock(scores_list)
         ]
 
     def ping_players_left_to_pick(self) -> str:
@@ -730,12 +751,13 @@ class CAHBot(Forms):
             return 'IDK - looks like the wrong status for a ping, bucko.'
 
     @staticmethod
-    def _generate_avi_context_section(players: List['Player'], pretext: str):
+    def _generate_avi_context_section(players: List['Player'],
+                                      pretext: str) -> List[Union[MarkdownTextElement, ImageElement]]:
         """Generates a context section with players' avatars rendered"""
-        sect_list = [BKitB.markdown_section(pretext)]
+        sect_list = [MarkdownTextElement(pretext)]
         if len(players) == 0:
             return sect_list
-        player_list = [BKitB.make_image_element(x.avi_url, x.display_name) for x in players]
+        player_list = [ImageElement(x.avi_url, x.display_name) for x in players]
         if len(sect_list + player_list) > 10:
             # Only 10 elements are allowed in a context block at a given time
             player_list = player_list[:9]
@@ -759,7 +781,7 @@ class CAHBot(Forms):
                 TableAnswerCard.card_text: new_text
             })
 
-    def display_status(self, hide_identities: bool = True) -> Optional[List[dict]]:
+    def display_status(self, hide_identities: bool = True) -> Optional[BlocksType]:
         """Displays status of the game"""
 
         if self.current_game is None:
@@ -767,7 +789,7 @@ class CAHBot(Forms):
             return None
 
         status_block = [
-            BKitB.make_block_section('*Game Info*')
+            MarkdownSectionBlock('*Game Info*')
         ]
 
         if self.current_game.status not in [GameStatus.ENDED, GameStatus.INITIATED]:
@@ -801,20 +823,14 @@ class CAHBot(Forms):
                            f':conga_parrot: *Judge Order*: {self.current_game.get_judge_order()}'
 
             status_block += [
-                BKitB.make_context_section([
-                    BKitB.markdown_section(f':gavel: *Judge*: *`{self.current_game.judge.get_full_name()}`*')
-                ]),
-                BKitB.make_block_divider(),
-                BKitB.make_context_section([
-                    BKitB.markdown_section(status_section)
-                ]),
-                BKitB.make_context_section(dm_section),
-                BKitB.make_context_section(arp_section),
-                BKitB.make_context_section(arc_section),
-                BKitB.make_block_divider(),
-                BKitB.make_context_section([
-                    BKitB.markdown_section(game_section)
-                ])
+                MarkdownContextBlock(f':gavel: *Judge*: *`{self.current_game.judge.get_full_name()}`*'),
+                DividerBlock(),
+                MarkdownContextBlock(status_section),
+                ContextBlock(dm_section),
+                MarkdownContextBlock(arp_section),
+                MarkdownContextBlock(arc_section),
+                DividerBlock(),
+                MarkdownContextBlock(game_section)
             ]
 
         if self.current_game.status in [GameStatus.PLAYER_DECISION, GameStatus.JUDGE_DECISION]:
@@ -822,12 +838,8 @@ class CAHBot(Forms):
             pickle_txt = '' if len(picks_needed) == 0 else f'\n:pickle-sword: ' \
                                                            f'*Pickles Needed*: {" ".join(picks_needed)}'
             status_block = status_block[:1] + [
-                BKitB.make_block_section(f':regional_indicator_q: '
-                                         f'`{self.current_game.current_question_card.card_text}`'),
-                BKitB.make_context_section([
-                    BKitB.markdown_section(f':gavel: *Judge*: *`{self.current_game.judge.get_full_name()}`'
-                                           f'*{pickle_txt}')
-                ])
+                MarkdownSectionBlock(f':regional_indicator_q: `{self.current_game.current_question_card.card_text}`'),
+                MarkdownContextBlock(f':gavel: *Judge*: *`{self.current_game.judge.get_full_name()}` *{pickle_txt}'),
             ] + status_block[2:]  # Skip over the previous judge block
 
         return status_block

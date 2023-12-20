@@ -1,7 +1,7 @@
 from random import choice
 from string import (
+    ascii_letters,
     ascii_uppercase,
-    ascii_letters
 )
 
 

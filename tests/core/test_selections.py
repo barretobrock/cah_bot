@@ -1,15 +1,20 @@
 import random
-from unittest import TestCase, main
-from unittest.mock import MagicMock
 from typing import (
     List,
-    Optional
+    Optional,
 )
+from unittest import (
+    TestCase,
+    main,
+)
+from unittest.mock import MagicMock
+
 from pukr import get_logger
+
 from cah.core.selections import (
     Choice,
     Pick,
-    Selection
+    Selection,
 )
 from tests.mocks.users import random_user
 
@@ -52,12 +57,12 @@ class TestSelections(TestCase):
                 'is_rand': True,
                 'result': range(5)
             },
-            f'randpick <@aslkdjfhu2>': {
+            'randpick <@aslkdjfhu2>': {
                 'is_rand': True,
                 'player_to_pick': 'aslkdjfhu2',
                 'result': range(5)
             },
-            f'randpick <@aslkdjfhu2> 523': {
+            'randpick <@aslkdjfhu2> 523': {
                 'is_rand': True,
                 'player_to_pick': 'aslkdjfhu2',
                 'subset': [4, 1, 2]
@@ -99,7 +104,7 @@ class TestSelections(TestCase):
             throws_exception = res_dict.get('throws_exception', False)
             pick = Pick(player_hash=command_sender_hash, message=msg, n_required=resp_req, total_cards=5)
             if throws_exception:
-                with self.assertRaises(ValueError) as e:
+                with self.assertRaises(ValueError) as _:
                     pick.handle_pick(total_cards=total_cards)
             else:
                 pick.handle_pick(total_cards=total_cards)
@@ -127,12 +132,12 @@ class TestSelections(TestCase):
                 'is_rand': True,
                 'result': range(5)
             },
-            f'randchoose <@aslkdjfhu2>': {
+            'randchoose <@aslkdjfhu2>': {
                 'is_rand': True,
                 'player_to_pick': 'aslkdjfhu2',
                 'result': range(5)
             },
-            f'randchoose <@aslkdjfhu2> 523': {
+            'randchoose <@aslkdjfhu2> 523': {
                 'is_rand': True,
                 'player_to_pick': 'aslkdjfhu2',
                 'subset': [4, 1, 2]

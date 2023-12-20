@@ -1,19 +1,32 @@
-import json
+import os
 import signal
-import requests
+
 from flask import (
     Flask,
+    jsonify,
     request,
-    make_response
 )
-from slackeventsapi import SlackEventAdapter
-from slacktools import SecretStore
-from cah.model import TablePlayer
-from cah.db_eng import WizzyPSQLClient
-from cah.settings import auto_config
-from cah.logg import get_base_logger
+from pukr import (
+    InterceptHandler,
+    get_logger,
+)
+from werkzeug.exceptions import HTTPException
+from werkzeug.http import HTTP_STATUS_CODES
+
 from cah.bot_base import CAHBot
-from cah.crons import cron
+from cah.db_eng import WizzyPSQLClient
+from cah.flask_base import db
+from cah.routes.actions import bp_actions
+from cah.routes.crons import bp_crons
+from cah.routes.events import bp_events
+from cah.routes.helpers import (
+    get_app_logger,
+    log_after,
+    log_before,
+)
+from cah.routes.main import bp_main
+from cah.routes.slash import bp_slash
+from cah.settings import Production
 
 # TODO:
 #  - add menu to control other users that are unresponsive (e.g., arparca)
@@ -21,112 +34,80 @@ from cah.crons import cron
 #       - in-game commands given priority when a game is active, otherwise general commands are priority.
 #           (this will require adding an overflow element to the menu)
 
-bot_name = auto_config.BOT_NICKNAME
-logg = get_base_logger()
-
-credstore = SecretStore('secretprops-davaiops.kdbx')
-# Set up database connection
-conn_dict = credstore.get_entry(f'davaidb-{auto_config.ENV.lower()}').custom_properties
-cah_creds = credstore.get_key_and_make_ns(bot_name)
-
-logg.debug('Starting up app...')
-app = Flask(__name__)
-app.register_blueprint(cron, url_prefix='/cron')
-
-logg.debug('Initializing db engine...')
-eng = WizzyPSQLClient(props=conn_dict, parent_log=logg)
-
-logg.debug('Instantiating bot...')
-Bot = CAHBot(eng=eng, bot_cred_entry=cah_creds, parent_log=logg)
-
-# Register the cleanup function as a signal handler
-signal.signal(signal.SIGINT, Bot.cleanup)
-signal.signal(signal.SIGTERM, Bot.cleanup)
-
-# Events API listener
-bot_events = SlackEventAdapter(cah_creds.signing_secret, "/api/events", app)
+ROUTES = [
+    bp_actions,
+    bp_crons,
+    bp_events,
+    bp_main,
+    bp_slash
+]
 
 
-@app.route('/api/actions', methods=['GET', 'POST'])
-@logg.catch
-def handle_action():
-    """Handle a response when a user clicks a button from Wizzy in Slack"""
-    event_data = json.loads(request.form["payload"])
-    user = event_data['user']['id']
-    # if channel empty, it's a shortcut
-    if event_data.get('channel') is None:
-        # shortcut - grab callback, put in action dict according to expected ac
-        action = {
-            'action_id': event_data.get('callback_id'),
-            'action_value': '',
-            'type': 'shortcut'
-        }
-        channel = auto_config.MAIN_CHANNEL
-    else:
-        # Action from button click, etc...
-        channel = event_data['channel']['id']
-        actions = event_data['actions']
-        # Not sure if we'll ever receive more than one action?
-        action = actions[0]
-    # Send that info onwards to determine how to deal with it
-    Bot.process_incoming_action(user, channel, action_dict=action, event_dict=event_data)
+def handle_err(err):
+    _log = get_app_logger()
+    _log.error(err)
+    if err.code == 404:
+        _log.error(f'Path requested: {request.path}')
 
-    # Respond to the initial message and update it
-    update_dict = {
-        'delete_original': True
-    }
-    response_url = event_data.get('response_url')
-    if response_url is not None:
-        # Update original message
-        _ = requests.post(event_data['response_url'], json=update_dict,
-                          headers={'Content-Type': 'application/json'})
-
-    # Send HTTP 200 response with an empty body so Slack knows we're done
-    return make_response('', 200)
+    if isinstance(err, HTTPException):
+        err_msg = getattr(err, 'description', HTTP_STATUS_CODES.get(err.code, ''))
+        return jsonify({'message': err_msg}), err.code
+    if not getattr(err, 'message', None):
+        return jsonify({'message': 'Server has encountered an error.'}), 500
+    return jsonify(**err.kwargs), err.http_status_code
 
 
-@bot_events.on('message')
-@logg.catch
-def scan_message(event_data):
-    Bot.process_event(event_data)
+def create_app(*args, **kwargs) -> Flask:
+    config_class = kwargs.pop('config_class', Production)
+    props = kwargs.pop('props')
 
+    app = Flask(__name__, static_url_path='/')
+    app.config.from_object(config_class)
 
-@app.route('/api/slash', methods=['GET', 'POST'])
-@logg.catch
-def handle_slash():
-    """Handles a slash command"""
-    event_data = request.form
-    # Handle the command
-    Bot.process_slash_command(event_data)
+    # Initialize database ops
+    db.init_app(app)
 
-    # Send HTTP 200 response with an empty body so Slack knows we're done
-    return make_response('', 200)
+    # Initialize logger
+    logg = get_logger(config_class.BOT_NICKNAME, log_dir_path=config_class.LOG_DIR, show_backtrace=config_class.DEBUG,
+                      base_level=config_class.LOG_LEVEL)
+    logg.info('Logger started. Binding to app handler...')
+    app.logger.addHandler(InterceptHandler(logger=logg))
+    # Bind logger so it's easy to call from app object in routes
+    app.extensions.setdefault('logg', logg)
 
+    # Register routes
+    logg.info('Registering routes...')
+    for ruut in ROUTES:
+        app.register_blueprint(ruut)
 
-@bot_events.on('user_change')
-@logg.catch
-def notify_new_statuses(event_data):
-    """Triggered when a user updates their profile info. Gets saved to global dict
-    where we then report it in #general"""
-    event = event_data['event']
-    user_info = event['user']
-    uid = user_info['id']
-    # Look up user in db
-    user_obj = eng.get_player_from_hash(user_hash=uid)  # type: TablePlayer
-    logg.debug(f'User change detected for {uid}')
-    if user_obj is None:
-        logg.warning(f'Couldn\'t find user: {uid} \n {user_info}')
-        return
+    for err_code, name in HTTP_STATUS_CODES.items():
+        if err_code >= 400:
+            try:
+                app.register_error_handler(err_code, handle_err)
+            except ValueError:
+                pass
 
-    # get display name
-    profile = user_info.get('profile')
-    display_name = profile.get('display_name')
-    if any([
-        # Maybe some other attributes?
-        user_obj.display_name != display_name,
-    ]):
-        # Update the user
-        with eng.session_mgr() as session:
-            session.add(user_obj)
-            user_obj.display_name = display_name
-        logg.debug(f'User {display_name} updated in db.')
+    app.config['db'] = db
+
+    # Set up database connection
+    logg.debug('Initializing db engine...')
+    eng = WizzyPSQLClient(props=props, parent_log=logg)
+    app.extensions.setdefault('eng', eng)
+
+    logg.debug('Instantiating bot...')
+    bot = CAHBot(eng=eng, props=props, config=config_class, parent_log=logg)
+    # Register the cleanup function as a signal handler
+    signal.signal(signal.SIGINT, bot.cleanup)
+    signal.signal(signal.SIGTERM, bot.cleanup)
+    app.extensions.setdefault('bot', bot)
+
+    # bolt_app = App(signing_secret=cah_creds.signing_secret, token=cah_creds.xoxb_token)
+    # bolt_app.
+    # bolt_app.event('message', )
+    # handler = SlackRequestHandler(bolt_app)
+    # app.extensions.setdefault('handler', handler)
+
+    app.before_request(log_before)
+    app.after_request(log_after)
+
+    return app

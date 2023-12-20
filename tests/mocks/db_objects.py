@@ -1,21 +1,22 @@
+from datetime import datetime
 import random
 from typing import (
     Dict,
     List,
-    Tuple
+    Tuple,
 )
-from datetime import datetime
+
 import pandas as pd
-import numpy as np
+
 from cah.model import (
     GameStatus,
     TableGame,
     TablePlayer,
-    TablePlayerRound
 )
+
 from .users import (
     random_display_name,
-    random_user
+    random_user,
 )
 
 
@@ -105,6 +106,6 @@ def mock_get_rounds_df(n_rounds: int = 10, n_players: int = 10) -> pd.DataFrame:
         else:
             judge_pos = 0
 
-    df.loc[(df['player_id'] == winner_id) & (df['is_judge'] == False) & (df['game_round_key']), 'score'] = 1
+    df.loc[(df['player_id'] == winner_id) & (df['is_judge'] is False) & (df['game_round_key']), 'score'] = 1
 
     return df

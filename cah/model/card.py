@@ -1,12 +1,13 @@
 from sqlalchemy import (
+    VARCHAR,
     Boolean,
     Column,
-    Integer,
     ForeignKey,
+    Integer,
     Text,
-    VARCHAR
 )
 from sqlalchemy.orm import relationship
+
 # local imports
 from cah.model.base import Base
 

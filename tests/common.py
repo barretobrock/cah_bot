@@ -1,5 +1,5 @@
-import string
 import random
+import string
 from unittest.mock import patch
 
 
