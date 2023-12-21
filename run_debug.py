@@ -6,7 +6,6 @@ from cah.settings.config import Development
 
 if __name__ == '__main__':
     Development.build_db_engine()
-    os.environ['SLACK_BOT_TOKEN'] = Development.SECRETS.get('xoxb-token')
     from cah.app import create_app
 
     app = create_app(config_class=Development, props=Development.SECRETS)
