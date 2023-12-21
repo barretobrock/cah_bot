@@ -736,10 +736,10 @@ class Game:
             # Make a block specifically for the judge (with buttons)
             pick_txt = f'*{num}*: {"|".join([f" *`{x}`* " for x in pick_txt])}'
             judge_card_blocks.append(
-                ButtonSectionBlock(pick_txt, f'{num}', value=f'choose-{num}', action_id=f'game-choose-{num}')
+                ButtonSectionBlock(pick_txt[:140], f'{num}', value=f'choose-{num}', action_id=f'game-choose-{num}')
             )
             # Make a "public" block that just shows the choices in the channel
-            public_card_blocks.append(MarkdownSectionBlock(pick_txt))
+            public_card_blocks.append(MarkdownSectionBlock(pick_txt[:140]))
             randbtn_list.append((f'{num}', f'randchoose-{num}'))
 
         rand_options = [('All choices', 'randchoose-all')] + randbtn_list

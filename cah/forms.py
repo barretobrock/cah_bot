@@ -167,7 +167,8 @@ class Forms:
         for k, v in status_dict.items():
             title = f'Turn {k.upper()} {"off" if v["bool"] else "on"}'
             buttons.append(
-                ButtonElement(title, action_id=v['value'], value=v['value'], style='danger' if not v['bool'] else None)
+                ButtonElement(title, action_id=v['value'], value=v['value'],
+                              style='danger' if not v['bool'] else 'primary')
             )
 
         honorific = f', {player.honorific}' if player.honorific is not None else ''

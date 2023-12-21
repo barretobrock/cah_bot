@@ -244,3 +244,4 @@ if __name__ == '__main__':
     etl.etl_decks()
     etl.etl_players()
     etl.etl_honorific()
+    etl.etl_rips()
