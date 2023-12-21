@@ -13,7 +13,7 @@ from cah.routes.helpers import (
     get_app_logger,
     get_wizzy_eng,
 )
-from cah.settings import Development
+from cah.settings import Production
 
 if TYPE_CHECKING:
     from cah.model import TablePlayer
@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 bp_events = Blueprint('events', __name__)
 
 
-Development.load_secrets()
-props = Development.SECRETS
+Production.load_secrets()
+props = Production.SECRETS
 bolt_app = App(token=props['xoxb-token'], signing_secret=props['signing-secret'], process_before_response=True)
 handler = SlackRequestHandler(app=bolt_app)
 
