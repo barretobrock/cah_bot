@@ -106,7 +106,7 @@ class Forms:
     def build_new_game_form_p1(decks: List[str]) -> BlocksType:
         """Builds a new game form with Block Kit"""
         decks_list = [(x, f'deck_{x}') for x in decks]
-        return [StaticSelectSectionBlock('Select a deck :pickle-shy:', decks_list, placeholder='peek a deek',
+        return [StaticSelectSectionBlock('Select a deck :pickle_shy:', decks_list, placeholder='peek a deek',
                                          action_id='new-game-deck')]
 
     def build_new_game_form_p2(self) -> BlocksType:
