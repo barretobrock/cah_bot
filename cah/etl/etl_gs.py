@@ -31,7 +31,10 @@ from cah.model import (
     TableTask,
     TableTaskParameter,
 )
-from cah.settings import Development
+from cah.settings import (
+    Development,
+    Production,
+)
 
 
 class ETL:
@@ -55,11 +58,15 @@ class ETL:
         TableTaskParameter
     ]
 
-    def __init__(self, tables: List = None, env: str = 'dev', drop_all: bool = True, incl_services: bool = True):
+    def __init__(self, tables: List = None, env: str = 'PROD', drop_all: bool = True, incl_services: bool = True):
         self.log = get_logger()
         self.log.debug('Obtaining credential file...')
-        Development.load_secrets()
-        props = Development.SECRETS
+        if env.upper() == 'PROD':
+            Production.load_secrets()
+            props = Production.SECRETS
+        else:
+            Development.load_secrets()
+            props = Development.SECRETS
 
         self.log.debug('Opening up the database...')
         self.psql_client = WizzyPSQLClient(props=props, parent_log=self.log)
@@ -232,7 +239,7 @@ class ETL:
 
 
 if __name__ == '__main__':
-    etl = ETL(tables=ETL.ALL_TABLES, env='dev', drop_all=True)
+    etl = ETL(tables=ETL.ALL_TABLES, env='PROD', drop_all=True)
     etl.etl_bot_settings()
     etl.etl_decks()
     etl.etl_players()

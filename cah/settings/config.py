@@ -6,12 +6,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from cah import (
+    ROOT_PATH,
     __update_date__,
     __version__,
 )
 from cah.model.base import Base
 
-ROOT = pathlib.Path(__file__).parent.parent.parent
 HOME = pathlib.Path().home()
 KEY_DIR = HOME.joinpath('keys')
 LOG_DIR = HOME.joinpath('logs')
@@ -50,8 +50,8 @@ class Common(object):
 
     @classmethod
     def load_secrets(cls):
-        secrets_path = ROOT.joinpath('secretprops.properties')
-        if cls.ENV == 'production':
+        secrets_path = ROOT_PATH.joinpath('secretprops.properties')
+        if cls.ENV == 'PROD':
             secrets_path = KEY_DIR.joinpath('cah-secretprops.properties')
         cls.SECRETS = read_secrets(secrets_path)
 
