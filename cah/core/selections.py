@@ -111,6 +111,11 @@ class Pick(Selection):
     def handle_random_selection(self):
         if self.is_random:
             if self.random_subset is not None:
+                # Selecting based on subset of available options
+                # Ensure subset contains no duplicates
+                uniques = set()
+                uniques_add = uniques.add
+                self.random_subset = [x for x in self.random_subset if not (x in uniques or uniques_add(x))]
                 if len(self.random_subset) >= self.n_required:
                     # Pick from subset
                     LOG.debug(f'Randomly selecting {self.n_required} pick(s) from subset ({self.random_subset})')
@@ -121,6 +126,7 @@ class Pick(Selection):
             else:
                 # Picking from all available options
                 LOG.debug(f'Randomly selecting {self.n_required} pick(s) from all cards')
+                # Roll some dice, see if
                 self.positions = np.random.choice(self.total_cards, self.n_required, replace=False).tolist()
 
     def __repr__(self) -> str:
