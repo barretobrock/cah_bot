@@ -10,10 +10,10 @@ from slacktools.block_kit.base import BlocksType
 from slacktools.block_kit.blocks import (
     ActionsBlock,
     MarkdownSectionBlock,
+    MultiStaticSelectSectionBlock,
     MultiUserSelectSectionBlock,
     PlainTextHeaderBlock,
     PlainTextInputBlock,
-    StaticSelectSectionBlock,
     UserSelectSectionBlock,
 )
 from slacktools.block_kit.elements.input import (
@@ -74,6 +74,7 @@ class Forms:
 
             player_info_buttons = [
                 ButtonElement('My Stats', value='my-stats', action_id='my-stats'),
+                ButtonElement('My Cahhds', value='my-cards', action_id='my-cards'),
                 ButtonElement('Player Stats', value='player-stats', action_id='player-stats')
             ]
 
@@ -107,8 +108,10 @@ class Forms:
     def build_new_game_form_p1(decks: List[Tuple[str, str]]) -> BlocksType:
         """Builds a new game form with Block Kit"""
         decks_list = [(name_with_stats, f'deck_{name}') for name_with_stats, name in decks]
-        return [StaticSelectSectionBlock('Select some decks :pickle_shy:', decks_list, placeholder='peek a deek',
-                                         action_id='new-game-deck')]
+        return [
+            MultiStaticSelectSectionBlock('Select some decks :pickle_shy:', decks_list, placeholder='peek a deek',
+                                          action_id='new-game-deck', max_selected=5)
+        ]
 
     def build_new_game_form_p2(self, decks_list: List[str]) -> BlocksType:
         """Builds the second part to the new game form with Block Kit"""
@@ -136,7 +139,7 @@ class Forms:
         return [
             PlainTextInputBlock('Make your change to the question below', action_id='modify-question',
                                 initial_value=original_value),
-            ActionsBlock([ButtonElement('Cancel', 'cancel', value='cancel', style='danger')]),
+            ActionsBlock([ButtonElement('Close', value='close', action_id='close')]),
         ]
 
     @staticmethod

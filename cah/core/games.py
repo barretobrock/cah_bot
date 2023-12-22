@@ -307,6 +307,7 @@ class Game:
         time.sleep(5)
         self.log.debug('Rendering player hands and sending them')
         self.handle_render_hands()
+        self.handle_autorandpicks()
 
     def end_round(self):
         """Procedures for ending the round"""
@@ -325,6 +326,9 @@ class Game:
             # Avoid starting a new round when one has already been started
             raise ValueError(f'No active game to end - status: (`{self.status.name}`)')
         self.end_round()
+        self.log.debug('Wiping cards from players\' hands...')
+        self.players.reset_player_hands()
+
         with self.eng.session_mgr() as session:
             session.query(TableGame).filter(TableGame.game_id == self.game_id).update({
                 TableGame.end_time: datetime.now()
@@ -348,8 +352,8 @@ class Game:
             self.end_game()
             return None
 
-    def handle_randpicks(self):
-        """Handles randpicking for players that have had it turned on"""
+    def handle_autorandpicks(self):
+        """Handles autorandpicking for players that have had it turned on"""
         # Determine randpick players and pick for them
         self.log.debug('Handling randpicks for round')
         for player_hash, player in self.players.player_dict.items():
@@ -357,7 +361,11 @@ class Game:
                 continue
             elif player.is_arp:
                 # Player has elected to automatically pick their cards
-                self.process_picks(player_hash, 'randpick')
+                rand_roll = np.random.random()
+                if rand_roll <= 0.10:
+                    self.decknuke(player_hash=player_hash)
+                else:
+                    self.process_picks(player_hash, 'randpick')
                 if player.is_dm_cards:
                     self.st.private_message(player_hash, 'Your pick was handled automatically, '
                                                          'as you have `auto randpick` (ARP) enabled.')
@@ -623,7 +631,7 @@ class Game:
         if pick.player_hash == self.judge.player_hash:
             # Make sure the player referenced isn't the judge
             self.log.debug('Ignoring pick... This player is the judge.')
-            self.st.message_main_channel(f'{self.judge.player_tag} is the judge this round. Judges can\'t pick!')
+            self.st.message_main_channel(f'{self.judge.player_tag} is the judge this round. Judges can\'t pick!!!')
             return None
         elif player_hash != pick.player_hash:
             # Reload player - a pick was called in for someone other than the command sender
@@ -633,7 +641,7 @@ class Game:
         if player.is_picked:
             # Player already picked
             self.log.debug('Ignoring pick... Player has already picked.')
-            self.st.message_main_channel(f'{player.player_tag} you already pickled this round')
+            self.st.message_main_channel(f'{player.player_tag} you already pickled this round????? NO DOUBLE PICKLE!!!')
             return None
         pick.handle_pick(total_cards=player.get_all_cards())
 
@@ -732,17 +740,19 @@ class Game:
             self.players.player_dict[p_hash].choice_order = i
             num = i + 1
             pick = picks.get(p_hash)
-            pick_txt = [x.get('card_text') for x in pick]
+            pick_txt_list = [x.get('card_text') for x in pick]
+            single_option_txt = "|".join([f" *`{x[:75]}`* " for x in pick_txt_list])
+            option_btn_txt = "|".join([f" {x[:30]} " for x in pick_txt_list])
             # Make a block specifically for the judge (with buttons)
-            pick_txt = f'*{num}*: {"|".join([f" *`{x}`* " for x in pick_txt])}'
+            pick_txt = f'*{num}*: {single_option_txt}'
             judge_card_blocks.append(
-                ButtonSectionBlock(pick_txt[:140], f'{num}', value=f'choose-{num}', action_id=f'game-choose-{num}')
+                ButtonSectionBlock(pick_txt, f'{num}', value=f'choose-{num}', action_id=f'game-choose-{num}')
             )
             # Make a "public" block that just shows the choices in the channel
-            public_card_blocks.append(MarkdownSectionBlock(pick_txt[:140]))
-            randbtn_list.append((f'{num}', f'randchoose-{num}'))
+            public_card_blocks.append(MarkdownSectionBlock(pick_txt))
+            randbtn_list.append((f'{option_btn_txt}', f'randchoose-{num}'))
 
-        rand_options = [('All choices', 'randchoose-all')] + randbtn_list
+        rand_options = [(':hyper-shrug: All choices', 'randchoose-all')] + randbtn_list
 
         return public_card_blocks, judge_card_blocks + [
             DividerBlock(),
@@ -760,7 +770,7 @@ class Game:
                 f'Round *`{self.game_round_number}`* - *{self.judge.honorific} '
                 f'Judge {self.judge.display_name.title()}* {bot_moji} presiding.'
             ),
-            MarkdownSectionBlock(f'*:regional_indicator_q:: {self.current_question_card.card_text}*'),
+            MarkdownSectionBlock(f'*:regional_indicator_q:: `{self.current_question_card.card_text}`*'),
             DividerBlock(),
         ]
 

@@ -35,6 +35,7 @@ class TableDeck(Base):
     name = Column(VARCHAR(50), unique=True, nullable=False)
     n_answers = Column(Integer, default=0, nullable=False)
     n_questions = Column(Integer, default=0, nullable=False)
+    times_used = Column(Integer, default=0, nullable=False)
 
     def __init__(self, name: str, n_answers: int = 0, n_questions: int = 0, deck_group: TableDeckGroup = None):
         self.name = name

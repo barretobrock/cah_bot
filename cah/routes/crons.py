@@ -60,7 +60,7 @@ def handle_randpick():
     get_app_logger().debug('Beginning randpick handling check...')
     bot = get_app_bot()
     if bot.current_game is not None:
-        bot.current_game.handle_randpicks()
+        bot.current_game.handle_autorandpicks()
     return make_response('', 200)
 
 

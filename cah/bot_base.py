@@ -12,6 +12,7 @@ from typing import (
 )
 
 from loguru import logger
+import numpy as np
 import pandas as pd
 from slacktools import SlackBotBase
 from slacktools.block_kit.base import BlocksType
@@ -219,12 +220,16 @@ class CAHBot(Forms):
                 self.choose_card(user, parsed_command)
         elif action_id == 'new-game-start':
             # Kicks off the new game form process
+            if self.current_game is not None and self.current_game.status != GameStatus.ENDED:
+                self.st.send_message(channel=channel, message=f'Dear <@{user}>, one must end the game '
+                                                              f'before one can start a game anew :meditation-fart:')
+                return None
             # First ask for the deck
             self.st.send_message(channel=channel, message=f'Looks like <@{user}>, is starting a game. '
                                                           f'Might take a few seconds while they select stuff...')
             with self.eng.session_mgr() as session:
                 deck_objs = session.query(TableDeck).order_by(TableDeck.n_answers.desc()).all()
-                decks = [(f'{x.name} a{x.n_answers},q{x.n_questions}', x.name) for x in deck_objs]
+                decks = [(f'{x.name[:25]:.<30}..a{x.n_answers:_>4}..q{x.n_questions:_>4}', x.name) for x in deck_objs]
             formp1 = self.build_new_game_form_p1(decks)
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p1',
                                                 blocks=formp1)
@@ -250,6 +255,11 @@ class CAHBot(Forms):
             # TODO: Build out arp/arc of other player
             self.st.send_message(channel=channel, message='ARPARC player is currently in development! '
                                                           'Check back later.', thread_ts=thread_ts)
+        elif action_id == 'my-cards':
+            user_player_obj: Player
+            user_player_obj = self.current_game.players.player_dict[user.upper()]
+            cards_block = user_player_obj.render_hand()
+            self.st.private_channel_message(user_id=user, channel=channel, message='Your cahds', blocks=cards_block)
         elif action_id == 'new-game-users':
             self.new_game(deck_names=self.state_store['decks'], player_hashes=action_dict['selected_users'])
         elif action_id == 'status':
@@ -285,6 +295,9 @@ class CAHBot(Forms):
             if self.current_game is not None:
                 rem_user = action_dict.get('selected_user')
                 self.current_game.players.remove_player_from_game(rem_user)
+        elif action_id == 'decknuke':
+            if self.current_game is not None:
+                self.current_game.decknuke(user)
         elif action_id.startswith('toggle-'):
             action_msg = action_id.replace('-', ' ')
             if action_id == 'toggle-auto-randpick':
@@ -372,7 +385,7 @@ class CAHBot(Forms):
         The card that's picked will have a negative point value
         """
         if self.current_game is None or self.current_game.status not in [GameStatus.PLAYER_DECISION]:
-            return 'Here\'s a nuke for ya :walkfart:'
+            return 'Here\'s a nuke for ya :fart:'
         self.current_game.decknuke(player_hash=user)
 
     def show_decks(self) -> str:
@@ -431,7 +444,7 @@ class CAHBot(Forms):
         self._toggle_bool_setting(SettingType.IS_PING_WINNER)
 
     def toggle_auto_pick_or_choose(self, user_hash: str, channel: str, message: str, pick_or_choose: str) -> str:
-        """Toggles card dming"""
+        """Toggles ARP/ARC for player"""
         _ = channel
         msg_split = message.split()
         is_randpick = pick_or_choose == 'randpick'
@@ -448,6 +461,8 @@ class CAHBot(Forms):
                 if not any([player.player_tag in x for x in msg_split]):
                     # Tagged someone else. Get that other tag & use it to change the player.
                     ptag = next((x for x in msg_split if '<@' in x))
+                    # Clean tag markup, if any
+                    ptag = ptag.replace('<@', '').replace('>', '')
                     player = self.current_game.players.player_dict[ptag.upper()]  # type: 'Player'
 
         resp_msg = []
@@ -466,14 +481,20 @@ class CAHBot(Forms):
                 if all([self.current_game.status == GameStatus.PLAYER_DECISION,
                         player.player_hash != self.current_game.judge.player_hash,
                         player.is_arp,
-                        player.is_picked]):
+                        not player.is_picked]):
                     # randpick for the player immediately if:
                     #   - game active
                     #   - players' decision status
                     #   - player not judge
                     #   - autorandpick was turned on
                     #   - player picks are empty
-                    self.process_picks(player.player_hash, 'randpick')
+                    resp_msg.append('THIS IS TO CONFIRM THAT YOUR RANDPICK HAS BEEN AUTOMATHICALLY '
+                                    'HANDLED THIS ROUND, ASSHOLE!!!!')
+                    rand_roll = np.random.random()
+                    if rand_roll <= 0.10:
+                        self.decknuke(player.player_hash)
+                    else:
+                        self.process_picks(player.player_hash, 'randpick')
 
         if any([not is_randpick, is_both]):
             # Auto randchoose
