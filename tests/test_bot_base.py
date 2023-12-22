@@ -1,10 +1,12 @@
 from datetime import datetime
+from typing import Tuple
 from unittest import (
     TestCase,
     main,
 )
 from unittest.mock import MagicMock
 
+import pandas as pd
 from pukr import get_logger
 
 from cah.bot_base import CAHBot
@@ -43,6 +45,7 @@ class TestCAHBot(TestCase):
             'xoxp-token': random_string(),
             'xoxb-token': 'al;dskj'
         }
+        self.mock_bot_queries = make_patcher(self, 'cah.bot_base.BotQueries')
         self.mock_slack_base = make_patcher(self, 'cah.bot_base.SlackBotBase')
         self.mock_forms_init = make_patcher(self, 'cah.bot_base.Forms.__init__')
         self.mock_forms = make_patcher(self, 'cah.bot_base.Forms')
@@ -79,33 +82,55 @@ class TestCAHBot(TestCase):
         else:
             raise ValueError(f'Unaccounted query condition for these selections: {select_cols}')
 
-    # def test_display_points(self):
-    #     """Tests the display_poinst method"""
-    #     # In-game score retrieval
-    #     self.log.debug('Testing in-game score displaying under expected conditions')
-    #     self.mock_overall_score, self.mock_current_score, self.mock_previous_score = mock_get_score(n_players=8)
-    #     self.cahbot.current_game = self.mock_game
-    #     resp = self.cahbot.display_points()
-    #     self.assertIsInstance(resp, list)
-    #     self.assertEqual(3, len(resp))
-    #     self.mock_eng.session_mgr.assert_called()
-    #
-    #     # Score retrieval without a current game
-    #     self.log.debug('Testing display outside of current game')
-    #     self.cahbot.current_game = None
-    #     resp = self.cahbot.display_points()
-    #     self.assertIsInstance(resp, list)
-    #     self.assertEqual(3, len(resp))
-    #
-    #     # Check that ranks are handled properly
-    #     self.log.debug('Testing ranking for similar scores')
-    #     self.mock_overall_score, self.mock_current_score, self.mock_previous_score = mock_get_score(
-    #         n_players=10, lims_overall=(0, 20), lims_current=(0, 1))
-    #     self.cahbot.current_game = self.mock_game
-    #     resp = self.cahbot.display_points()
-    #     self.assertIsInstance(resp, list)
-    #     self.assertEqual(3, len(resp))
-    #     self.mock_eng.session_mgr.assert_called()
+    def _prep_score_dfs(self, n_players: int, lims_overall: Tuple[int, int] = (0, 30),
+                        lims_current: Tuple[int, int] = (0, 10)):
+        overall, current, prev = mock_get_score(n_players=n_players, lims_overall=lims_overall,
+                                                lims_current=lims_current)
+        overall_df, current_df, prev_df = (pd.DataFrame(x) for x in [overall, current, prev])
+
+        # Combine prev and current to simulate the response from the score_date_for_display_points query
+        # Get diffs in current v. prev
+        combi_df = overall_df.copy().rename(columns={'overall': 'overall_current'})
+        combi_df['overall_prev'] = combi_df['overall_current'] - (current_df['current'] - prev_df['prev'])
+        combi_df = combi_df.merge(current_df)
+        combi_df = combi_df.merge(prev_df)
+        return overall_df, combi_df
+
+    def test_display_points(self):
+        """Tests the display_poinst method"""
+        # In-game score retrieval
+        self.log.debug('Testing in-game score displaying under expected conditions')
+        overall_df, combi_df = self._prep_score_dfs(n_players=8)
+
+        # Load mocks
+        self.mock_bot_queries().get_overall_score.return_value = overall_df
+        self.mock_bot_queries().get_score_data_for_display_points.return_value = combi_df
+
+        self.cahbot.current_game = self.mock_game
+        resp = self.cahbot.display_points()
+        self.assertIsInstance(resp, list)
+        self.assertEqual(3, len(resp))
+        self.mock_eng.session_mgr.assert_called()
+
+        # Score retrieval without a current game
+        self.log.debug('Testing display outside of current game')
+        self.cahbot.current_game = None
+        resp = self.cahbot.display_points()
+        self.assertIsInstance(resp, list)
+        self.assertEqual(3, len(resp))
+
+        # Check that ranks are handled properly
+        self.log.debug('Testing ranking for similar scores')
+        overall_df, combi_df = self._prep_score_dfs(n_players=10, lims_overall=(0, 20), lims_current=(0, 1))
+
+        # Load mocks
+        self.mock_bot_queries().get_overall_score.return_value = overall_df
+        self.mock_bot_queries().get_score_data_for_display_points.return_value = combi_df
+        self.cahbot.current_game = self.mock_game
+        resp = self.cahbot.display_points()
+        self.assertIsInstance(resp, list)
+        self.assertEqual(3, len(resp))
+        self.mock_eng.session_mgr.assert_called()
 
     def test_ping(self):
         # In-game ping

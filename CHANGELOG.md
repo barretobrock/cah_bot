@@ -15,6 +15,26 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.2.1] - 2023-12-21
+#### Added
+ - admin only command support
+ - `TableDeckGroup`
+ - `My Cards` menu option to resend a player's card form
+ - [GH-44](../../issues/44) - added decknuke option
+ - [GH-46](../../issues/46) - 10% of randpicks are decknuked
+ - [GH-36](../../issues/36) - Combinable decks
+#### Changed
+ - Players' and judge's hands now render test in multiple selection objects 
+ - Question rendering switched back to monospace, as markdown would occasionally confuse underscores for italics
+#### Fixed
+ - Option to turn on error output now propagated to lower level processes
+ - Resolved bug where new game can start over existing when called through menu.
+ - [GH-43](../../issues/43) - `pickle_shy` found!
+ - [GH-37](../../issues/37) - players hands now completely empty at end of game
+ - [GH-30](../../issues/30) - Multipick now checks for dupes while preserving order
+ - [GH-28](../../issues/28) - Modify question form renders properly
+ - [GH-45](../../issues/45) - ARP now randpicks for player if not yet done
+ 
 ### [2.2.0] - 2023-12-18
 #### Added
  - Support for slacktools 2.0.0

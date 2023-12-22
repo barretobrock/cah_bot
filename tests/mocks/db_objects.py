@@ -14,6 +14,7 @@ from cah.model import (
     TablePlayer,
 )
 
+from ..common import random_string
 from .users import (
     random_display_name,
     random_user,
@@ -34,10 +35,10 @@ def make_player(dm_cards: bool = True, arp: bool = False, arc: bool = False, act
     )
 
 
-def mock_game_tbl(game_id: int = None, deck_key: int = None, status: GameStatus = None, end_time: datetime = None):
+def mock_game_tbl(game_id: int = None, deck_combo: List[str] = None, status: GameStatus = None, end_time: datetime = None):
     return TableGame(
         game_id=game_id if game_id is not None else random.randint(1, 50),
-        deck_key=deck_key if deck_key is not None else random.randint(1, 12),
+        deck_combo=deck_combo if deck_combo is not None else [random_string() for _ in range(5)],
         status=status if status is not None else GameStatus.INITIATED,
         end_time=end_time
     )

@@ -29,14 +29,15 @@ class TestDeck(TestCase):
 
         self.mock_session.query.return_value.filter.return_value.one_or_none = self._query_handler
         self.mock_session.query.return_value.filter.return_value.all.side_effect = self._query_handler
+        self.mock_deck_combo = ['this', 'is', 'a', 'combooooooooooooooooooooooooooooooooooooooo']
 
-        self.deck = Deck(name='test-deck', eng=self.mock_eng)
+        self.deck = Deck(deck_combo=self.mock_deck_combo, eng=self.mock_eng)
         self.mock_session.expunge_all.assert_called()
 
     def _query_handler(self, *args, **kwargs):
         select_tbl = self.mock_session.query.call_args.args
         if TableDeck in select_tbl:
-            return TableDeck(name='test-deck', deck_id=2)
+            return [TableDeck(name=x) for x in self.mock_deck_combo]
         elif TableAnswerCard in select_tbl:
             return [TableAnswerCard(card_text=f'Test answer {i}.', deck_key=2) for i in range(self.n_answer_cards)]
         elif TableQuestionCard in select_tbl:

@@ -72,7 +72,7 @@ class TestGames(TestCase):
         self.mock_eng.set_setting.assert_called_with(SettingType.DECKNUKE_PENALTY, -3)
 
     def test_game_round_number(self):
-        game_tbl = TableGame(deck_key=5, status=GameStatus.PLAYER_DECISION)
+        game_tbl = TableGame(deck_combo=['here', 'is', 'combo'], status=GameStatus.PLAYER_DECISION)
         n_rounds = random.randint(5, 25)
         rounds = [TableGameRound(game_key=7) for x in range(n_rounds)]
         game_tbl.rounds = rounds
