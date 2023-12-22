@@ -1,3 +1,5 @@
+import json
+import pathlib
 import re
 from typing import List
 
@@ -9,6 +11,7 @@ from slacktools import (
 from slacktools.gsheet import GSheetAgent
 from sqlalchemy.sql import not_
 
+from cah import ROOT_PATH
 from cah.core.common_methods import refresh_players_in_channel
 from cah.db_eng import WizzyPSQLClient
 from cah.model import (
@@ -18,6 +21,7 @@ from cah.model import (
     TableAnswerCard,
     TableCahError,
     TableDeck,
+    TableDeckGroup,
     TableGame,
     TableGameRound,
     TableHonorific,
@@ -43,6 +47,7 @@ class ETL:
     ALL_TABLES = [
         TableAnswerCard,
         TableDeck,
+        TableDeckGroup,
         TableCahError,
         TableGame,
         TableGameRound,
@@ -163,6 +168,184 @@ class ETL:
                 session.add_all(card_objs)
             self.log.debug(f'For deck: {deck}, loaded {len(card_objs)} cards.')
 
+    def etl_decks_from_raw(self):
+        acceptable_decks = [
+            'hilarious',
+            'cows',
+            'crazy&horrible',
+            'clones',
+            'crabsadjusthumidity',
+            'kidsagainst',
+            'cahbase',
+            'dirtynastyfilthy',
+            'cardsandpunishment',
+            'cah:greenbox',
+            'wordsagainstmorality',
+            'cardsforthemasses',
+            'dick',
+            'thecatholic',
+            'crowsadoptvulgar',
+            'evilapples',
+            'rottenapples',
+            'cocksabreast',
+            'wtfdidyousay',
+            'cakesathirst',
+            'catsabidinghorribly',
+            'bardsdispenseprofanity',
+            'geekpack',
+            'cadsagainstadulting',
+            'cah:bluebox',
+            'cah:procedurally-gen',
+            'cah:fourth',
+            'guardsagainstinsanity',
+            'voter',
+            'carps&angstymanatee',
+            'cadsaboutmaternity',
+            'cah:second',
+            'cah:red',
+            'skeweredandroasted',
+            'badcampaign',
+            '2016election',
+            'humanityhatestheholidays',
+            'cah:family',
+            'funintheoven',
+            'cah:third',
+            'cah:2000s',
+            'theatrepack',
+            'cardsagainsthumanitysaves',
+            'cah:sixth',
+            'badhombres',
+            '2014holiday',
+            '2012holiday',
+            'potheads',
+            'science',
+            'jewpack',
+            'depravity',
+            'absurdbox',
+            'cah:canadianconversion',
+            'cah:college',
+            'cardswithnosexuality',
+            'cah:first',
+            'fantasy',
+            'cah:fifth',
+            '2013holiday',
+            'food',
+            '90snostalgia',
+            'seasonsgreetings',
+            'cah:main',
+            'theworstcardgame:2016',
+            'dadpack',
+            'sci-fipack',
+            'worldwideweb',
+            'cah:ass',
+            'weed',
+            'pride',
+            'cah:box',
+            'clickhole',
+            'cah:hiddengems',
+            'cardsagainstprofanity',
+            'gencon2018midterm',
+            'cah:a.i.',
+            'hanukkah'
+        ]
+
+        exclude_decks = [
+            'cardsagainst/forsouthafrica',
+            'trump',
+            'clams',
+            'kidsc',
+            'kidsab',
+            'babies',
+            'theworstcardgame:colorado',
+            'knitters',
+            'personally',
+            'thegamewithoutdecency',
+            'disgruntled',
+            'kinderperfect',
+            'jackwhite',
+            'hiddencompartment',
+            'marine',
+            'coastguard',
+            'conspiracy',
+            'notparent',
+            'kiwis',
+            'carbs',
+            'jadedaid',
+            'paxeast',
+            'pax',
+            'cardsabouttoronto',
+            'pigsagainstprofanity',
+            'cadsaboutmatrimony',
+            'humanityhatestrump',
+            'charliefoxtrot',
+            'cah:uk',
+            'blurbsagainstbuff',
+            'houseofcards',
+            'votefortrump',
+            'that',
+            'reject',
+            'voteforhillary',
+            'tabletop',
+            'fascism',
+            'colsdespitekentucky',
+            'colsagainstkentucky',
+            'period',
+            'masseffect',
+            'desertbus',
+            'nerd',
+            'cah:human',
+            'retail',
+            'blackboxpress'
+        ]
+
+        # Process decks to keep
+        decks = {x: {'a': [], 'q': []} for x in acceptable_decks}
+
+        with pathlib.Path(ROOT_PATH).parent.parent.joinpath('cah-cards-raw.json').open() as f:
+            raw = json.loads(f.read())
+
+        for r in raw.get('metadata'):
+            deck_section = raw['metadata'][r]
+            deck_name = deck_section['name'].lower().replace(' ', '')
+            if any([deck_name.startswith(x) for x in exclude_decks]):
+                self.log.warning(f'Skipping {deck_name}... Excluded.')
+                continue
+            self.log.info(f'Working on deck {deck_name}...')
+            # Find shortened deck name
+            for d in acceptable_decks:
+                if deck_name.startswith(d):
+                    deck_real_name = d
+                    break
+
+            self.log.info(f'Real deck name: {deck_real_name}')
+            # Get answers/questions for deck
+            answer_cards_idx = list(set(deck_section['white']))
+            answer_cards = [raw['white'][i] for i in answer_cards_idx]
+            decks[deck_real_name]['a'] += answer_cards
+
+            question_cards_idx = list(set(deck_section['black']))
+            question_cards = [raw['black'][i] for i in question_cards_idx]
+            decks[deck_real_name]['q'] += question_cards
+
+        with self.psql_client.session_mgr() as session:
+
+            # Process all decks
+            for deck_name, deck_dict in decks.items():
+                self.log.info(f'Storing deck: {deck_name}')
+                n_a = len(deck_dict['a'])
+                n_q = len(deck_dict['q'])
+                deck_obj = TableDeck(name=deck_name, n_answers=n_a, n_questions=n_q)
+                session.add(deck_obj)
+                session.commit()
+                session.refresh(deck_obj)
+
+                answer_objects = [TableAnswerCard(card_text=x, deck_key=deck_obj.deck_id) for x in deck_dict['a']]
+                question_objects = [TableQuestionCard(card_text=x['text'], deck_key=deck_obj.deck_id,
+                                                      responses_required=x['pick']) for x in deck_dict['q']]
+                session.add_all(answer_objects)
+                session.add_all(question_objects)
+                session.commit()
+
     @staticmethod
     def determine_required_answers(txt: str) -> int:
         """Determines the number of required answer cards for the question"""
@@ -241,7 +424,8 @@ class ETL:
 if __name__ == '__main__':
     etl = ETL(tables=ETL.ALL_TABLES, env='PROD', drop_all=True)
     etl.etl_bot_settings()
-    etl.etl_decks()
+    # etl.etl_decks()
     etl.etl_players()
     etl.etl_honorific()
     etl.etl_rips()
+    etl.etl_decks_from_raw()

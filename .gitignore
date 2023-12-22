@@ -1,3 +1,5 @@
+*.sql
+*.json
 *.bak
 development
 secretprops.properties

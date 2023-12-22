@@ -31,8 +31,20 @@ sudo chmod 644 /lib/systemd/system/cah.service
 sudo systemctl daemon-reload
 sudo systemctl enable cah.service
 ```
+### Postgres server install
+```bash
+sudo apt install postgresql postgresql-contrib python3.11-dev gcc libpq-dev
+```
+
 ### Postgres database setup
 NB! This assumes Postgres 15 is already installed on your server.
+
+If running in a docker container, do the following to gain entry:
+```bash
+docker exec -it <name> bash
+# Then, once in
+psql -h localhost -p 5432 -U postgres
+```
 
 Enter postgres with `sudo -u postgres psql`
 ```postgresql
@@ -40,15 +52,19 @@ Enter postgres with `sudo -u postgres psql`
 CREATE USER <user> WITH ENCRYPTED PASSWORD '<pwd>';
 -- Create database & schema
 CREATE DATABASE <db>;
-\c <db>
-CREATE SCHEMA <schema>;
+-- Grant create, usage to user for public schema for shared values
+GRANT USAGE, CREATE ON SCHEMA public TO <usr>;
 -- Grant perms to database
 GRANT ALL PRIVILEGES ON DATABASE <db> TO <usr>;
 ALTER DATABASE <db> OWNER TO <usr>;
--- Grant create, usage to user for public schema for shared values
-GRANT USAGE, CREATE ON SCHEMA public TO <usr>;
-```
+\c <db>
+CREATE SCHEMA <schema>;
+GRANT USAGE, CREATE ON SCHEMA <schema> TO <usr>;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA <schema> To <usr>;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA <schema> To <usr>;
 
+```
+py
 ## Upgrade
 ```bash
 make update
