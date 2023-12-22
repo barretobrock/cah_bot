@@ -145,6 +145,16 @@ class PlayerQueries:
                 ))
             )).all())
 
+    def empty_hand(self, player_id: int):
+        """Handles emptying the hand, generally handled at the end of a game"""
+        with self.eng.session_mgr() as session:
+            self.log.debug(f'Emptying player id {player_id}\'s hand...')
+            # Get the hands we want to remove
+            hands = session.query(TablePlayerHand).filter(TablePlayerHand.player_key == player_id).all()
+            for hand in hands:
+                # We must delete individually
+                session.delete(hand)
+
     def set_nuke_cards(self, player_id: int):
         """Marks all the cards in the hand as 'nuked' for a player who had chosen to 'decknuke' their cards"""
         with self.eng.session_mgr() as session:

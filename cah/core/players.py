@@ -17,7 +17,7 @@ from slacktools.block_kit.blocks import (
     MultiStaticSelectSectionBlock,
     SectionBlock,
 )
-from slacktools.block_kit.elements.display import PlainTextElement
+from slacktools.block_kit.elements.display import MarkdownTextElement
 from slacktools.block_kit.elements.input import ButtonElement
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import and_
@@ -201,6 +201,9 @@ class Player:
         (have been picked or have been nuked)"""
         return self.pq.get_nonreplaceable_cards(player_id=self.player_table_id)
 
+    def empty_hand(self):
+        self.pq.empty_hand(player_id=self.player_table_id)
+
     def nuke_cards(self):
         """Marks all the cards in the hand as 'nuked' for a player who had chosen to 'decknuke' their cards"""
         self.pq.set_nuke_cards(player_id=self.player_table_id)
@@ -233,11 +236,12 @@ class Player:
             card_btn = ButtonElement(f'{num}', value=f'pick-{num}',
                                      action_id=f'game-pick-{num}') if max_selected == 1 else None
             card_blocks.append(
-                SectionBlock(PlainTextElement(f'*{num}*: {card.card_text}'), accessory=card_btn)
+                SectionBlock(MarkdownTextElement(f'*{num}*: {card.card_text}'), accessory=card_btn)
             )
             # We'll still build this button list, as it's used below when we need to select multiple answers
-            btn_list.append((f'{num}', f'pick-{num}'))
-            randbtn_list.append((f'{num}', f'randpick-{num}'))
+            #   NB! Options have a text limit of 75
+            btn_list.append((f'{card.card_text[:75]}', f'pick-{num}'))
+            randbtn_list.append((f'{card.card_text[:75]}', f'randpick-{num}'))
 
         # This is kinda hacky, but add the divider here so that if we don't have a multiselect area to add,
         #   we still have something to add to the return statement below to make the flow a bit better
@@ -252,11 +256,12 @@ class Player:
                 DividerBlock()
             ]
 
-        rand_options = [('All picks', 'randpick-all')] + randbtn_list
+        rand_options = [(':all_the_things: All the picks', 'randpick-all')] + randbtn_list
 
         return card_blocks + definite_selection_area + [
             MultiStaticSelectSectionBlock('Randpick (all or subset)', placeholder='Select picks',
                                           option_pairs=rand_options, action_id='game-randpick'),
+            ButtonSectionBlock('Decknukem', ':nuclear_bomb:', 'decknuke', action_id='decknuke'),
             ButtonSectionBlock('Force Close', 'Close', 'none', action_id='close')
         ]
 
@@ -479,6 +484,12 @@ class Players:
         This is run after updating the original message in order to ensure the no longer needed info is removed.
         """
         self.player_dict[player_hash].pick_blocks = {}
+
+    def reset_player_hands(self):
+        """Handles resetting all players' hands for transitioning to a new game"""
+        p_obj: Player
+        for _, p_obj in self.player_dict.items():
+            p_obj.empty_hand()
 
     def process_player_decknuke(self, player_hash: str):
         """Handles the player aspect of decknuking."""
