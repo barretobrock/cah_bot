@@ -301,7 +301,7 @@ class ETL:
         # Process decks to keep
         decks = {x: {'a': [], 'q': []} for x in acceptable_decks}
 
-        with pathlib.Path(ROOT_PATH).parent.parent.joinpath('cah-cards-raw.json').open() as f:
+        with pathlib.Path().home().joinpath('data/cah-cards-raw.json').open() as f:
             raw = json.loads(f.read())
 
         for r in raw.get('metadata'):
