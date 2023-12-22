@@ -81,7 +81,7 @@ class Game:
         self.judge_order_divider = self.eng.get_setting(SettingType.JUDGE_ORDER_DIVIDER)
         self.log = parent_log.bind(child_name=self.__class__.__name__)
         self.gq = GameQueries(eng=eng, log=self.log)
-        self.log.debug(f'Building out new game with deck: {deck.name}...')
+        self.log.debug(f'Building out new game with deck as combo: {deck.deck_combo}...')
 
         # Database table links
         self.is_existing_game = game_id is not None
@@ -100,7 +100,7 @@ class Game:
             self.log.debug('Starting a new game...')
             # Create a new game
             self._status = GameStatus.INITIATED
-            game_tbl = TableGame(deck_key=deck.deck_id, status=self._status)
+            game_tbl = TableGame(deck_combo=deck.deck_combo, status=self._status)
             # Add the object to the database & refresh to get ids
             self.game_tbl = self.eng.refresh_table_object(game_tbl)  # type: TableGame
             # These ones will be set when new_round() is called

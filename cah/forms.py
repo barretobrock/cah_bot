@@ -1,6 +1,7 @@
 from typing import (
     TYPE_CHECKING,
     List,
+    Tuple,
 )
 
 from loguru import logger
@@ -103,21 +104,25 @@ class Forms:
                                         blocks=blocks)
 
     @staticmethod
-    def build_new_game_form_p1(decks: List[str]) -> BlocksType:
+    def build_new_game_form_p1(decks: List[Tuple[str, str]]) -> BlocksType:
         """Builds a new game form with Block Kit"""
-        decks_list = [(x, f'deck_{x}') for x in decks]
-        return [StaticSelectSectionBlock('Select a deck :pickle_shy:', decks_list, placeholder='peek a deek',
+        decks_list = [(name_with_stats, f'deck_{name}') for name_with_stats, name in decks]
+        return [StaticSelectSectionBlock('Select some decks :pickle_shy:', decks_list, placeholder='peek a deek',
                                          action_id='new-game-deck')]
 
-    def build_new_game_form_p2(self) -> BlocksType:
+    def build_new_game_form_p2(self, decks_list: List[str]) -> BlocksType:
         """Builds the second part to the new game form with Block Kit"""
         # Grab a query of 'active' players to serve as the initial users populated in the menu
         with self.eng.session_mgr() as session:
             active_players = [x.slack_user_hash for x in
                               session.query(TablePlayer).filter(TablePlayer.is_active).all()]
         logger.debug(f'Built out {len(active_players)} active players.')
-        return [MultiUserSelectSectionBlock('Select the players', 'Pweese sewect some peopwe',
-                                            action_id='new-game-users', initial_users=active_players)]
+        return [
+            MarkdownSectionBlock([f'Your decks: `{decks_list}`']),
+            MarkdownSectionBlock('Now, prithee, select the ~victims~ players :meow_whip:'),
+            MultiUserSelectSectionBlock('Select the players', 'Pweese sewect some peopwe',
+                                        action_id='new-game-users', initial_users=active_players)
+        ]
 
     @staticmethod
     def build_add_user_form() -> BlocksType:

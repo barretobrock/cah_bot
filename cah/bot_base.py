@@ -74,7 +74,7 @@ class CAHBot(Forms):
         self.config = config
         self.triggers = config.TRIGGERS
         self.channel_id = config.MAIN_CHANNEL  # cah or cah-test
-        self.admin_user = config.ADMINS
+        self.admins = config.ADMINS
         self.version = config.VERSION
         self.update_date = config.UPDATE_DATE
 
@@ -82,7 +82,9 @@ class CAHBot(Forms):
         self.commands = build_commands(self, cmd_yaml_path=ROOT_PATH.parent.joinpath('commands.yaml'),
                                        log=self.log)
         # Initate the bot, which comes with common tools for interacting with Slack's API
+        self.is_post_exceptions = self.eng.get_setting(SettingType.IS_POST_ERR_TRACEBACK)
         self.st = SlackBotBase(props=props, triggers=self.triggers, main_channel=self.channel_id,
+                               admins=self.admins, is_post_exceptions=self.is_post_exceptions,
                                debug=False, use_session=False)
         # Pass in commands to SlackBotBase, where task delegation occurs
         self.log.debug('Patching in commands to SBB...')
@@ -108,7 +110,7 @@ class CAHBot(Forms):
 
         # Store for state across UI responses (thanks Slack for not supporting multi-user selects!)
         self.state_store = {
-            'deck': 'standard'
+            'decks': ['cahbase']
         }
 
     def check_for_ongoing_game(self):
@@ -221,17 +223,18 @@ class CAHBot(Forms):
             self.st.send_message(channel=channel, message=f'Looks like <@{user}>, is starting a game. '
                                                           f'Might take a few seconds while they select stuff...')
             with self.eng.session_mgr() as session:
-                deck_names = [x.name for x in session.query(TableDeck).all()]
-            formp1 = self.build_new_game_form_p1(deck_names)
+                deck_objs = session.query(TableDeck).order_by(TableDeck.n_answers.desc()).all()
+                decks = [(f'{x.name} a{x.n_answers},q{x.n_questions}', x.name) for x in deck_objs]
+            formp1 = self.build_new_game_form_p1(decks)
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p1',
                                                 blocks=formp1)
         elif action_id == 'new-game-deck':
             # Set the deck for the new game and then send the second form
             self.log.debug('Processing second part of new game process.')
-            deck_name = action_dict['selected_option']['value'].replace('deck_', '')
-            self.log.debug(f'Processed deck name to {deck_name}')
-            self.state_store['deck'] = deck_name
-            formp2 = self.build_new_game_form_p2()
+            deck_names = [x['value'].replace('deck_', '') for x in action_dict['selected_options']]
+            self.log.debug(f'Extracted these deck names: {deck_names}')
+            self.state_store['decks'] = deck_names
+            formp2 = self.build_new_game_form_p2(decks_list=deck_names)
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p2',
                                                 blocks=formp2)
         elif action_id == 'game-stats':
@@ -248,7 +251,7 @@ class CAHBot(Forms):
             self.st.send_message(channel=channel, message='ARPARC player is currently in development! '
                                                           'Check back later.', thread_ts=thread_ts)
         elif action_id == 'new-game-users':
-            self.new_game(deck=self.state_store['deck'], player_hashes=action_dict['selected_users'])
+            self.new_game(deck_names=self.state_store['decks'], player_hashes=action_dict['selected_users'])
         elif action_id == 'status':
             status_block = self.display_status()
             if status_block is not None:
@@ -318,11 +321,11 @@ class CAHBot(Forms):
         """Encapsulates required objects for building and sending the main menu form"""
         self.build_main_menu(game_obj=self.current_game, user=user_hash, channel=channel)
 
-    def new_game(self, deck: str = 'standard', player_hashes: List[str] = None, message: str = None):
+    def new_game(self, deck_names: List[str], player_hashes: List[str] = None, message: str = None):
         """Begins a new game
 
         Args:
-            deck: the name of the deck to use for this game
+            deck_names: the list of names of the decks to use for this game
             player_hashes: list of the slack hashes assigned to each player
             message: optional, the message used to spin up the game. originally used to orchestrate things,
                 but now is somewhat vestigial
@@ -334,11 +337,11 @@ class CAHBot(Forms):
                                              'Do that and then start a new game.')
                 return None
 
-        response_list = [f'Using `{deck}` deck']
+        response_list = [f'Using decks: `{deck_names}` deck']
 
         # Read in card deck to use with this game
         self.log.debug('Reading in deck...')
-        deck = self._read_in_cards(deck)
+        deck = self._read_in_cards(deck_names)
 
         # Load the game, add players, shuffle the players
         self.log.debug('Instantiating game object')
@@ -378,20 +381,23 @@ class CAHBot(Forms):
             deck_names = [f'`{x.name}`' for x in session.query(TableDeck).all()]
         return ",".join(deck_names)
 
-    def _read_in_cards(self, card_set: str = 'standard') -> 'Deck':
+    def _read_in_cards(self, card_sets: List[str]) -> 'Deck':
         """Reads in the cards"""
-        self.log.debug(f'Reading in deck with name: {card_set}')
+        self.log.debug(f'Reading in decks: {card_sets}')
         with self.eng.session_mgr() as session:
-            deck: TableDeck
-            deck = session.query(TableDeck).filter(TableDeck.name == card_set).one_or_none()
-            if deck is None:
+            decks: List[TableDeck]
+            decks = session.query(TableDeck).filter(TableDeck.name.in_(card_sets)).all()
+            if len(decks) == 0:
                 possible_decks = [x.name for x in session.query(TableDeck).all()]
-                raise ValueError(f'The card set `{card_set}` was not found. '
-                                 f'Possible sets: `{",".join(possible_decks)}`.')
-            deck.times_used += 1
-            deck = self.eng.refresh_table_object(tbl_obj=deck, session=session)
-        self.log.debug(f'Returned: {deck}. Building card lists from this...')
-        return Deck(name=deck.name, eng=self.eng)
+                raise ValueError(f'The card sets `{card_sets}` were not found. '
+                                 f'Possible deck to combine: `{",".join(possible_decks)}`.')
+            deck_combo = []
+            for deck in decks:
+                deck.times_used += 1
+                deck = self.eng.refresh_table_object(tbl_obj=deck, session=session)
+                deck_combo.append(deck.name)
+        self.log.debug(f'Returned: {deck_combo}. Building card lists from this...')
+        return Deck(deck_combo=deck_combo, eng=self.eng)
 
     def _toggle_bool_setting(self, setting: SettingType):
         # Map of setting attribute names to their toggle methods
@@ -539,13 +545,12 @@ class CAHBot(Forms):
         """Reinstates a game after a reboot"""
         # We're binding to a preexisting game
         with self.eng.session_mgr() as session:
-            tbl_deck: TableDeck
-            # Find deck
-            tbl_deck = session.query(TableDeck). \
-                join(TableGame, TableGame.deck_key == TableDeck.deck_id).filter(
+            # Find deck combo
+            game: TableGame
+            game = session.query(TableGame).filter(
                 TableGame.game_id == game_id
             ).one_or_none()
-            deck = Deck(tbl_deck.name, eng=self.eng, game_id=game_id)
+            deck = Deck(game.deck_combo.split(','), eng=self.eng, game_id=game_id)
             # Build list of players who played last
             players = session.query(TablePlayer). \
                 join(TablePlayerRound, TablePlayerRound.player_key == TablePlayer.player_id).filter(
@@ -817,7 +822,7 @@ class CAHBot(Forms):
             game_section = f':stopwatch: *Round `{self.current_game.game_round_number}`*: ' \
                            f'{self.st.get_time_elapsed(self.current_game.game_round_tbl.start_time)}\t\t' \
                            f'*Game*: {self.st.get_time_elapsed(self.current_game.game_start_time)}\n' \
-                           f':stack-of-cards: *Deck*: `{self.current_game.deck.name}` - ' \
+                           f':stack-of-cards: *Deck*: `{self.current_game.deck.deck_combo}` - ' \
                            f'`{len(self.current_game.deck.questions_card_list)}` question & ' \
                            f'`{len(self.current_game.deck.answers_card_list)}` answer cards remain\n' \
                            f':conga_parrot: *Judge Order*: {self.current_game.get_judge_order()}'

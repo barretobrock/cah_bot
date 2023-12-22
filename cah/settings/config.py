@@ -50,9 +50,7 @@ class Common(object):
 
     @classmethod
     def load_secrets(cls):
-        secrets_path = ROOT_PATH.joinpath('secretprops.properties')
-        if cls.ENV == 'PROD':
-            secrets_path = KEY_DIR.joinpath('cah-secretprops.properties')
+        secrets_path = KEY_DIR.joinpath('cah-secretprops.properties')
         cls.SECRETS = read_secrets(secrets_path)
 
     @classmethod

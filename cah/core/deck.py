@@ -23,16 +23,22 @@ from cah.model import (
 
 class Deck:
     """Deck of question and answer cards for a game"""
-    def __init__(self, name: str, eng: WizzyPSQLClient, game_id: int = None):
-        self.name = name
+    deck_combo: List[str]
+    eng: WizzyPSQLClient
+    deck_ids: List[int]
+    questions_card_list: List[TableQuestionCard]
+    answers_card_list: List[TableAnswerCard]
+
+    def __init__(self, deck_combo: List[str], eng: WizzyPSQLClient, game_id: int = None):
+        self.deck_combo = deck_combo
         self.eng = eng
         # Read in questions and answers
         with self.eng.session_mgr() as session:
-            tbl_deck = session.query(TableDeck).filter(and_(
-                TableDeck.name == name,
+            tbl_decks = session.query(TableDeck).filter(and_(
+                TableDeck.name.in_(deck_combo),
                 not_(TableDeck.is_deleted)
-            )).one_or_none()
-            self.deck_id = tbl_deck.deck_id
+            )).all()
+            self.deck_ids = [x.deck_id for x in tbl_decks]
             if game_id is not None:
                 # Building lists and excluding those that were used in previous rounds of this game
                 # Question cards
@@ -40,7 +46,7 @@ class Deck:
                     join(TableGameRound, TableQuestionCard.question_card_id == TableGameRound.question_card_key). \
                     filter(TableGameRound.game_key == game_id)
                 qcards = session.query(TableQuestionCard).filter(and_(
-                        TableQuestionCard.deck_key == self.deck_id,
+                        TableQuestionCard.deck_key.in_(self.deck_ids),
                         TableQuestionCard.question_card_id.not_in(q_past_rounds_subquery),
                         not_(TableQuestionCard.is_deleted)
                     )).all()
@@ -50,18 +56,18 @@ class Deck:
                     filter(TableGameRound.game_key == game_id)
                 a_current_hand_subquery = session.query(TablePlayerHand.answer_card_key)
                 acards = session.query(TableAnswerCard).filter(and_(
-                        TableAnswerCard.deck_key == self.deck_id,
+                        TableAnswerCard.deck_key.in_(self.deck_ids),
                         TableAnswerCard.answer_card_id.not_in(a_past_picks_subquery),
                         TableAnswerCard.answer_card_id.not_in(a_current_hand_subquery),
                         not_(TableAnswerCard.is_deleted)
                     )).all()
             else:
                 qcards = session.query(TableQuestionCard).filter(and_(
-                    TableQuestionCard.deck_key == self.deck_id,
+                    TableQuestionCard.deck_key.in_(self.deck_ids),
                     not_(TableQuestionCard.is_deleted)
                 )).all()
                 acards = session.query(TableAnswerCard).filter(and_(
-                    TableAnswerCard.deck_key == self.deck_id,
+                    TableAnswerCard.deck_key.in_(self.deck_ids),
                     not_(TableAnswerCard.is_deleted)
                 )).all()
             session.expunge_all()
