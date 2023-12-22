@@ -5,7 +5,10 @@ from .card import (
     TablePlayerPick,
     TableQuestionCard,
 )
-from .deck import TableDeck
+from .deck import (
+    TableDeck,
+    TableDeckGroup,
+)
 from .error import (
     CahErrorType,
     TableCahError,

@@ -13,6 +13,10 @@ from cah.model.base import Base
 
 class RipType(enum.Enum):
     DECKNUKE = enum.auto()
+    END_ROUND = enum.auto()
+    START_ROUND = enum.auto()
+    NEW_GAME = enum.auto()
+    PLAYER_KICK = enum.auto()
 
 
 class TableRip(Base):

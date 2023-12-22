@@ -1,5 +1,6 @@
 from datetime import datetime
 import enum
+from typing import List
 
 from sqlalchemy import (
     TIMESTAMP,
@@ -32,7 +33,7 @@ class TableGame(Base):
     """game table - stores past game info"""
 
     game_id = Column(Integer, primary_key=True, autoincrement=True)
-    deck_key = Column(ForeignKey('cah.deck.deck_id'), nullable=False)
+    deck_combo = Column(VARCHAR(500), nullable=False)
     status = Column(Enum(GameStatus), nullable=False)
     rounds = relationship('TableGameRound', back_populates='game')
     start_time = Column(TIMESTAMP, server_default=func.now(), nullable=False)
@@ -43,8 +44,8 @@ class TableGame(Base):
     def duration(self):
         return self.end_time - self.start_time if self.end_time is not None else self.last_update - self.start_time
 
-    def __init__(self, deck_key: int, status: GameStatus, game_id: int = None, end_time: datetime = None):
-        self.deck_key = deck_key
+    def __init__(self, deck_combo: List[str], status: GameStatus, game_id: int = None, end_time: datetime = None):
+        self.deck_combo = ','.join(deck_combo)
         self.status = status
         if game_id is not None:
             self.game_id = game_id
