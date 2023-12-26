@@ -19,6 +19,7 @@ from slacktools.block_kit.blocks import (
 from slacktools.block_kit.elements.input import (
     ButtonElement,
     ConfirmElement,
+    DispatchActionConfigElement,
 )
 from sqlalchemy.sql import (
     and_,
@@ -136,9 +137,10 @@ class Forms:
     @staticmethod
     def modify_question_form(original_value: str) -> BlocksType:
         """Builds the second part to the new game form with Block Kit"""
+        dispatch = DispatchActionConfigElement(trigger_on_enter_pressed=True)
         return [
             PlainTextInputBlock('Make your change to the question below', action_id='modify-question',
-                                initial_value=original_value),
+                                initial_value=original_value, dispatch_action_elem=dispatch),
             ActionsBlock([ButtonElement('Close', value='close', action_id='close')]),
         ]
 

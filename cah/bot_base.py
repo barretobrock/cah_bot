@@ -175,8 +175,7 @@ class CAHBot(Forms):
         """Hands off the event data while also refreshing the session"""
         self.st.parse_message_event(event_dict)
 
-    def process_incoming_action(self, user: str, channel: str, action_dict: Dict, event_dict: Dict,
-                                ) -> Optional:
+    def process_incoming_action(self, user: str, channel: str, action_dict: Dict, event_dict: Dict) -> Optional:
         """Handles an incoming action (e.g., when a button is clicked)"""
         action_id = action_dict.get('action_id')
         action_value = action_dict.get('value')

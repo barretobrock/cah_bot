@@ -11,7 +11,6 @@ from slacktools import (
 from slacktools.gsheet import GSheetAgent
 from sqlalchemy.sql import not_
 
-from cah import ROOT_PATH
 from cah.core.common_methods import refresh_players_in_channel
 from cah.db_eng import WizzyPSQLClient
 from cah.model import (

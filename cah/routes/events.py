@@ -2,7 +2,6 @@ from typing import TYPE_CHECKING
 
 from flask import (
     Blueprint,
-    current_app,
     request,
 )
 from slack_bolt import App

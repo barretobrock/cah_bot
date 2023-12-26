@@ -14,8 +14,9 @@ bp_actions = Blueprint('actions', __name__)
 
 
 @bp_actions.route('/api/actions', methods=['GET', 'POST'])
-def handle_action():
+def handle_action(ack):
     """Handle a response when a user clicks a button from Wizzy in Slack"""
+    ack()
     event_data = json.loads(request.form["payload"])
     user = event_data['user']['id']
     # if channel empty, it's a shortcut
@@ -40,11 +41,14 @@ def handle_action():
     update_dict = {
         'delete_original': True
     }
+    if event_data.get('container', {'is_ephemeral': False}).get('is_ephemeral', False):
+        update_dict['response_type'] = 'ephemeral'
     response_url = event_data.get('response_url')
     if response_url is not None:
         # Update original message
-        _ = requests.post(event_data['response_url'], json=update_dict,
-                          headers={'Content-Type': 'application/json'})
+        if 'shortcut' not in action.get('type'):
+            _ = requests.post(event_data['response_url'], json=update_dict,
+                              headers={'Content-Type': 'application/json'})
 
     # Send HTTP 200 response with an empty body so Slack knows we're done
     return make_response('', 200)

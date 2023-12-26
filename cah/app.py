@@ -1,4 +1,3 @@
-import os
 import signal
 
 from flask import (
@@ -100,12 +99,6 @@ def create_app(*args, **kwargs) -> Flask:
     signal.signal(signal.SIGINT, bot.cleanup)
     signal.signal(signal.SIGTERM, bot.cleanup)
     app.extensions.setdefault('bot', bot)
-
-    # bolt_app = App(signing_secret=cah_creds.signing_secret, token=cah_creds.xoxb_token)
-    # bolt_app.
-    # bolt_app.event('message', )
-    # handler = SlackRequestHandler(bolt_app)
-    # app.extensions.setdefault('handler', handler)
 
     app.before_request(log_before)
     app.after_request(log_after)

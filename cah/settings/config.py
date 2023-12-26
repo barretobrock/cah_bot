@@ -6,7 +6,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from cah import (
-    ROOT_PATH,
     __update_date__,
     __version__,
 )

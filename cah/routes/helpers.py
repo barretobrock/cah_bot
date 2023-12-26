@@ -28,10 +28,6 @@ def get_app_bot():
     return current_app.extensions['bot']
 
 
-def get_app_creds():
-    return current_app.extensions['cah_creds']
-
-
 def log_before():
     g.start_time = time.perf_counter()
 
