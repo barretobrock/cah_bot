@@ -15,6 +15,10 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.2.2] - 2024-01-03
+#### Changed
+ - [GH-52](../../issues/52) - Answers shown in-place on winner render
+ 
 ### [2.2.1] - 2023-12-21
 #### Added
  - admin only command support

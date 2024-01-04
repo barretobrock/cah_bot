@@ -168,7 +168,6 @@ class CAHBot(Forms):
 
     def process_slash_command(self, event_dict: Dict):
         """Hands off the slash command processing while also refreshing the session"""
-        # TODO: Log slash
         self.st.parse_slash_command(event_dict)
 
     def process_event(self, event_dict: Dict):
