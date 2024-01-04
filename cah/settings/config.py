@@ -52,7 +52,7 @@ class Common(object):
         if cls.ENV == 'DEV':
             secrets_path = pathlib.Path(__file__).parent.parent.parent.joinpath('secretprops.properties')
         else:
-            secrets_path = KEY_DIR.joinpath('viktor-secretprops.properties')
+            secrets_path = KEY_DIR.joinpath('cah-secretprops.properties')
         cls.SECRETS = read_secrets(secrets_path)
 
     @classmethod
