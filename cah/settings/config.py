@@ -1,4 +1,5 @@
 """Configuration setup"""
+import os
 import pathlib
 from typing import Dict
 
@@ -75,6 +76,9 @@ class Development(Common):
     DEBUG = True
     USE_RELOADER = False
 
+    def __init__(self):
+        os.environ['CAH_ENV'] = self.ENV
+
 
 class Production(Common):
     """Configuration for development environment"""
@@ -83,3 +87,6 @@ class Production(Common):
     MAIN_CHANNEL = 'C05HPAMHG4Q'
     TRIGGERS = ['cah', 'c!']
     DEBUG = False
+
+    def __init__(self):
+        os.environ['CAH_ENV'] = self.ENV

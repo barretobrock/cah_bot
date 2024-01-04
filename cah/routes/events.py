@@ -1,3 +1,4 @@
+import os
 from typing import TYPE_CHECKING
 
 from flask import (
@@ -12,7 +13,10 @@ from cah.routes.helpers import (
     get_app_logger,
     get_wizzy_eng,
 )
-from cah.settings import Production
+from cah.settings import (
+    Development,
+    Production,
+)
 
 if TYPE_CHECKING:
     from cah.model import TablePlayer
@@ -20,8 +24,16 @@ if TYPE_CHECKING:
 bp_events = Blueprint('events', __name__)
 
 
-Production.load_secrets()
-props = Production.SECRETS
+ENV = os.getenv('CAH_ENV')
+if ENV is None:
+    raise ValueError('No set env. Cannot proceed')
+if ENV == 'DEV':
+    env_class = Development
+else:
+    env_class = Production
+
+env_class.load_secrets()
+props = env_class.SECRETS
 bolt_app = App(token=props['xoxb-token'], signing_secret=props['signing-secret'], process_before_response=True)
 handler = SlackRequestHandler(app=bolt_app)
 

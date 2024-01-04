@@ -18,6 +18,8 @@ __BEGIN-CHANGELOG__
 ### [2.2.2] - 2024-01-03
 #### Changed
  - [GH-52](../../issues/52) - Answers shown in-place on winner render
+#### Fixed
+ - `/api/actions` endpoint was failing, as `ack` wasn't a supplied arg. changed to use bolt's action handler and routed through Flask
  
 ### [2.2.1] - 2023-12-21
 #### Added

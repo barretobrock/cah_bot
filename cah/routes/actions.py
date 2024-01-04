@@ -1,4 +1,6 @@
 import json
+import os
+import re
 
 from flask import (
     Blueprint,
@@ -7,13 +9,38 @@ from flask import (
     request,
 )
 import requests
+from slack_bolt import App
+from slack_bolt.adapter.flask import SlackRequestHandler
 
 from cah.routes.helpers import get_app_bot
+from cah.settings import (
+    Development,
+    Production,
+)
 
 bp_actions = Blueprint('actions', __name__)
 
+ENV = os.getenv('CAH_ENV')
+if ENV is None:
+    raise ValueError('No set env. Cannot proceed')
+if ENV == 'DEV':
+    env_class = Development
+else:
+    env_class = Production
+
+env_class.load_secrets()
+props = env_class.SECRETS
+bolt_app = App(token=props['xoxb-token'], signing_secret=props['signing-secret'], process_before_response=True)
+handler = SlackRequestHandler(app=bolt_app)
+
 
 @bp_actions.route('/api/actions', methods=['GET', 'POST'])
+def handle_event():
+    """Handles a slack event"""
+    return handler.handle(req=request)
+
+
+@bolt_app.action(re.compile('.*'))
 def handle_action(ack):
     """Handle a response when a user clicks a button from Wizzy in Slack"""
     ack()
