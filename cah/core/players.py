@@ -283,6 +283,10 @@ class Player:
                                     slack_user_hash=self.player_hash, position=i, card=card)
         return True
 
+    def render_picks_as_list(self) -> List[str]:
+        """Grabs the player's picks and renders them in a pipe-delimited string in order that they were selected"""
+        return self.pq.get_picks_as_str(player_id=self.player_table_id, game_round_id=self.game_round_id)
+
     def render_picks_as_str(self) -> str:
         """Grabs the player's picks and renders them in a pipe-delimited string in order that they were selected"""
         pick_strs = self.pq.get_picks_as_str(player_id=self.player_table_id, game_round_id=self.game_round_id)

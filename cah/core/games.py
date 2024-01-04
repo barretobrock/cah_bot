@@ -5,6 +5,7 @@ from random import (
     choice,
     shuffle,
 )
+import re
 import time
 from typing import (
     TYPE_CHECKING,
@@ -482,7 +483,7 @@ class Game:
             points_won = penalty
             impact_rpt = ':impact:' * 4
             decknuke_txt = f'\n{impact_rpt}{self.gq.get_rip(rip_type=RipType.DECKNUKE)}\n' \
-                           f'Your points were redistributed such: {point_receivers_txt}'
+                           f'You got got and your points were redistributed such: {point_receivers_txt}'
             winner.is_nuked_hand_caught = True
         else:
             points_won = 1
@@ -496,22 +497,48 @@ class Game:
         if not winner_was_none:
             self.players.player_dict[winner.player_hash] = winner
         winner_details = winner.player_tag if self.is_ping_winner else f'*`{winner.display_name.title()}`*'
-        winner_txt_blob = [
-            f":regional_indicator_q: *{self.current_question_card.card_text}*",
-            f":tada:Winning card: {winner.render_picks_as_str()}",
-            f"*`{points_won:+}`* :diddlecoin: to {winner_details}! "
-            f"New score: *`{winner.get_current_score()}`* :diddlecoin: "
-            f"({winner.get_overall_score()} total){decknuke_txt}\n"
-        ]
+
+        # Take question card, replace `_` with the answers
+        sentence_with_winner = self.winning_answer_placement(
+            question=self.current_question_card.card_text,
+            answers=winner.render_picks_as_list()
+        )
+
         last_section = [
+            DividerBlock(),
             MarkdownContextBlock(f'Round ended. Nice going, {self.judge.display_name}.')
         ]
 
         message_block = [
-            MarkdownSectionBlock(winner_txt_blob),
-            DividerBlock()
+            MarkdownContextBlock(':tada: And the winner is...'),
+            MarkdownSectionBlock(f"*{sentence_with_winner}*"),
+            MarkdownContextBlock([
+                f"*`{points_won:+}`* :diddlecoin: to {winner_details}! ",
+                f"New score: *`{winner.get_current_score()}`* :diddlecoin: "
+            ]),
         ]
+        if decknuke_txt != '':
+            message_block.append(MarkdownSectionBlock(decknuke_txt))
         return message_block + last_section
+
+    @staticmethod
+    def winning_answer_placement(question: str, answers: List[str]) -> str:
+        winning_sentence = ''
+        last_pos = 0
+        for i, mtch in enumerate(re.finditer('[_]+', question)):
+
+            winning_sentence += question[last_pos:mtch.regs[0][0]]
+            try:
+                answer = answers.pop(0)
+            except IndexError:
+                answer = '<missing-answer--gasp>'
+            winning_sentence += f'`{answer}`'
+            last_pos = mtch.regs[0][1]
+        if last_pos < len(question) - 1:
+            winning_sentence += question[last_pos:]
+        if len(answers) > 0:
+            winning_sentence += ','.join((f' `{x}`' for x in answers))
+        return winning_sentence.replace('*', '✱')
 
     def _points_redistributer(self, penalty: int) -> str:
         """Handles the logic covering redistribution of wealth among players"""
