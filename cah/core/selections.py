@@ -106,6 +106,8 @@ class Pick(Selection):
         if max(self.positions) > total_cards - 1 or min(self.positions) < 0:
             raise ValueError(f'Pick was outside the accepted range: '
                              f'0 <= {min(self.positions)} || {max(self.positions)} > {self.total_cards - 1}')
+        if len(self.positions) != self.n_required:
+            raise ValueError(f'You picked {len(self.positions)}, but the question requires {self.n_required}')
         self.picks = self.positions
 
     def handle_random_selection(self):

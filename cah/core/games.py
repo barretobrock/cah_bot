@@ -674,6 +674,9 @@ class Game:
 
         if pick.picks is None:
             self.log.debug('Picks object was still NoneType at this point.')
+            if pick.n_required != len(pick.positions):
+                self.st.message_main_channel(f'Dearest <@{player_hash}>, you picked {len(pick.positions)} things, but '
+                                             f'the question needs {pick.n_required}.')
             return None
         elif any([x > player.get_all_cards() - 1 or x < 0 for x in pick.picks]):
             self.st.message_main_channel(f'<@{player_hash}> I think you picked outside the range of suggestions. '
