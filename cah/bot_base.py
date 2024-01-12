@@ -566,19 +566,29 @@ class CAHBot(Forms):
             self.st.message_main_channel('Start a game first, then tell me to do that.')
             return None
         player = self.current_game.players.player_dict[user_hash]
+        self.log.debug(f'DMing cards to player: {player.display_name}')
 
         # Send cards to user if the status shows we're currently in a game
         if player.get_nonreplaceable_cards() == 0:
+            self.log.debug('Player has no cards to see.')
             msg_txt = "You have no cards to send. This likely means you've recently nuked your deck, " \
                       "or you're not a current player"
             self.st.private_message(player.player_hash, msg_txt)
         elif self.current_game.status == GameStatus.PLAYER_DECISION:
+            self.log.debug('Player is in player decision status, so sending their deck')
             question_block = self.current_game.make_question_block()
             cards_block = player.render_hand(
                 max_selected=self.current_game.current_question_card.responses_required)
             self.st.private_message(player.player_hash, message='Your cards have arrived',
                                     blocks=question_block + cards_block)
+        elif self.current_game.status == GameStatus.JUDGE_DECISION and player.is_judge:
+            self.log.debug('Player is in judge decision status and is judge, so sending picks')
+            # Instead of getting their own deck, send the player the choices
+            _, judge_picks = self.current_game.display_picks()
+            self.st.private_message(player.player_hash, message='Your cards have arrived',
+                                    blocks=judge_picks)
         else:
+            self.log.debug('Player is not in the right status.')
             msg_txt = f"The game's current status (`{self.current_game.status.name}`) doesn't allow for card DMing"
             self.st.private_message(player.player_hash, msg_txt)
 
