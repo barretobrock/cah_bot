@@ -93,6 +93,11 @@ class TestSelections(TestCase):
                 'exp_pick': [4, 1],
                 'resp_req': 2
             },
+            'p 32': {
+                'exp_pick': None,
+                'resp_req': 1,
+                'throws_exception': True
+            },
         }
         for msg, res_dict in cases.items():
             is_rand = res_dict.get('is_rand', False)
