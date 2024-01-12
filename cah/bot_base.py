@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from datetime import datetime
+from datetime import (
+    datetime,
+    timedelta,
+)
 import sys
 from typing import (
     TYPE_CHECKING,
@@ -135,7 +138,7 @@ class CAHBot(Forms):
         return [
             MarkdownContextBlock([
                 f"*{self.bot_name}* *`{self.version}`* booted up {formatted_bootup_date}",
-                f"(updated `{formatted_update_date}`)"
+                f"(updated version as of `{formatted_update_date}`)"
             ])
         ]
 
@@ -183,7 +186,7 @@ class CAHBot(Forms):
         self.log.debug(f'Receiving action_id: {action_id} and value: {action_value} from user: {user} in '
                        f'channel: {channel}')
 
-        if action_id.startswith('game-'):
+        if action_id.startswith('game-') and 'stats' not in action_id:
             # Special in-game commands like pick & choose
             parsed_command = ''
             if action_dict['type'] == 'multi_static_select':
@@ -241,10 +244,8 @@ class CAHBot(Forms):
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='New game form, p2',
                                                 blocks=formp2)
         elif action_id == 'game-stats':
-            # TODO: Build out game stats
-            #   number of rounds, avg round time, decknukes, caught decknukes,
-            self.st.send_message(channel=channel, message='Game stats is currently in development! '
-                                                          'Check back later.', thread_ts=thread_ts)
+            blocks = self.game_stats()
+            self.st.send_message(channel=channel, blocks=blocks, thread_ts=thread_ts)
         elif action_id in ['my-stats', 'player-stats']:
             # TODO: Build out player stats (see my-settings to borrow)
             self.st.send_message(channel=channel, message='My/Player stats is currently in development! '
@@ -266,14 +267,23 @@ class CAHBot(Forms):
                 self.st.send_message(channel=channel, message='Game status', blocks=status_block,
                                      thread_ts=thread_ts)
         elif action_id == 'modify-question-form':
-            qmod_form = self.modify_question_form(original_value=self.current_game.current_question_card.card_text)
+            qmod_form = self.modify_question_form(
+                original_value=self.current_game.current_question_card.card_text,
+                question_id=self.current_game.current_question_card.question_card_id
+            )
             _ = self.st.private_channel_message(user_id=user, channel=channel, message='Modify question form',
                                                 blocks=qmod_form)
-        elif action_id == 'modify-question':
+        elif action_id.startswith('modify-question'):
             # Response from modify question form
-            self.current_game.current_question_card.modify_text(eng=self.eng, new_text=action_value)
-            self.st.message_main_channel(f'Question updated: *{self.current_game.current_question_card.card_text}*'
-                                         f' by <@{user}>')
+            past_q = self.current_game.current_question_card.card_text
+            question_id = int(action_id.split('-')[-1])
+            self.modify_question_text(new_text=action_value, question_card_id=question_id)
+            blocks = [
+                MarkdownContextBlock(f'<@{user}> was kind enough to update the question.'),
+                MarkdownSectionBlock(f'`Old:` _`{past_q}`_ \n'
+                                     f'*`New:`* *`{self.current_game.current_question_card.card_text}`*')
+            ]
+            self.st.message_main_channel(blocks=blocks)
         elif action_id == 'my-settings':
             self.get_my_settings(user=user, channel=channel)
         elif action_id == 'add-player':
@@ -377,6 +387,18 @@ class CAHBot(Forms):
                         TablePlayer.slack_user_hash == uid).one().display_name
                     self.current_game.players.player_dict[uid].display_name = dname
         return 'Players refreshed o7'
+
+    def game_stats(self) -> BlocksType:
+        stats = self.current_game.gq.get_game_stats(game_id=self.current_game.game_id)
+        stats_list = []
+        for name, val in stats.items():
+            if isinstance(val, timedelta):
+                val = self.st.timedelta_to_human(val)
+            stats_list.append(f'`{name[:28].title():.<30}{val:.>22}`')
+        return [
+            MarkdownContextBlock('*Game Stats* :intern3-data-nerd:'),
+            MarkdownSectionBlock(stats_list)
+        ]
 
     def decknuke(self, user: str):
         """Deals the user a new hand while randpicking one of the cards from their current deck.
@@ -787,13 +809,14 @@ class CAHBot(Forms):
             player_list = player_list[:9]
         return sect_list + player_list
 
-    def modify_question_text(self, new_text: str):
+    def modify_question_text(self, new_text: str, question_card_id: int):
         """Modifies the question text"""
         # TODO: MAke sure the question id is passed in the form to modify in case the modification
         #  happens into the following round
         with self.eng.session_mgr() as session:
+            self.current_game.current_question_card.card_text = new_text
             session.query(TableQuestionCard).filter(
-                TableQuestionCard.question_card_id == self.current_game.current_question_card.question_card_id
+                TableQuestionCard.question_card_id == question_card_id
             ).update({
                 TableQuestionCard.card_text: new_text
             })

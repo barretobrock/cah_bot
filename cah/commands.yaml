@@ -83,6 +83,12 @@ commands:
             desc: Get current status of the game and other metadata
             response_cmd:
                 callable: display_status
+        ^game stats:
+            tags:
+                - game
+            desc: Get game stats
+            response_cmd:
+                callable: game_stats
         ^refresh players?:
             tags:
                 - player

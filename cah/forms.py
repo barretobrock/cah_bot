@@ -9,6 +9,7 @@ from slacktools import SlackTools
 from slacktools.block_kit.base import BlocksType
 from slacktools.block_kit.blocks import (
     ActionsBlock,
+    MarkdownContextBlock,
     MarkdownSectionBlock,
     MultiStaticSelectSectionBlock,
     MultiUserSelectSectionBlock,
@@ -111,7 +112,7 @@ class Forms:
         decks_list = [(name_with_stats, f'deck_{name}') for name_with_stats, name in decks]
         return [
             MultiStaticSelectSectionBlock('Select some decks :pickle_shy:', decks_list, placeholder='peek a deek',
-                                          action_id='new-game-deck', max_selected=5)
+                                          action_id='new-game-deck', max_selected=10)
         ]
 
     def build_new_game_form_p2(self, decks_list: List[str]) -> BlocksType:
@@ -134,12 +135,16 @@ class Forms:
         return [UserSelectSectionBlock('Select the player to add', placeholder='Player go here now',
                                        action_id='add-player-done')]
 
-    @staticmethod
-    def modify_question_form(original_value: str) -> BlocksType:
+    def modify_question_form(self, original_value: str, question_id: int) -> BlocksType:
         """Builds the second part to the new game form with Block Kit"""
         dispatch = DispatchActionConfigElement(trigger_on_enter_pressed=True)
         return [
-            PlainTextInputBlock('Make your change to the question below', action_id='modify-question',
+            MarkdownSectionBlock('*So you\'d like to modify a question!*'),
+            MarkdownContextBlock(
+                self.st.tiny_text_gen('Hey, ignore this number. Don\'t look at it: ') + f'{question_id}'
+            ),
+            PlainTextInputBlock('Make your change to the question below',
+                                action_id=f'modify-question-{question_id}',
                                 initial_value=original_value, dispatch_action_elem=dispatch),
             ActionsBlock([ButtonElement('Close', value='close', action_id='close')]),
         ]
