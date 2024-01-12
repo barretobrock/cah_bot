@@ -791,7 +791,7 @@ class Game:
             ButtonSectionBlock('Force Close', 'Close', value='none', action_id='close')
         ]
 
-    def make_question_block(self, hide_arc: bool = True) -> BlocksType:
+    def make_question_block(self, hide_arc: bool = False) -> BlocksType:
         """Generates the question block for the current round"""
         bot_moji = ':math:' if self.judge.is_arc and not hide_arc else ''
 
