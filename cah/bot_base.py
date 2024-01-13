@@ -378,14 +378,16 @@ class CAHBot(Forms):
     def refresh_players(self) -> str:
         """Refresh all channel members' details, including the players' names.
         While doing so, make sure they're members of the channel."""
-        refresh_players_in_channel(channel='CMPV3K8AE', eng=self.eng, st=self.st, log=self.log)
+        refresh_players_in_channel(channel=self.channel_id, eng=self.eng, st=self.st, log=self.log)
         if self.current_game is not None:
             self.log.debug('After refresh, syncing display names for current game\'s player objects...')
             with self.eng.session_mgr() as session:
-                for uid, player in self.current_game.players.player_dict.items():
-                    dname = session.query(TablePlayer.display_name).filter(
-                        TablePlayer.slack_user_hash == uid).one().display_name
-                    self.current_game.players.player_dict[uid].display_name = dname
+                all_players = session.query(TablePlayer).all()
+                p_obj: TablePlayer
+                for p_obj in all_players:
+                    if p_obj.slack_user_hash in self.current_game.players.player_dict.keys():
+                        self.current_game.players.player_dict[p_obj.slack_user_hash].display_name = p_obj.display_name
+
         return 'Players refreshed o7'
 
     def game_stats(self) -> BlocksType:
@@ -631,6 +633,12 @@ class CAHBot(Forms):
             self.st.message_main_channel(blocks=notification_block)
             self.end_game()
             return None
+
+        if self.current_game.game_round_number % 10 == 0:
+            self.log.info('Refreshing players in channel...')
+            self.st.message_main_channel(':loading-or-rolling-c:')
+            self.refresh_players()
+            self.st.message_main_channel(':fart:')
 
         self.current_game.new_round(notification_block=notification_block)
 

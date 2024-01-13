@@ -39,10 +39,11 @@ def refresh_players_in_channel(channel: str, eng: WizzyPSQLClient, st: SlackTool
         if uid in current_uids:
             with eng.session_mgr() as session:
                 # Get player
-                player = session.query(TablePlayer).filter(TablePlayer.slack_user_hash == uid).one()
-                player.display_name = params.get('display_name')
-                player.avi_url = params.get('avi_url')
-                eng.refresh_table_object(tbl_obj=player, session=session)
+                session.query(TablePlayer).filter(TablePlayer.slack_user_hash == uid).\
+                    update({
+                        TablePlayer.display_name: params.get('display_name'),
+                        TablePlayer.avi_url: params.get('avi_url')
+                    })
         else:
             usr_tbls.append(
                 TablePlayer(**params)

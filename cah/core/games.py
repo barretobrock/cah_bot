@@ -239,13 +239,14 @@ class Game:
             ]
 
         # Scan names in the db vs. in the player object to ensure they're the same
-        self.log.debug('Confirming display name parity...')
-        for uid, player in self.players.player_dict.items():
-            tbl_display_name = player.pq.get_player_table(player_hash=uid).display_name
-            if player.display_name != tbl_display_name:
-                self.log.debug(f'Changing {player.display_name} to {tbl_display_name}')
-                # Set player display name to the name found in the database
-                self.players.player_dict[uid].display_name = tbl_display_name
+        if self.game_round_number % 10 == 0:
+            self.log.debug('Confirming display name parity...')
+            for uid, player in self.players.player_dict.items():
+                tbl_display_name = player.pq.get_player_table(player_hash=uid).display_name
+                if player.display_name != tbl_display_name:
+                    self.log.debug(f'Changing {player.display_name} to {tbl_display_name}')
+                    # Set player display name to the name found in the database
+                    self.players.player_dict[uid].display_name = tbl_display_name
 
         if notification_block is None:
             notification_block = []
