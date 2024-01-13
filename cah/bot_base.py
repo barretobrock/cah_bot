@@ -391,7 +391,7 @@ class CAHBot(Forms):
         return 'Players refreshed o7'
 
     def game_stats(self) -> BlocksType:
-        stats = self.current_game.gq.get_game_stats(game_id=self.current_game.game_id)
+        stats = self.current_game.gq.get_game_stats()
         stats_list = []
         for name, val in stats.items():
             if isinstance(val, timedelta):
@@ -829,8 +829,6 @@ class CAHBot(Forms):
 
     def modify_question_text(self, new_text: str, question_card_id: int):
         """Modifies the question text"""
-        # TODO: MAke sure the question id is passed in the form to modify in case the modification
-        #  happens into the following round
         with self.eng.session_mgr() as session:
             self.current_game.current_question_card.card_text = new_text
             session.query(TableQuestionCard).filter(
