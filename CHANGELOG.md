@@ -15,11 +15,21 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.2.3] - 2024-01-12
+#### Added
+ - Initial game stats added
+#### Fixed
+ - [GH-50](../../issues/50) - Modify question form's woes are no moe
+ - [GH-58](../../issues/58) - DM picks when judge asks 
+ - [GH-57](../../issues/57) - ARC'd judge indicator added
+ - [GH-53](../../issues/53) - Refresh players modified, updated cadence & logic
+
 ### [2.2.2] - 2024-01-03
 #### Changed
  - [GH-52](../../issues/52) - Answers shown in-place on winner render
 #### Fixed
  - `/api/actions` endpoint was failing, as `ack` wasn't a supplied arg. changed to use bolt's action handler and routed through Flask
+ - Manual picks weren't being checked against the required number of responses 
  
 ### [2.2.1] - 2023-12-21
 #### Added
