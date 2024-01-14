@@ -33,7 +33,7 @@ from slacktools.block_kit.elements.formatters import (
     DateFormatter,
     DateFormatType,
 )
-from slacktools.tools import build_commands
+from slacktools.command_processing import build_commands
 
 from cah import ROOT_PATH
 from cah.core.common_methods import refresh_players_in_channel
@@ -89,7 +89,7 @@ class CAHBot(Forms):
         self.is_post_exceptions = self.eng.get_setting(SettingType.IS_POST_ERR_TRACEBACK)
         self.st = SlackBotBase(props=props, triggers=self.triggers, main_channel=self.channel_id,
                                admins=self.admins, is_post_exceptions=self.is_post_exceptions,
-                               debug=False, use_session=False)
+                               is_debug=config.DEBUG, is_use_session=False)
         # Pass in commands to SlackBotBase, where task delegation occurs
         self.log.debug('Patching in commands to SBB...')
         self.st.update_commands(commands=self.commands)
@@ -219,6 +219,13 @@ class CAHBot(Forms):
                 # handle choose/randchoose
                 self.log.debug(f'Processed "choose" command to: {parsed_command}')
                 self.choose_card(user, parsed_command)
+        elif action_id == 'help':
+            self.st.send_message(channel=channel, blocks=self.generate_intro(), thread_ts=thread_ts)
+        elif action_id.startswith('shelp'):
+            msg = action_id.split('-', maxsplit=1)
+            cmd = msg[0]
+            blocks = self.search_help_block(f'{cmd[:-1]} -{cmd[-1:]} {msg[1]}')
+            self.st.send_message(channel=channel, blocks=blocks, thread_ts=thread_ts)
         elif action_id == 'new-game-start':
             # Kicks off the new game form process
             if self.current_game is not None and self.current_game.status != GameStatus.ENDED:
@@ -247,11 +254,9 @@ class CAHBot(Forms):
             blocks = self.game_stats()
             self.st.send_message(channel=channel, blocks=blocks, thread_ts=thread_ts)
         elif action_id in ['my-stats', 'player-stats']:
-            # TODO: Build out player stats (see my-settings to borrow)
-            self.st.send_message(channel=channel, message='My/Player stats is currently in development! '
-                                                          'Check back later.', thread_ts=thread_ts)
+            blocks = self.player_stats(user_id=user, message='')
+            self.st.send_message(channel=channel, blocks=blocks, thread_ts=thread_ts)
         elif action_id == 'arparc-player':
-            # TODO: Build out arp/arc of other player
             self.st.send_message(channel=channel, message='ARPARC player is currently in development! '
                                                           'Check back later.', thread_ts=thread_ts)
         elif action_id == 'my-cards':
@@ -392,15 +397,54 @@ class CAHBot(Forms):
 
     def game_stats(self) -> BlocksType:
         stats = self.current_game.gq.get_game_stats()
-        stats_list = []
+        stats_blocks = []
         for name, val in stats.items():
             if isinstance(val, timedelta):
                 val = self.st.timedelta_to_human(val)
-            stats_list.append(f'`{name[:28].title():.<30}{val:.>22}`')
+            stats_blocks += [
+                MarkdownContextBlock(name.title()),
+                MarkdownSectionBlock(val),
+                DividerBlock()
+            ]
         return [
-            MarkdownContextBlock('*Game Stats* :intern3-data-nerd:'),
-            MarkdownSectionBlock(stats_list)
-        ]
+            MarkdownContextBlock('*Game Stats* :intern3-data-nerd:')
+        ] + stats_blocks
+
+    def player_stats(self, user_id, message: str) -> BlocksType:
+        msg_split = message.split()
+        if self.current_game is None:
+            player = self.eng.get_player_from_hash(user_hash=user_id)  # type: TablePlayer
+        else:
+            player = self.current_game.players.player_dict[user_id]  # type: 'Player'
+
+            # Set the player as the user first, but see if the user is actually picking for someone else
+            if any(['<@' in x for x in msg_split]):
+                # Player has tagged someone. See if they tagged themselves or another person
+                if not any([player.player_tag in x for x in msg_split]):
+                    # Tagged someone else. Get that other tag & use it to change the player.
+                    ptag = next((x for x in msg_split if '<@' in x))
+                    # Clean tag markup, if any
+                    ptag = ptag.replace('<@', '').replace('>', '')
+                    player = self.current_game.players.player_dict[ptag.upper()]  # type: 'Player'
+
+        stats = player.pq.get_player_stats(player_id=player.player_table_id)
+
+        stats_blocks = []
+        for name, val in stats.items():
+            if isinstance(val, timedelta):
+                val = self.st.timedelta_to_human(val)
+            elif isinstance(val, float):
+                val = f'{val:.1f}'
+            elif isinstance(val, int):
+                val = f'{val}'
+            stats_blocks += [
+                MarkdownContextBlock(name.title()),
+                MarkdownSectionBlock(val),
+                DividerBlock()
+            ]
+        return [
+            MarkdownContextBlock(f'*Stats for `{player.display_name}`* :intern3-data-nerd:')
+        ] + stats_blocks
 
     def decknuke(self, user: str):
         """Deals the user a new hand while randpicking one of the cards from their current deck.

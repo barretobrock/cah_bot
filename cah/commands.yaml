@@ -1,15 +1,18 @@
 # Expected structure for commands:
 #   <cmd_regex>:
-#       name: <command_name>
-#       tags: <comma-separated-tags>
+#       title: <command_name>
+#       tags:
+#           - list
+#           - of
+#           - tags
 #       desc: <description>
 #       # Response should be one of these:
 #       response_cmd:
 #           A dynamic command that's mapped to the dict on instantiation via attribute lookup
-#           callable: <name_of_callable>
+#           callable_name: <name_of_callable>
 #           args:
 #               # Note: these arg names should match what's coming in from an event
-#               #   (e.g., user, channel, message)
+#               #   (e.g., user, channel, message, thread_ts, etc...)
 #               - list
 #               - of
 #               - args
@@ -18,32 +21,36 @@
 commands:
     group-support:
         ^help$:
+            title: help
             tags:
                 - support
                 - main
             desc: Description of the main commands I respond to, along with other groups and tags to search my other commands
             response_cmd:
-                callable: generate_intro
+                callable_name: generate_intro
         ^(search\s?help|shelp):
+            title: search help
+            desc: Search the command descriptions by tag or group
             tags:
                 - support
                 - main
-            desc: Search the command descriptions by tag or group
             examples:
                 - search help -t support
                 - search help -g game
                 - shelp -g player
             response_cmd:
-                callable: search_help_block
+                callable_name: search_help_block
                 args:
                     - cleaned_message
         ^about$:
+            title: about
             tags:
                 - debug
             desc: Bootup time of Wizzy's current instance, zir current version and last update date
             response_cmd:
-                callable: get_bootup_msg
+                callable_name: get_bootup_msg
         ^m(ain\s?menu|m):
+            title: main menu
             tags:
                 - ui
                 - settings
@@ -53,56 +60,74 @@ commands:
                 - main menu
                 - mainmenu
             response_cmd:
-                callable: prebuild_main_menu
+                callable_name: prebuild_main_menu
                 args:
                     - user
                     - channel
         ^show decks:
+            title: show decks
             tags:
                 - game
             desc: Show the decks currently available
             response_cmd:
-                callable: show_decks
+                callable_name: show_decks
     group-game:
         ^new round:
+            title: new round
             tags:
                 - game
             desc: For manually transitioning to another round when Wizzy fails to.
             response_cmd:
-                callable: new_round
+                callable_name: new_round
         ^(points|score[s]?):
+            title: score
             tags:
                 - player
                 - game
             desc: Show points / score of all players
             response_cmd:
-                callable: display_points
+                callable_name: display_points
         ^status:
+            title: status
             tags:
                 - game
             desc: Get current status of the game and other metadata
             response_cmd:
-                callable: display_status
+                callable_name: display_status
         ^game stats:
+            title: game stats
             tags:
                 - game
             desc: Get game stats
             response_cmd:
-                callable: game_stats
+                callable_name: game_stats
+        ^player stats:
+            title: player stats
+            tags:
+                - player
+            desc: Get stats of an individual player
+            response_cmd:
+                callable_name: player_stats
+                args:
+                    - user
+                    - cleaned_message
         ^refresh players?:
+            title: refresh players
             tags:
                 - player
             desc: Forces a refresh of the current players in the channel
             response_cmd:
-                callable: refresh_players
+                callable_name: refresh_players
         ^end game$:
+            title: end game
             tags:
                 - game
             desc: Ends the current game
             response_cmd:
-                callable: end_game
+                callable_name: end_game
     group-settings:
         ^toggle (judge\s?|j)ping:
+            title: toggle judge ping
             tags:
                 - settings
             desc: Toggles whether or not the judge is pinged after all selections are made.
@@ -110,8 +135,9 @@ commands:
                 - toggle judge ping
                 - toggle jping
             response_cmd:
-                callable: toggle_judge_ping
+                callable_name: toggle_judge_ping
         ^toggle (w[ine]+r\s?|w)ping:
+            title: toggle winner ping
             tags:
                 - settings
             desc: Toggles whether or not the winner is pinged when they win a round.
@@ -120,38 +146,41 @@ commands:
                 - toggle weiner ping
                 - toggle wping
             response_cmd:
-                callable: toggle_winner_ping
+                callable_name: toggle_winner_ping
         ^toggle (auto\s?randpick|arp($|\s)):
+            title: toggle auto randpick (ARP)
             tags:
                 - settings
             desc: Fully. Automated. Luxury. Random. Picking. (this one's for The Player)
             examples:
-                - toggle arp
-                - toggle autorandpick
-                - toggle arp @{other_user}
+                - toggle arp                // ARP yourself
+                - toggle autorandpick       // ARP yourself
+                - toggle arp @{other_user}  // ARP a friend
             response_cmd:
-                callable: toggle_auto_pick_or_choose
+                callable_name: toggle_auto_pick_or_choose
                 args:
                     - user
                     - channel
                     - cleaned_message
                     - randpick
         ^toggle (auto\s?randchoose|arc($|\s)):
+            title: toggle auto randchoose (ARC)
             tags:
                 - settings
             desc: Fully. Automated. Luxury. Random. Choosing. (this one's for The Judge)
             examples:
-                - toggle arc
-                - toggle autorandchoose
-                - toggle arc @{other_user}
+                - toggle arc                // ARC yourself
+                - toggle autorandchoose     // ARC yourself
+                - toggle arc @{other_user}  // ARC a friend
             response_cmd:
-                callable: toggle_auto_pick_or_choose
+                callable_name: toggle_auto_pick_or_choose
                 args:
                     - user
                     - channel
                     - cleaned_message
                     - randchoose
         ^toggle ar[pc]ar[pc]a:
+            title: "toggle ARP & ARC (ARPARCA) :llama:"
             tags:
                 - settings
             desc: Fully. Automated. Luxury. Random. Bothing. (this one's for... Everyone?)
@@ -160,44 +189,49 @@ commands:
                 - toggle arcarpa
                 - toggle arcarca
             response_cmd:
-                callable: toggle_auto_pick_or_choose
+                callable_name: toggle_auto_pick_or_choose
                 args:
                     - user
                     - channel
                     - cleaned_message
                     - both
         ^toggle (c[har]+ds?\s?)?dm:
+            title: toggle card dming
             tags:
                 - settings
             desc: Toggles whether or not you receive cards as a DM from Wizzy.
             examples:
-                - toggle cahds dm
-                - toggle chadsdm
+                - toggle cards dm   // normal
+                - toggle cahds dm   // witty?
+                - toggle chadsdm    // 2000 presidential election version?
             response_cmd:
-                callable: toggle_card_dm
+                callable_name: toggle_card_dm
                 args:
                     - user
                     - channel
         ^(my\s?)?settings:
+            title: my settings
             tags:
                 - settings
             desc: Retrieves an overview of your settings
             response_cmd:
-                callable: get_my_settings
+                callable_name: get_my_settings
                 args:
                     - user
                     - channel
     group-player:
         ^c[har]+ds (now|dm):
+            title: cards now
             tags:
                 - player
                 - game
             desc: DMs you your cards immediately, if you have any.
             response_cmd:
-                callable: dm_cards_now
+                callable_name: dm_cards_now
                 args:
                     - user
         ^p(ick)? \d[\d,]*:
+            title: pick
             tags:
                 - player
             desc: Pick your card(s) for the round
@@ -207,19 +241,21 @@ commands:
                 - p 3,4
                 - p 34
             response_cmd:
-                callable: process_picks
+                callable_name: process_picks
                 args:
                     - user
                     - cleaned_message
         ^decknuke:
+            title: decknuke
             tags:
                 - player
             desc: Don't like any of your cards? They don't like you either. lol jk luv u. Use this and one of your cards gets picked randomly for you and in return you get a totally new hand! Ah, but nothing in life is without risk - you see, if the judge chooses your card, you will be punished.....
             response_cmd:
-                callable: decknuke
+                callable_name: decknuke
                 args:
                     - user
         ^randpick:
+            title: randpick
             tags:
                 - player
             desc: Randomly select your card(s) for judgement (AKA 'pick').
@@ -229,25 +265,27 @@ commands:
                 - randpick 2,3,4
                 - randpick 234 @{other_user}
             response_cmd:
-                callable: process_picks
+                callable_name: process_picks
                 args:
                     - user
                     - cleaned_message
         ^c(hoose)? \d:
+            title: choose
             tags:
                 - judge
-            desc: Used by the judge to select (AKA choose) the :Q:best:Q:card from the picks
+            desc: "Used by the judge to select (AKA choose) the :sparkles:best:sparkles: card from the picks"
             examples:
                 - choose 3
                 - c 2
                 - c 3,4
                 - c 34
             response_cmd:
-                callable: choose_card
+                callable_name: choose_card
                 args:
                     - user
                     - cleaned_message
         ^randchoose:
+            title: randchoose
             tags:
                 - judge
             desc: Randomly choose the best card from all the cards or a subset
@@ -256,14 +294,15 @@ commands:
                 - randchoose 234              //subset selections
                 - randchoose 2,3,4
             response_cmd:
-                callable: choose_card
+                callable_name: choose_card
                 args:
                     - user
                     - cleaned_message
         ^ping ppl:
+            title: ping ppl
             tags:
                 - player
                 - game
             desc: Ping (non-judge) players who haven't yet picked
             response_cmd:
-                callable: ping_players_left_to_pick
+                callable_name: ping_players_left_to_pick

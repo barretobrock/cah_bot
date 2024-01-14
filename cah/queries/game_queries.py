@@ -145,15 +145,15 @@ class GameQueries:
             #   % of time that a winner is the judge next
 
             return {
-                'Avg Round': avg_round,
-                'Min Round': min_round,
-                'Max Round': max_round,
+                'Fastest Round': min_round,
+                'Average Round': avg_round,
+                'Slowest Round': max_round,
                 'Slowest Pick': slowest_pick,
                 'Slowest Pickler': slowest_pick_player,
                 'Fastest Pick': fastest_pick,
                 'fastest pickler': fastest_pick_player,
-                'avg pick time': avg_pick_time,
+                'Average pickling time': avg_pick_time,
                 'mostest averagest pickler': '????',
-                'weirdest pickler': 'whichever name is barry\'s',
-                '% winner next round judge': 'TBD'
+                'weirdest pickler': 'whomstever\'s display name is barry\'s',
+                '% Likelihood the winner is judge in next round': 'TBD'
             }

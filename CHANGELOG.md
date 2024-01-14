@@ -15,6 +15,12 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.2.4] - 2024-01-14
+#### Added
+ - player stat and game stat support
+#### Changed
+ - Refactored commands to include `title` and `callable_name`
+ 
 ### [2.2.3] - 2024-01-12
 #### Added
  - Initial game stats added

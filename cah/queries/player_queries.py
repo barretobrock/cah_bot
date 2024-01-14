@@ -1,10 +1,12 @@
 from typing import (
+    Dict,
     List,
     Optional,
     Union,
 )
 
 from loguru import logger
+import pandas as pd
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import (
     and_,
@@ -16,6 +18,7 @@ from sqlalchemy.sql import (
 from cah.db_eng import WizzyPSQLClient
 from cah.model import (
     TableAnswerCard,
+    TableGameRound,
     TableHonorific,
     TablePlayer,
     TablePlayerHand,
@@ -287,3 +290,80 @@ class PlayerQueries:
         with self.eng.session_mgr() as session:
             session.add(TablePlayerRound(player_key=player_id, game_key=game_id, game_round_key=game_round_id,
                                          is_arp=is_arp, is_arc=is_arc))
+
+    def get_player_stats(self, player_id: int) -> Dict:
+        with self.eng.session_mgr() as session:
+            # pick/choose stats
+            pick_stats_q = session.query(
+                TableGameRound.game_round_id,
+                TableGameRound.start_time.label('round_start'),
+                TablePlayer.display_name,
+                TablePlayerPick.created_date.label('pick_timestamp'),
+                (TablePlayerPick.created_date - TableGameRound.start_time).label('duration_before_pick'),
+                TableGameRound.end_time.label('round_end')
+            ).join(TablePlayerPick, TablePlayerPick.game_round_key == TableGameRound.game_round_id).\
+                join(TablePlayer, TablePlayerPick.slack_user_hash == TablePlayer.slack_user_hash).\
+                filter(and_(
+                    TableGameRound.end_time.isnot(None),
+                    TablePlayer.player_id == player_id
+                ))
+
+            pick_stats_df = pd.read_sql(pick_stats_q.statement, session.bind)
+            slowest_pick_idx = pick_stats_df['duration_before_pick'].idxmax()
+            slowest_pick = pick_stats_df.loc[slowest_pick_idx, 'duration_before_pick']
+
+            fastest_pick_idx = pick_stats_df['duration_before_pick'].idxmin()
+            fastest_pick = pick_stats_df.loc[fastest_pick_idx, 'duration_before_pick']
+
+            avg_pick_time = pick_stats_df['duration_before_pick'].mean()
+
+            total_score = session.query(
+                func.sum(TablePlayerRound.score)
+            ).filter(and_(
+                TablePlayerRound.player_key == player_id
+            )).scalar()
+
+            total_games_played = session.query(func.count(func.distinct(TablePlayerRound.game_key))).filter(
+                TablePlayerRound.player_key == player_id
+            ).scalar()
+
+            total_rounds_played = session.query(func.count(func.distinct(TablePlayerRound.game_round_key))).filter(
+                TablePlayerRound.player_key == player_id
+            ).scalar()
+
+            total_rounds_won = session.query(func.count(func.distinct(TablePlayerRound.game_round_key))).filter(
+                TablePlayerRound.player_key == player_id,
+                TablePlayerRound.score > 0
+            ).scalar()
+
+            total_decknukes_issued = session.query(func.count(TablePlayerRound.is_nuked_hand)).filter(and_(
+                TablePlayerRound.player_key == player_id,
+                TablePlayerRound.is_nuked_hand
+            )).scalar()
+
+            total_decknukes_caught = session.query(func.count(TablePlayerRound.is_nuked_hand_caught)).filter(and_(
+                TablePlayerRound.player_key == player_id,
+                TablePlayerRound.is_nuked_hand_caught
+            )).scalar()
+
+            if total_decknukes_issued > 0:
+                noncaught_nukes = total_decknukes_issued - total_decknukes_caught
+                decknuke_success = noncaught_nukes / total_decknukes_issued
+            else:
+                decknuke_success = '#Nevernuked'
+
+            round_success_rate = total_rounds_won / total_rounds_played
+
+            return {
+                'Slowest Pick': slowest_pick,
+                'Fastest Pick': fastest_pick,
+                'Average pickling time': avg_pick_time,
+                'overall score': total_score,
+                'games played': total_games_played,
+                'rounds endured': total_rounds_played,
+                'round success rate': f'{round_success_rate:.1%} ({total_rounds_won}/{total_rounds_played})',
+                'decknuke success rate': f'{decknuke_success:.1%} ({noncaught_nukes}/{total_decknukes_issued})',
+                'rounds since last score': 'TBD',
+                'most agreeable judge': 'TBD',
+                'least agreeable judge': 'TBD'
+            }
