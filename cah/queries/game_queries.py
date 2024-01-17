@@ -19,6 +19,7 @@ from cah.model import (
     TableGameRound,
     TablePlayer,
     TablePlayerPick,
+    TablePlayerRound,
     TableQuestionCard,
     TableRip,
 )
@@ -123,9 +124,9 @@ class GameQueries:
                 TablePlayer.display_name,
                 TablePlayerPick.created_date.label('pick_timestamp'),
                 (TablePlayerPick.created_date - TableGameRound.start_time).label('duration_before_pick'),
-                TableGameRound.end_time.label('round_end')
+                TableGameRound.end_time.label('round_end'),
             ).join(TablePlayerPick, TablePlayerPick.game_round_key == TableGameRound.game_round_id).\
-                join(TablePlayer, TablePlayerPick.slack_user_hash == TablePlayer.slack_user_hash).\
+                join(TablePlayer, TablePlayerPick.slack_user_hash == TablePlayer.slack_user_hash). \
                 filter(and_(
                     TableGameRound.end_time.isnot(None)
                 ))
@@ -141,6 +142,15 @@ class GameQueries:
 
             avg_pick_time = pick_stats_df['duration_before_pick'].mean()
 
+            total_decknukes = session.query(func.count(TablePlayerRound.is_nuked_hand)).filter(
+                TablePlayerRound.is_nuked_hand
+            ).scalar()
+            total_caught_decknukes = session.query(func.count(TablePlayerRound.is_nuked_hand)).filter(
+                TablePlayerRound.is_nuked_hand_caught
+            ).scalar()
+            dn_capture_rate = total_caught_decknukes / total_decknukes
+            dn_capture_text = f'{dn_capture_rate:.1%} ({total_caught_decknukes} caught / {total_decknukes} nuked)'
+
             # TODO: More stats
             #   % of time that a winner is the judge next
 
@@ -154,6 +164,8 @@ class GameQueries:
                 'fastest pickler': fastest_pick_player,
                 'Average pickling time': avg_pick_time,
                 'mostest averagest pickler': '????',
+                'total global decknukes': total_decknukes,
+                'global decknuke capture rate': dn_capture_text,
                 'weirdest pickler': 'whomstever\'s display name is barry\'s',
                 '% Likelihood the winner is judge in next round': 'TBD'
             }

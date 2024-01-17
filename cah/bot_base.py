@@ -24,6 +24,7 @@ from slacktools.block_kit.blocks import (
     DividerBlock,
     MarkdownContextBlock,
     MarkdownSectionBlock,
+    SectionBlock,
 )
 from slacktools.block_kit.elements.display import (
     ImageElement,
@@ -397,18 +398,15 @@ class CAHBot(Forms):
 
     def game_stats(self) -> BlocksType:
         stats = self.current_game.gq.get_game_stats()
-        stats_blocks = []
+        fields = []
         for name, val in stats.items():
             if isinstance(val, timedelta):
                 val = self.st.timedelta_to_human(val)
-            stats_blocks += [
-                MarkdownContextBlock(name.title()),
-                MarkdownSectionBlock(val),
-                DividerBlock()
-            ]
+            fields.append(f'{name.title()}: *`{val}`*')
         return [
-            MarkdownContextBlock('*Game Stats* :intern3-data-nerd:')
-        ] + stats_blocks
+            MarkdownContextBlock('*Game Stats* :intern3-data-nerd:'),
+            MarkdownSectionBlock(fields)
+        ]
 
     def player_stats(self, user_id, message: str) -> BlocksType:
         msg_split = message.split()
@@ -427,9 +425,10 @@ class CAHBot(Forms):
                     ptag = ptag.replace('<@', '').replace('>', '')
                     player = self.current_game.players.player_dict[ptag.upper()]  # type: 'Player'
 
-        stats = player.pq.get_player_stats(player_id=player.player_table_id)
+        stats = player.pq.get_player_stats(player_id=player.player_table_id,
+                                           game_round_id=self.current_game.game_round_id)
 
-        stats_blocks = []
+        fields = []
         for name, val in stats.items():
             if isinstance(val, timedelta):
                 val = self.st.timedelta_to_human(val)
@@ -437,14 +436,11 @@ class CAHBot(Forms):
                 val = f'{val:.1f}'
             elif isinstance(val, int):
                 val = f'{val}'
-            stats_blocks += [
-                MarkdownContextBlock(name.title()),
-                MarkdownSectionBlock(val),
-                DividerBlock()
-            ]
+            fields.append(f'{name.title()}: *`{val}`*')
         return [
-            MarkdownContextBlock(f'*Stats for `{player.display_name}`* :intern3-data-nerd:')
-        ] + stats_blocks
+            MarkdownContextBlock(f'*Player Stats for `{player.display_name}`* :intern3-data-nerd:'),
+            MarkdownSectionBlock(fields)
+        ]
 
     def decknuke(self, user: str):
         """Deals the user a new hand while randpicking one of the cards from their current deck.
@@ -627,7 +623,8 @@ class CAHBot(Forms):
                 max_selected=self.current_game.current_question_card.responses_required)
             self.st.private_message(player.player_hash, message='Your cards have arrived',
                                     blocks=question_block + cards_block)
-        elif self.current_game.status == GameStatus.JUDGE_DECISION and player.is_judge:
+        elif (self.current_game.status == GameStatus.JUDGE_DECISION and
+              self.current_game.judge.player_hash == player.player_hash):
             self.log.debug('Player is in judge decision status and is judge, so sending picks')
             # Instead of getting their own deck, send the player the choices
             _, judge_picks = self.current_game.display_picks()

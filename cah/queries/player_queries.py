@@ -291,7 +291,7 @@ class PlayerQueries:
             session.add(TablePlayerRound(player_key=player_id, game_key=game_id, game_round_key=game_round_id,
                                          is_arp=is_arp, is_arc=is_arc))
 
-    def get_player_stats(self, player_id: int) -> Dict:
+    def get_player_stats(self, player_id: int, game_round_id: int) -> Dict:
         with self.eng.session_mgr() as session:
             # pick/choose stats
             pick_stats_q = session.query(
@@ -317,34 +317,20 @@ class PlayerQueries:
 
             avg_pick_time = pick_stats_df['duration_before_pick'].mean()
 
-            total_score = session.query(
-                func.sum(TablePlayerRound.score)
-            ).filter(and_(
-                TablePlayerRound.player_key == player_id
-            )).scalar()
+            player_rounds_q = session.query(TablePlayerRound).filter(TablePlayerRound.player_key == player_id)
+            prounds_df = pd.read_sql(player_rounds_q.statement, session.bind)
 
-            total_games_played = session.query(func.count(func.distinct(TablePlayerRound.game_key))).filter(
-                TablePlayerRound.player_key == player_id
-            ).scalar()
-
-            total_rounds_played = session.query(func.count(func.distinct(TablePlayerRound.game_round_key))).filter(
-                TablePlayerRound.player_key == player_id
-            ).scalar()
-
-            total_rounds_won = session.query(func.count(func.distinct(TablePlayerRound.game_round_key))).filter(
-                TablePlayerRound.player_key == player_id,
-                TablePlayerRound.score > 0
-            ).scalar()
-
-            total_decknukes_issued = session.query(func.count(TablePlayerRound.is_nuked_hand)).filter(and_(
-                TablePlayerRound.player_key == player_id,
-                TablePlayerRound.is_nuked_hand
-            )).scalar()
-
-            total_decknukes_caught = session.query(func.count(TablePlayerRound.is_nuked_hand_caught)).filter(and_(
-                TablePlayerRound.player_key == player_id,
-                TablePlayerRound.is_nuked_hand_caught
-            )).scalar()
+            total_score = prounds_df['score'].sum()
+            total_games_played = prounds_df['game_key'].nunique()
+            total_rounds_played = prounds_df['game_round_key'].nunique()
+            total_rounds_won = prounds_df[prounds_df['score'] > 0].shape[0]
+            total_decknukes_issued = prounds_df[prounds_df['is_nuked_hand']].shape[0]
+            total_decknukes_caught = prounds_df[prounds_df['is_nuked_hand_caught']].shape[0]
+            game_round_of_last_score = prounds_df.loc[prounds_df['score'] > 0, 'game_round_key'].max()
+            if pd.isna(game_round_of_last_score):
+                rounds_since_last_score = 'You never scored??'
+            else:
+                rounds_since_last_score = game_round_id - game_round_of_last_score
 
             if total_decknukes_issued > 0:
                 noncaught_nukes = total_decknukes_issued - total_decknukes_caught
@@ -353,6 +339,27 @@ class PlayerQueries:
                 decknuke_success = '#Nevernuked'
 
             round_success_rate = total_rounds_won / total_rounds_played
+            round_success_text = f'{round_success_rate:.1%} ({total_rounds_won} won / {total_rounds_played} played)'
+            decknuke_text = f'{decknuke_success:.1%} ({noncaught_nukes} uncaught / {total_decknukes_issued} nuked)'
+
+            # # Judge stats
+            # judge_stats_q = session.query(TablePlayerRound).\
+            #     filter(or_(
+            #         TablePlayerRound.player_key == player_id,
+            #         TablePlayerRound.is_judge
+            #     )).\
+            #     order_by(TablePlayerRound.game_round_key)
+            # judge_stats_df = pd.read_sql(judge_stats_q.statement, session.bind)
+            # # Filter
+            # judge_stats_df = judge_stats_df[['player_key', 'game_round_key', 'score', 'is_judge']]
+            # # Remove times when player for whom we're getting the stats was judge
+            # judge_stats_df = judge_stats_df[~(judge_stats_df['player_key'] == player_id & judge_stats_df['is_judge'])]
+            # # Pivot table such that each row is a single round with judge's id and whether they gave
+            # # the given player a point
+            # judge_stats_df = judge_stats_df[['game_round_key', 'player_key', 'score']]\
+            #     .pivot_table(index=['game_round_key'], columns=['score'], aggfunc='sum').reset_index()
+            # judge_stats_df.columns = ['game_round_key', 'judge_key', 'score_given']
+            # judge_stats_df.groupby('judge_key').value_counts()
 
             return {
                 'Slowest Pick': slowest_pick,
@@ -361,9 +368,9 @@ class PlayerQueries:
                 'overall score': total_score,
                 'games played': total_games_played,
                 'rounds endured': total_rounds_played,
-                'round success rate': f'{round_success_rate:.1%} ({total_rounds_won}/{total_rounds_played})',
-                'decknuke success rate': f'{decknuke_success:.1%} ({noncaught_nukes}/{total_decknukes_issued})',
-                'rounds since last score': 'TBD',
+                'round success rate': round_success_text,
+                'decknuke success rate': decknuke_text,
+                'rounds since last score': rounds_since_last_score,
                 'most agreeable judge': 'TBD',
                 'least agreeable judge': 'TBD'
             }

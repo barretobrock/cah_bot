@@ -15,6 +15,12 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.2.5] - 2024-01-16
+#### Changed
+ - Improved game & player stats structure
+#### Fixed
+ - Potentially fixed issue where judges couldn't use the card DMing command
+ 
 ### [2.2.4] - 2024-01-14
 #### Added
  - player stat and game stat support

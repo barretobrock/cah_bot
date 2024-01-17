@@ -394,6 +394,7 @@ class Game:
                 # Just select the judge at random from the list
                 _judge = choice(self.players.judge_order)
             self.judge = Judge(player_hash=_judge, eng=self.eng, log=self.log)
+        self.players.player_dict[self.judge.player_hash].is_judge = True
         self.judge.game_id = game_id
         self.judge.game_round_id = game_round_id
         self.judge.is_judge = True
