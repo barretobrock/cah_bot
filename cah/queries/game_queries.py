@@ -142,6 +142,11 @@ class GameQueries:
 
             avg_pick_time = pick_stats_df['duration_before_pick'].mean()
 
+            p50 = pick_stats_df.loc[pick_stats_df['duration_before_pick'] ==
+                                    pick_stats_df['duration_before_pick'].quantile(.5, interpolation='lower')]
+            p50_display_name = p50.iloc[0]['display_name']
+            p50_dur = p50.iloc[0]['duration_before_pick']
+
             total_decknukes = session.query(func.count(TablePlayerRound.is_nuked_hand)).filter(
                 TablePlayerRound.is_nuked_hand
             ).scalar()
@@ -163,9 +168,9 @@ class GameQueries:
                 'Fastest Pick': fastest_pick,
                 'fastest pickler': fastest_pick_player,
                 'Average pickling time': avg_pick_time,
-                'mostest averagest pickler': '????',
+                'p50 p-pickler': p50_display_name,
+                'median pickle time': p50_dur,
                 'total global decknukes': total_decknukes,
                 'global decknuke capture rate': dn_capture_text,
-                'weirdest pickler': 'whomstever\'s display name is barry\'s',
                 '% Likelihood the winner is judge in next round': 'TBD'
             }

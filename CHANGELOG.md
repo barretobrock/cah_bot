@@ -15,6 +15,13 @@ _Note: 'Unreleased' section below is used for untagged changes that will be issu
 #### Security
 __BEGIN-CHANGELOG__
  
+### [2.2.6] - 2024-01-17
+#### Added
+ - Median pickling info to game stats
+ - Judge favorability info to player stats
+#### Fixed
+ - Player stats on a player who's never decknuked now works
+ 
 ### [2.2.5] - 2024-01-16
 #### Changed
  - Improved game & player stats structure

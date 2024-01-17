@@ -423,7 +423,10 @@ class CAHBot(Forms):
                     ptag = next((x for x in msg_split if '<@' in x))
                     # Clean tag markup, if any
                     ptag = ptag.replace('<@', '').replace('>', '')
-                    player = self.current_game.players.player_dict[ptag.upper()]  # type: 'Player'
+                    try:
+                        player = self.current_game.players.player_dict[ptag.upper()]  # type: 'Player'
+                    except KeyError:
+                        return [MarkdownSectionBlock('Player not found in current game :(')]
 
         stats = player.pq.get_player_stats(player_id=player.player_table_id,
                                            game_round_id=self.current_game.game_round_id)

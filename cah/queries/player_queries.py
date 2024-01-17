@@ -335,31 +335,53 @@ class PlayerQueries:
             if total_decknukes_issued > 0:
                 noncaught_nukes = total_decknukes_issued - total_decknukes_caught
                 decknuke_success = noncaught_nukes / total_decknukes_issued
+                decknuke_text = f'{decknuke_success:.1%} ({noncaught_nukes} uncaught / {total_decknukes_issued} nuked)'
             else:
-                decknuke_success = '#Nevernuked'
+                decknuke_text = '#Nevernuked'
 
             round_success_rate = total_rounds_won / total_rounds_played
             round_success_text = f'{round_success_rate:.1%} ({total_rounds_won} won / {total_rounds_played} played)'
-            decknuke_text = f'{decknuke_success:.1%} ({noncaught_nukes} uncaught / {total_decknukes_issued} nuked)'
 
-            # # Judge stats
-            # judge_stats_q = session.query(TablePlayerRound).\
-            #     filter(or_(
-            #         TablePlayerRound.player_key == player_id,
-            #         TablePlayerRound.is_judge
-            #     )).\
-            #     order_by(TablePlayerRound.game_round_key)
-            # judge_stats_df = pd.read_sql(judge_stats_q.statement, session.bind)
-            # # Filter
-            # judge_stats_df = judge_stats_df[['player_key', 'game_round_key', 'score', 'is_judge']]
-            # # Remove times when player for whom we're getting the stats was judge
-            # judge_stats_df = judge_stats_df[~(judge_stats_df['player_key'] == player_id & judge_stats_df['is_judge'])]
-            # # Pivot table such that each row is a single round with judge's id and whether they gave
-            # # the given player a point
-            # judge_stats_df = judge_stats_df[['game_round_key', 'player_key', 'score']]\
-            #     .pivot_table(index=['game_round_key'], columns=['score'], aggfunc='sum').reset_index()
-            # judge_stats_df.columns = ['game_round_key', 'judge_key', 'score_given']
-            # judge_stats_df.groupby('judge_key').value_counts()
+            # Judge stats
+            judge_stats_q = session.query(TablePlayerRound, TablePlayer.display_name).\
+                join(TablePlayer, TablePlayer.player_id == TablePlayerRound.player_key).\
+                filter(or_(
+                    TablePlayerRound.player_key == player_id,
+                    TablePlayerRound.is_judge
+                )).\
+                order_by(TablePlayerRound.game_round_key)
+            judge_stats_df = pd.read_sql(judge_stats_q.statement, session.bind)
+            # Filter
+            judge_stats_df = judge_stats_df[['player_key', 'display_name', 'game_round_key', 'score', 'is_judge']]
+            judge_stats_df['judged_round'] = (judge_stats_df['player_key'] == player_id) & judge_stats_df['is_judge']
+            # Remove times when player for whom we're getting the stats was judge
+            judge_stats_df = judge_stats_df[~judge_stats_df['judged_round']]
+
+            # Group by game round, apply names to judges
+            judge_round_summary = judge_stats_df[['game_round_key', 'score']].\
+                groupby('game_round_key', as_index=False).sum()
+            judge_round_summary = judge_round_summary.merge(
+                judge_stats_df.loc[judge_stats_df['is_judge'], ['game_round_key', 'display_name']]
+            )
+            judge_round_summary = judge_round_summary.groupby('display_name', as_index=False).sum()
+
+            try:
+                best_judge_id = judge_round_summary['score'].idxmax()
+                best_judge_points_given = judge_round_summary.loc[best_judge_id, 'score']
+                similar_best_judges = judge_round_summary.loc[
+                    judge_round_summary['score'] == best_judge_points_given, 'display_name'].tolist()
+                similar_best_judges = ', '.join(similar_best_judges)
+            except Exception as e:
+                similar_best_judges = f'I have failed you: {e}'
+
+            try:
+                worst_judge_id = judge_round_summary['score'].idxmin()
+                worst_judge_points_given = judge_round_summary.loc[worst_judge_id, 'score']
+                similar_worst_judges = judge_round_summary.loc[
+                    judge_round_summary['score'] == worst_judge_points_given, 'display_name'].tolist()
+                similar_worst_judges = ', '.join(similar_worst_judges)
+            except Exception as e:
+                similar_worst_judges = f'I have failed you: {e}'
 
             return {
                 'Slowest Pick': slowest_pick,
@@ -371,6 +393,8 @@ class PlayerQueries:
                 'round success rate': round_success_text,
                 'decknuke success rate': decknuke_text,
                 'rounds since last score': rounds_since_last_score,
-                'most agreeable judge': 'TBD',
-                'least agreeable judge': 'TBD'
+                'most agreeable judges': similar_best_judges,
+                'most points awarded by judge': best_judge_points_given,
+                'least agreeable judges': similar_worst_judges,
+                'least points awarded by judge': worst_judge_points_given,
             }
